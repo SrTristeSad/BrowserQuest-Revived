@@ -1,6 +1,7 @@
 'use strict';
 
 var fs = require('fs'),
+    path = require('path'),
     Metrics = require('./metrics'),
     Log = require('log');
 
@@ -16,6 +17,17 @@ function createLogger(level) {
     }
 }
 
+function resolvePublishedMap(config) {
+    var configDir = process.env.BROWSERQUEST_CONFIG_DIR || path.join(process.cwd(), 'var', 'config'),
+        published = path.join(configDir, 'world_server_published.json');
+
+    if(fs.existsSync(published)) {
+        config.map_filepath = published;
+        config.world_editor_published = true;
+    }
+    return config;
+}
+
 function start(config) {
     var ws = require('./ws'),
         WorldServer = require('./worldserver'),
@@ -27,12 +39,15 @@ function start(config) {
         lastTotalPlayers = 0,
         checkPopulationInterval;
 
-    config = Object.assign({}, config);
+    config = resolvePublishedMap(Object.assign({}, config));
     config.port = parseInt(process.env.PORT || config.port || 8000, 10);
     config.host = process.env.HOST || config.host || '127.0.0.1';
 
     global.log = createLogger(config.debug_level);
     log.info('Starting BrowserQuest game server...');
+    if(config.world_editor_published) {
+        log.info('Loading published world from World Editor: ' + config.map_filepath);
+    }
 
     server = new ws.MultiVersionWebsocketServer(config.port, {
         host: config.host,
@@ -75,7 +90,6 @@ function start(config) {
             world = _.detect(worlds, function(candidate) {
                 return candidate.playerCount < config.nb_players_per_world;
             });
-
             if(world) {
                 world.updatePopulation();
             }
@@ -88,10 +102,7 @@ function start(config) {
     });
 
     var onPopulationChange = function() {
-        if(!metrics) {
-            return;
-        }
-
+        if(!metrics) { return; }
         metrics.updatePlayerCounters(worlds, function(totalPlayers) {
             _.each(worlds, function(world) {
                 world.updatePopulation(totalPlayers);
@@ -104,7 +115,6 @@ function start(config) {
         var world = new WorldServer('world' + (i + 1), config.nb_players_per_world, server);
         world.run(config.map_filepath);
         worlds.push(world);
-
         if(metrics) {
             world.onPlayerAdded(onPopulationChange);
             world.onPlayerRemoved(onPopulationChange);
@@ -116,9 +126,7 @@ function start(config) {
     });
 
     if(metrics) {
-        metrics.ready(function() {
-            onPopulationChange();
-        });
+        metrics.ready(function() { onPopulationChange(); });
     }
 
     function shutdown() {
@@ -143,9 +151,7 @@ function start(config) {
 }
 
 function getWorldDistribution(worlds) {
-    return worlds.map(function(world) {
-        return world.playerCount;
-    });
+    return worlds.map(function(world) { return world.playerCount; });
 }
 
 function readConfigFile(filepath, callback) {
@@ -157,7 +163,6 @@ function readConfigFile(filepath, callback) {
             callback(null);
             return;
         }
-
         try {
             callback(JSON.parse(jsonString));
         } catch(parseError) {
@@ -174,13 +179,11 @@ function startFromFiles(customConfigPath) {
     readConfigFile(defaultConfigPath, function(defaultConfig) {
         readConfigFile(localPath, function(localConfig) {
             var config = localConfig || defaultConfig;
-
             if(!config) {
                 console.error('Server cannot start without a valid configuration file.');
                 process.exitCode = 1;
                 return;
             }
-
             start(config);
         });
     });
@@ -189,6 +192,7 @@ function startFromFiles(customConfigPath) {
 exports.start = start;
 exports.startFromFiles = startFromFiles;
 exports.readConfigFile = readConfigFile;
+exports.resolvePublishedMap = resolvePublishedMap;
 
 if(require.main === module) {
     startFromFiles(process.argv[2]);
