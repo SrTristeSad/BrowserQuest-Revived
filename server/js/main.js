@@ -158,15 +158,19 @@ function start(config) {
         clearInterval(checkPopulationInterval);
     }
 
-    process.once('SIGINT', function() {
-        shutdown();
-        process.exit(0);
-    });
+    // Direct/legacy server starts still own their signals. The aaPanel bootstrap
+    // disables these handlers so it can flush persistent character state first.
+    if(config.manage_process_signals !== false) {
+        process.once('SIGINT', function() {
+            shutdown();
+            process.exit(0);
+        });
 
-    process.once('SIGTERM', function() {
-        shutdown();
-        process.exit(0);
-    });
+        process.once('SIGTERM', function() {
+            shutdown();
+            process.exit(0);
+        });
+    }
 
     process.once('uncaughtException', function(error) {
         log.error('uncaughtException: ' + (error && error.stack ? error.stack : error));
