@@ -51,7 +51,7 @@ jobs:
           cat /tmp/browserquest-server.log
           exit 1
 
-      - name: Verify visual first-run installer
+      - name: Verify installer, admin login and story editor
         shell: bash
         run: |
           set -euo pipefail
@@ -68,26 +68,88 @@ jobs:
           done
 
           grep -qi 'BrowserQuest Revived' /tmp/setup.html
+          grep -qi 'Conta do dono' /tmp/setup.html
           CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-setup.log | tail -1 | grep -oE '[0-9]{6}')"
           test -n "$CODE"
 
           curl --fail --silent \
             -H 'content-type: application/json' \
-            -d "{\"code\":\"$CODE\",\"worlds\":2,\"players\":10}" \
+            -d "{\"code\":\"$CODE\",\"worlds\":2,\"players\":10,\"adminUsername\":\"owner\",\"adminPassword\":\"StrongPassword123!\",\"adminPasswordConfirm\":\"StrongPassword123!\"}" \
             http://127.0.0.1:8010/setup/install | grep -q '"ok":true'
 
           for attempt in $(seq 1 20); do
             curl --silent http://127.0.0.1:8010/status > /tmp/installed-status.json || true
             if grep -q '^\[' /tmp/installed-status.json; then
-              cat /tmp/installed-status.json
-              curl --fail --silent http://127.0.0.1:8010/ | grep -qi BrowserQuest
-              TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
-              test -f "$SETUP_DIR/config/browserquest.json"
-              test ! -f "$SETUP_DIR/config/setup-token.txt"
-              exit 0
+              break
             fi
             sleep 1
           done
 
-          cat /tmp/browserquest-setup.log
-          exit 1
+          grep -q '^\[' /tmp/installed-status.json
+          curl --fail --silent http://127.0.0.1:8010/ | grep -qi BrowserQuest
+          TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
+          test -f "$SETUP_DIR/config/browserquest.json"
+          test -f "$SETUP_DIR/config/admin.json"
+          test ! -f "$SETUP_DIR/config/setup-token.txt"
+          grep -q '"passwordHash": "scrypt\$' "$SETUP_DIR/config/admin.json"
+          ! grep -q 'StrongPassword123!' "$SETUP_DIR/config/admin.json"
+
+          curl --fail --silent http://127.0.0.1:8010/admin/login | grep -qi 'PAINEL ADMINISTRATIVO'
+
+          curl --fail --silent -c /tmp/bq-cookies.txt \
+            -H 'content-type: application/json' \
+            -d '{"username":"owner","password":"StrongPassword123!"}' \
+            http://127.0.0.1:8010/admin/api/login | grep -q '"ok":true'
+
+          curl --fail --silent -b /tmp/bq-cookies.txt \
+            http://127.0.0.1:8010/admin/story-editor | grep -qi 'Editor de História'
+
+          cat > /tmp/story.json <<'JSON'
+          {
+            "title": "A Ponte dos Ratos",
+            "description": "Campanha de teste do editor.",
+            "status": "draft",
+            "chapters": [
+              {
+                "title": "Primeiro capítulo",
+                "missions": [
+                  {
+                    "title": "Limpe a ponte",
+                    "giverNpc": "Guarda",
+                    "introDialogue": [{"speaker":"Guarda","text":"A ponte está tomada."}],
+                    "objective": {"type":"kill","target":"rat","amount":5,"text":"Derrote 5 ratos"},
+                    "rewards": [{"type":"item","value":"sword2","amount":1}],
+                    "choices": []
+                  }
+                ]
+              }
+            ]
+          }
+          JSON
+
+          curl --fail --silent -b /tmp/bq-cookies.txt \
+            -H 'content-type: application/json' \
+            --data-binary @/tmp/story.json \
+            http://127.0.0.1:8010/admin/api/stories > /tmp/saved-story.json
+
+          grep -q 'A Ponte dos Ratos' /tmp/saved-story.json
+          STORY_ID="$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/saved-story.json','utf8')).id)")"
+          test -n "$STORY_ID"
+
+          curl --fail --silent -b /tmp/bq-cookies.txt \
+            http://127.0.0.1:8010/admin/api/stories | grep -q "$STORY_ID"
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const story = JSON.parse(fs.readFileSync('/tmp/saved-story.json', 'utf8'));
+          story.status = 'published';
+          fs.writeFileSync('/tmp/published-story.json', JSON.stringify(story));
+          NODE
+
+          curl --fail --silent -b /tmp/bq-cookies.txt \
+            -H 'content-type: application/json' \
+            --data-binary @/tmp/published-story.json \
+            http://127.0.0.1:8010/admin/api/stories | grep -q '"status":"published"'
+
+          curl --fail --silent -b /tmp/bq-cookies.txt \
+            -X DELETE http://127.0.0.1:8010/admin/api/stories/$STORY_ID | grep -q '"ok":true'
