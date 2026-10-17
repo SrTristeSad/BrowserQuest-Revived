@@ -42,9 +42,9 @@ function playerFor(runtime, state) {
         sentMessages: [],
         send: function(message) { this.sentMessages.push(message); },
         queueStoryOperation: function(operation) {
-            var run = this.storyOperationChain.catch(function() { return null; }).then(operation), self = this;
+            var run = this.storyOperationChain.catch(function() { return null; }).then(operation);
             this.storyOperationChain = run.catch(function() { return null; });
-            return run.then(function(result) { return result; });
+            return run;
         }
     };
 }
@@ -76,7 +76,9 @@ async function main() {
         npc = {id: 700, type: 'npc', editorData: {id: 'guide'}},
         player = playerFor(runtime, state),
         result = await StoryCompletionDialogue.queueMissionCompletion(player, npc),
-        source = fs.readFileSync(path.join(__dirname, '..', 'server', 'story', 'completion-dialogue.js'), 'utf8');
+        source = fs.readFileSync(path.join(__dirname, '..', 'server', 'story', 'completion-dialogue.js'), 'utf8'),
+        upsertIndex,
+        resolveIndex;
 
     assert.strictEqual(result.completed, true);
     assert.strictEqual(result.result.nextMissionId, 'two');
@@ -104,8 +106,10 @@ async function main() {
     assert.strictEqual(player.storyState[0].activeMissionId, 'two');
     assert.strictEqual(player.sentMessages.length, 1, 'only completion dialogue is sent when next intro is empty');
 
-    assert.ok(source.indexOf('resolveNextMissionIntro(completion)') !== -1);
-    assert.ok(source.indexOf('MissionService.upsertStoryState') < source.indexOf('resolveNextMissionIntro(completion)'), 'live story state must advance before next intro is emitted');
+    upsertIndex = source.indexOf('player.storyState = MissionService.upsertStoryState');
+    resolveIndex = source.indexOf('nextLines = resolveNextMissionIntro(completion);');
+    assert.ok(resolveIndex !== -1, 'completion flow must resolve the next mission intro');
+    assert.ok(upsertIndex !== -1 && upsertIndex < resolveIndex, 'live story state must advance before next intro is emitted');
     assert.strictEqual(source.indexOf('startMission('), -1, 'automatic next intro must never start/save the mission a second time');
 
     console.log('Next mission intro dialogue smoke test passed.');
