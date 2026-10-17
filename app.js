@@ -6,11 +6,14 @@ var http = require('http'),
     fs = require('fs'),
     path = require('path'),
     crypto = require('crypto'),
-    gameMain = require('./server/js/main');
+    gameMain = require('./server/js/main'),
+    AdminAuth = require('./server/admin/auth'),
+    AdminHttp = require('./server/admin/http');
 
 var root = __dirname,
     configDir = process.env.BROWSERQUEST_CONFIG_DIR || path.join(root, 'var', 'config'),
     installedConfigPath = path.join(configDir, 'browserquest.json'),
+    adminConfigPath = path.join(configDir, 'admin.json'),
     setupTokenPath = path.join(configDir, 'setup-token.txt'),
     defaultConfigPath = path.join(root, 'server', 'config.json'),
     host = process.env.HOST || '127.0.0.1',
@@ -70,11 +73,17 @@ function redirect(response, location) {
 
 function readRequestJson(request, callback) {
     var chunks = [],
-        size = 0;
+        size = 0,
+        finished = false;
 
     request.on('data', function(chunk) {
+        if(finished) {
+            return;
+        }
         size += chunk.length;
         if(size > 64 * 1024) {
+            finished = true;
+            callback(new Error('Payload too large'));
             request.destroy();
             return;
         }
@@ -82,6 +91,10 @@ function readRequestJson(request, callback) {
     });
 
     request.on('end', function() {
+        if(finished) {
+            return;
+        }
+        finished = true;
         try {
             callback(null, JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
         } catch(error) {
@@ -97,27 +110,32 @@ function setupPage() {
         '<title>BrowserQuest Revived - Instalação</title>' +
         '<style>' +
         '*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#efe3c2;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#332819;padding:24px}' +
-        '.card{width:min(680px,100%);background:#fffaf0;border:4px solid #49351e;box-shadow:0 12px 0 #c8ab72;padding:28px;border-radius:12px}' +
+        '.card{width:min(720px,100%);background:#fffaf0;border:4px solid #49351e;box-shadow:0 12px 0 #c8ab72;padding:28px;border-radius:12px}' +
         'h1{margin:0 0 6px;font-size:30px}.sub{margin:0 0 24px;color:#6e5a3c}.badge{display:inline-block;background:#49351e;color:#fff7df;padding:5px 9px;border-radius:6px;font-size:12px;font-weight:800;letter-spacing:.06em}' +
         '.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field{margin-top:16px}.field.full{grid-column:1/-1}label{display:block;font-weight:800;margin-bottom:7px}' +
         'input,select{width:100%;border:2px solid #bda77b;background:#fff;padding:13px;border-radius:8px;font:inherit;outline:none}input:focus,select:focus{border-color:#6b4e2d}' +
+        'fieldset{border:1px solid #cfba8c;border-radius:9px;margin:20px 0 0;padding:8px 16px 16px}legend{font-weight:900;padding:0 6px}' +
         'button{margin-top:22px;width:100%;border:0;border-radius:8px;background:#704a24;color:white;padding:14px 18px;font-weight:900;font-size:16px;cursor:pointer}button:disabled{opacity:.55;cursor:wait}' +
         '.note{margin-top:18px;padding:12px 14px;background:#f5e8c8;border-radius:8px;font-size:13px}.result{margin-top:16px;min-height:24px;font-weight:700}.ok{color:#20743a}.err{color:#aa2c22}' +
         '@media(max-width:560px){.grid{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:20px}h1{font-size:25px}}' +
         '</style></head><body><main class="card">' +
         '<span class="badge">PRIMEIRA INSTALAÇÃO</span><h1>BrowserQuest Revived</h1>' +
-        '<p class="sub">Configuração rápida para aaPanel. Nada de Docker, banco de dados ou Redis.</p>' +
+        '<p class="sub">Configuração rápida para aaPanel. O jogo, WebSocket, instalador e painel rodam no mesmo Projeto Node.js.</p>' +
         '<form id="setup"><div class="grid">' +
-        '<div class="field full"><label for="code">Código de instalação</label><input id="code" name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Veja em Projeto Node.js → Logs" required></div>' +
-        '<div class="field"><label for="worlds">Mundos</label><input id="worlds" name="worlds" type="number" min="1" max="20" value="5" required></div>' +
-        '<div class="field"><label for="players">Jogadores por mundo</label><input id="players" name="players" type="number" min="1" max="1000" value="200" required></div>' +
-        '</div><button id="install" type="submit">Instalar e iniciar o jogo</button></form>' +
-        '<div class="note">O código aparece nos logs como <strong>CÓDIGO DE INSTALAÇÃO: 123456</strong>. Depois da instalação ele é apagado.</div>' +
+        '<div class="field full"><label for="code">Código de instalação</label><input id="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Veja em Projeto Node.js → Logs" required></div>' +
+        '<div class="field"><label for="worlds">Mundos</label><input id="worlds" type="number" min="1" max="20" value="5" required></div>' +
+        '<div class="field"><label for="players">Jogadores por mundo</label><input id="players" type="number" min="1" max="1000" value="200" required></div></div>' +
+        '<fieldset><legend>Conta do dono / administrador</legend><div class="grid">' +
+        '<div class="field full"><label for="adminUsername">Usuário administrativo</label><input id="adminUsername" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]+" value="admin" autocomplete="username" required></div>' +
+        '<div class="field"><label for="adminPassword">Senha</label><input id="adminPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></div>' +
+        '<div class="field"><label for="adminPasswordConfirm">Confirmar senha</label><input id="adminPasswordConfirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></div>' +
+        '</div></fieldset><button id="install" type="submit">Instalar e iniciar o jogo</button></form>' +
+        '<div class="note">O código aparece nos logs como <strong>CÓDIGO DE INSTALAÇÃO: 123456</strong>. A senha administrativa é armazenada somente como hash seguro.</div>' +
         '<div id="result" class="result" role="status"></div></main>' +
         '<script>' +
         'const form=document.getElementById("setup"),btn=document.getElementById("install"),out=document.getElementById("result");' +
-        'form.addEventListener("submit",async(e)=>{e.preventDefault();btn.disabled=true;out.className="result";out.textContent="Configurando...";' +
-        'try{const r=await fetch("/setup/install",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:document.getElementById("code").value,worlds:Number(document.getElementById("worlds").value),players:Number(document.getElementById("players").value)})});' +
+        'form.addEventListener("submit",async(e)=>{e.preventDefault();const p=document.getElementById("adminPassword").value,pc=document.getElementById("adminPasswordConfirm").value;if(p!==pc){out.className="result err";out.textContent="As senhas não conferem.";return}btn.disabled=true;out.className="result";out.textContent="Configurando...";' +
+        'try{const r=await fetch("/setup/install",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:document.getElementById("code").value,worlds:Number(document.getElementById("worlds").value),players:Number(document.getElementById("players").value),adminUsername:document.getElementById("adminUsername").value,adminPassword:p,adminPasswordConfirm:pc})});' +
         'const d=await r.json();if(!r.ok)throw new Error(d.error||"Falha na instalação");out.className="result ok";out.textContent="Instalação concluída. Abrindo o jogo...";setTimeout(()=>location.href="/",1800)}' +
         'catch(err){out.className="result err";out.textContent=err.message;btn.disabled=false}});' +
         '</script></body></html>';
@@ -127,10 +145,12 @@ function startGame(config) {
     config = Object.assign({}, config, {
         port: port,
         host: host,
-        serve_client: true
+        serve_client: true,
+        http_handler: AdminHttp.createAdminHandler({configDir: configDir})
     });
 
     console.log('[BrowserQuest] Instalação encontrada. Iniciando jogo...');
+    console.log('[BrowserQuest] Painel administrativo: /admin');
     gameMain.start(config);
 }
 
@@ -175,6 +195,8 @@ function startInstaller() {
                 var defaults,
                     worlds,
                     players,
+                    adminUsername,
+                    adminPassword,
                     config;
 
                 if(error) {
@@ -189,12 +211,27 @@ function startInstaller() {
 
                 worlds = Number(body.worlds);
                 players = Number(body.players);
+                adminUsername = String(body.adminUsername || '').trim();
+                adminPassword = String(body.adminPassword || '');
+
                 if(!Number.isInteger(worlds) || worlds < 1 || worlds > 20) {
                     sendJson(response, 400, {error: 'Mundos deve ficar entre 1 e 20.'});
                     return;
                 }
                 if(!Number.isInteger(players) || players < 1 || players > 1000) {
                     sendJson(response, 400, {error: 'Jogadores por mundo deve ficar entre 1 e 1000.'});
+                    return;
+                }
+                if(!/^[A-Za-z0-9_-]{3,32}$/.test(adminUsername)) {
+                    sendJson(response, 400, {error: 'Usuário administrativo inválido.'});
+                    return;
+                }
+                if(adminPassword.length < 10 || adminPassword.length > 128) {
+                    sendJson(response, 400, {error: 'A senha administrativa precisa ter entre 10 e 128 caracteres.'});
+                    return;
+                }
+                if(adminPassword !== String(body.adminPasswordConfirm || '')) {
+                    sendJson(response, 400, {error: 'As senhas administrativas não conferem.'});
                     return;
                 }
 
@@ -210,18 +247,26 @@ function startInstaller() {
                     nb_worlds: worlds,
                     nb_players_per_world: players,
                     metrics_enabled: false,
-                    serve_client: true
+                    serve_client: true,
+                    access_mode: 'mixed'
                 });
 
                 ensureConfigDir();
                 writePrivateJson(installedConfigPath, config);
+                writePrivateJson(adminConfigPath, {
+                    username: adminUsername,
+                    passwordHash: AdminAuth.hashPassword(adminPassword),
+                    role: 'owner',
+                    createdAt: new Date().toISOString()
+                });
+
                 try {
                     fs.unlinkSync(setupTokenPath);
                 } catch(unlinkError) {
                     // Token may already be absent; installation is still valid.
                 }
 
-                sendJson(response, 200, {ok: true});
+                sendJson(response, 200, {ok: true, adminPath: '/admin'});
                 setTimeout(function() {
                     server.close(function() {
                         startGame(config);
@@ -241,8 +286,10 @@ function startInstaller() {
 
 ensureConfigDir();
 
-var installedConfig = readJson(installedConfigPath);
-if(installedConfig) {
+var installedConfig = readJson(installedConfigPath),
+    adminConfig = readJson(adminConfigPath);
+
+if(installedConfig && adminConfig) {
     try {
         fs.unlinkSync(setupTokenPath);
     } catch(error) {
