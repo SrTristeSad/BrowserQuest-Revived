@@ -4,7 +4,12 @@ var assert = require('assert'),
     pg = require('pg'),
     Infrastructure = require('../server/storage/infrastructure'),
     Migrations = require('../server/storage/migrations'),
-    PlayerAuth = require('../server/auth/player-auth').PlayerAuth;
+    PlayerAuth = require('../server/auth/player-auth').PlayerAuth,
+    AdminAuth = require('../server/admin/auth');
+
+function sleep(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
 
 async function main() {
     var postgres = {
@@ -88,6 +93,30 @@ async function main() {
         context = await auth.authorizeConnection({headers: {}});
         assert.strictEqual(context.allowed, true);
         assert.strictEqual(context.type, 'guest');
+
+        // Sessions are disposable: clearing Redis removes the login but never the account/character.
+        await services.postgres.query("UPDATE settings SET value='\"mixed\"'::jsonb WHERE key='access_mode'");
+        logged = await auth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
+        await services.redis.flushDb();
+        assert.strictEqual(await auth.getSessionByToken(logged.token, false), null);
+        var persisted = await services.postgres.query("SELECT u.username,c.name FROM users u JOIN characters c ON c.user_id=u.id WHERE u.username='alice_auth_test'");
+        assert.strictEqual(persisted.rowCount, 1);
+        assert.strictEqual(persisted.rows[0].name, 'Hero Alice');
+        logged = await auth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
+        assert.ok(logged.token);
+
+        // Explicit short TTL test for player sessions.
+        var shortAuth = new PlayerAuth({services: services, accessMode: 'mixed', sessionTtlSeconds: 1});
+        var shortSession = await shortAuth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
+        await sleep(1200);
+        assert.strictEqual(await shortAuth.getSessionByToken(shortSession.token, false), null);
+
+        // Admin sessions use Redis too and honor TTL.
+        var adminSessions = AdminAuth.createRedisSessionManager(services.redis, {ttlSeconds: 1});
+        var adminToken = await adminSessions.create('owner_test', 'owner', owner.id);
+        assert.strictEqual((await adminSessions.get(adminToken)).username, 'owner_test');
+        await sleep(1200);
+        assert.strictEqual(await adminSessions.get(adminToken), null);
     } finally {
         await services.postgres.query("UPDATE settings SET value='\"mixed\"'::jsonb WHERE key='access_mode'");
         await services.postgres.query("DELETE FROM users WHERE username='alice_auth_test'");
@@ -95,7 +124,7 @@ async function main() {
     }
 
     await services.close();
-    console.log('Live PostgreSQL/Redis/player-auth smoke tests passed.');
+    console.log('Live PostgreSQL/Redis/player-auth/admin-session smoke tests passed.');
 }
 
 main().catch(function(error) {
