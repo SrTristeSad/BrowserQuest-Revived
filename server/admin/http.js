@@ -242,6 +242,82 @@ function createAdminHandler(options) {
         return {accessMode: accessMode, registrationEnabled: registrationEnabled};
     }
 
+    function getServerCapacitySettings() {
+        var configured = safeRead(gameConfigPath) || {}, active = gameSnapshot(),
+            worlds = Number(configured.nb_worlds || active.worldCount || 1),
+            playersPerWorld = Number(configured.nb_players_per_world || active.maxPlayersPerWorld || 1),
+            activeWorlds = Number(active.worldCount || worlds),
+            activePlayersPerWorld = Number(active.maxPlayersPerWorld || playersPerWorld);
+        return {
+            configured: {worlds: worlds, playersPerWorld: playersPerWorld},
+            active: {worlds: activeWorlds, playersPerWorld: activePlayersPerWorld},
+            restartRequired: worlds !== activeWorlds || playersPerWorld !== activePlayersPerWorld
+        };
+    }
+
+    async function saveServerCapacitySettings(body, session, request) {
+        var worlds = Number(body.worlds), playersPerWorld = Number(body.playersPerWorld);
+        if(!Number.isInteger(worlds) || worlds < 1 || worlds > 20) {
+            var invalidWorlds = new Error('Mundos deve ficar entre 1 e 20.');
+            invalidWorlds.statusCode = 400;
+            throw invalidWorlds;
+        }
+        if(!Number.isInteger(playersPerWorld) || playersPerWorld < 1 || playersPerWorld > 1000) {
+            var invalidPlayers = new Error('Jogadores por mundo deve ficar entre 1 e 1000.');
+            invalidPlayers.statusCode = 400;
+            throw invalidPlayers;
+        }
+
+        var gameConfig = safeRead(gameConfigPath);
+        if(!gameConfig) {
+            var missing = new Error('Configuração instalada do jogo não foi encontrada.');
+            missing.statusCode = 409;
+            throw missing;
+        }
+
+        var previousConfig = JSON.parse(JSON.stringify(gameConfig)), previous = {
+                worlds: Number(gameConfig.nb_worlds || 0),
+                playersPerWorld: Number(gameConfig.nb_players_per_world || 0)
+            },
+            active = gameSnapshot(), client = null, fileWritten = false;
+
+        try {
+            if(services && services.postgres) {
+                client = await services.postgres.connect();
+                await client.query('BEGIN');
+                await client.query("INSERT INTO settings(key,value) VALUES('world_count',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()", [JSON.stringify(worlds)]);
+                await client.query("INSERT INTO settings(key,value) VALUES('players_per_world',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()", [JSON.stringify(playersPerWorld)]);
+            }
+
+            gameConfig.nb_worlds = worlds;
+            gameConfig.nb_players_per_world = playersPerWorld;
+            writeJsonAtomic(gameConfigPath, gameConfig);
+            fileWritten = true;
+            if(client) { await client.query('COMMIT'); }
+        } catch(error) {
+            if(client) { try { await client.query('ROLLBACK'); } catch(ignoreRollback) {} }
+            if(fileWritten) {
+                try { writeJsonAtomic(gameConfigPath, previousConfig); }
+                catch(restoreError) { console.error('[BrowserQuest] Falha ao restaurar configuração após erro:', restoreError.message); }
+            }
+            throw error;
+        } finally {
+            if(client) { client.release(); }
+        }
+
+        var restartRequired = Number(active.worldCount || 0) !== worlds || Number(active.maxPlayersPerWorld || 0) !== playersPerWorld;
+        await audit(session, 'settings.server_capacity.update', 'server_capacity', {
+            previous: previous,
+            configured: {worlds: worlds, playersPerWorld: playersPerWorld},
+            restartRequired: restartRequired
+        }, request);
+        return {
+            configured: {worlds: worlds, playersPerWorld: playersPerWorld},
+            active: {worlds: Number(active.worldCount || 0), playersPerWorld: Number(active.maxPlayersPerWorld || 0)},
+            restartRequired: restartRequired
+        };
+    }
+
     function gameSnapshot() {
         var serverRuntime = runtime && runtime.server && runtime.server.adminRuntime;
         if(serverRuntime && typeof serverRuntime.getSnapshot === 'function') {
@@ -695,6 +771,22 @@ function createAdminHandler(options) {
                 delivered: announcementDelivered
             }, request);
             json(response, 200, {ok: true, message: announcementMessage, delivered: announcementDelivered});
+            return;
+        }
+
+        if(pathname === '/admin/api/settings/server' && request.method === 'GET') {
+            if(!await requireAdmin(request, response, true)) { return; }
+            json(response, 200, getServerCapacitySettings());
+            return;
+        }
+
+        if(pathname === '/admin/api/settings/server' && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+            try { json(response, 200, await saveServerCapacitySettings(body, session, request)); }
+            catch(error) { json(response, error.statusCode || 500, {error: error.message}); }
             return;
         }
 
