@@ -1,4 +1,5 @@
 name: Finalize Brain System v1
+# one-time finalizer; this file removes itself after success
 
 on:
   push:
