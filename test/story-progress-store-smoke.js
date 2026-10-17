@@ -100,6 +100,9 @@ async function main() {
     assert.ok(mainServer.indexOf("connection.storyProgress = context.type === 'account' ? (config.story_progress || null) : null") !== -1, 'authenticated account connection must receive story progress store');
     assert.ok(mainServer.indexOf('connection.storyProgress = null;') !== -1, 'guest connection must not receive persistent story progress');
     assert.ok(player.indexOf('this.storyProgress = connection.storyProgress || null;') !== -1, 'Player must retain story progress store reference');
+    assert.ok(player.indexOf('this.storyState = [];') !== -1, 'Player story state must default to an empty list');
+    assert.ok(player.indexOf('this.storyState = await this.storyProgress.list(this.characterId);') !== -1, 'authenticated HELLO must load story progress for the character');
+    assert.ok(player.indexOf("Falha ao carregar progresso de história do personagem") !== -1, 'story progress load failures must be logged without breaking the player');
 
     console.log('Story progress store smoke test passed.');
 }
