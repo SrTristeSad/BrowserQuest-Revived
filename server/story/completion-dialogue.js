@@ -1,6 +1,8 @@
 'use strict';
 
-var Utils = require('../js/utils'),
+var MissionCompletion = require('./mission-completion'),
+    MissionService = require('./mission-service'),
+    Utils = require('../js/utils'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress,
     Types = require('../../shared/js/gametypes');
 
@@ -16,12 +18,10 @@ function resolveGiverProfileId(npc) {
 }
 
 function normalizeObjectiveAmount(objective) {
-    var amount = Number(objective && objective.amount || 1);
-    if(!Number.isFinite(amount) || amount < 1) { amount = 1; }
-    return Math.min(Math.floor(amount), 100000);
+    return MissionCompletion.normalizeObjectiveAmount(objective);
 }
 
-function findCompletionDialogue(options) {
+function findCompletableMission(options) {
     options = options || {};
 
     var runtime = options.runtime,
@@ -41,8 +41,7 @@ function findCompletionDialogue(options) {
             objective,
             amount,
             currentProgress,
-            giverNpc,
-            dialogue;
+            giverNpc;
 
         if(!current.storyId || !current.activeMissionId) { return; }
         missionEntry = runtime.getMission(current.storyId, current.activeMissionId);
@@ -57,13 +56,10 @@ function findCompletionDialogue(options) {
         currentProgress = Math.max(0, Math.floor(Number(current.objectiveProgress) || 0));
         if(currentProgress < amount) { return; }
 
-        dialogue = Array.isArray(mission.completionDialogue) ? mission.completionDialogue : [];
-        if(!dialogue.length) { return; }
-
         candidates.push({
             mission: missionEntry,
             state: current,
-            dialogue: dialogue,
+            dialogue: Array.isArray(mission.completionDialogue) ? mission.completionDialogue : [],
             objectiveAmount: amount
         });
     });
@@ -75,6 +71,24 @@ function findCompletionDialogue(options) {
     });
 
     return candidates[0] || null;
+}
+
+function findCompletionDialogue(options) {
+    var result = findCompletableMission(options),
+        dialogue;
+
+    if(!result) { return null; }
+    dialogue = Array.isArray(result.dialogue) ? result.dialogue : [];
+    if(!dialogue.length) { return null; }
+    return result;
+}
+
+function sanitizeDialogue(dialogue) {
+    return (Array.isArray(dialogue) ? dialogue : []).slice(0, 100).map(function(line) {
+        return Utils.sanitize(line && line.text || '').substr(0, 2000);
+    }).filter(function(text) {
+        return text;
+    });
 }
 
 function queueCompletionDialogue(player, npc) {
@@ -97,12 +111,7 @@ function queueCompletionDialogue(player, npc) {
             return {sent: false, result: null, lines: []};
         }
 
-        lines = result.dialogue.slice(0, 100).map(function(line) {
-            return Utils.sanitize(line && line.text || '').substr(0, 2000);
-        }).filter(function(text) {
-            return text;
-        });
-
+        lines = sanitizeDialogue(result.dialogue);
         if(!lines.length) {
             return {sent: false, result: result, lines: []};
         }
@@ -112,9 +121,84 @@ function queueCompletionDialogue(player, npc) {
     });
 }
 
+function queueMissionCompletion(player, npc) {
+    var giverProfileId = resolveGiverProfileId(npc),
+        sourceNpcId = npc && npc.id;
+
+    if(!player || player.type !== 'player' || !giverProfileId || sourceNpcId == null || typeof player.queueStoryOperation !== 'function') {
+        return Promise.resolve({completed: false, sent: false, result: null, lines: []});
+    }
+
+    return player.queueStoryOperation(async function() {
+        var candidate = findCompletableMission({
+                runtime: player.storyRuntime,
+                giverProfileId: giverProfileId,
+                states: player.storyState
+            }),
+            completion,
+            lines;
+
+        if(!candidate) {
+            return {completed: false, sent: false, result: null, lines: []};
+        }
+
+        completion = await MissionCompletion.completeMission({
+            runtime: player.storyRuntime,
+            progressStore: player.storyProgress,
+            characterId: player.characterId,
+            storyId: candidate.state.storyId,
+            missionId: candidate.state.activeMissionId,
+            giverProfileId: giverProfileId,
+            states: player.storyState
+        });
+
+        if(!completion.changed) {
+            return {completed: false, sent: false, result: completion, lines: []};
+        }
+
+        player.storyState = MissionService.upsertStoryState(player.storyState, completion.state);
+        lines = sanitizeDialogue(candidate.dialogue);
+        if(lines.length) {
+            player.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, lines]);
+        }
+
+        return {
+            completed: true,
+            sent: lines.length > 0,
+            result: completion,
+            lines: lines
+        };
+    });
+}
+
+function isNpcLinkedMissionCompleted(player, npc) {
+    var storyId = npc && npc.editorData ? String(npc.editorData.storyId || '').trim() : '',
+        missionId = npc && npc.editorData ? String(npc.editorData.missionId || '').trim() : '',
+        state;
+
+    if(!player || !storyId || !missionId) { return false; }
+    state = MissionService.findStoryState(player.storyState, storyId);
+    if(!state) { return false; }
+    state = normalizeStoryProgress(state);
+    return state.completedMissionIds.indexOf(missionId) >= 0;
+}
+
+function invokeOriginalNpcInteraction(player, original, npc) {
+    var previousNpcId;
+
+    if(!original) { return; }
+    previousNpcId = player.storyInteractionNpcId;
+    player.storyInteractionNpcId = npc && npc.id != null ? npc.id : previousNpcId;
+    try {
+        original(npc);
+    } finally {
+        player.storyInteractionNpcId = previousNpcId;
+    }
+}
+
 function logProgressError(player, error) {
     if(typeof log !== 'undefined' && log && typeof log.error === 'function') {
-        log.error('Story completion dialogue failed for ' + ((player && (player.name || player.id)) || 'player') + ': ' + (error && error.message ? error.message : error));
+        log.error('Story mission completion failed for ' + ((player && (player.name || player.id)) || 'player') + ': ' + (error && error.message ? error.message : error));
     }
 }
 
@@ -124,10 +208,14 @@ function wrapNpcInteraction(player) {
     if(!player || player.__storyCompletionDialogueWrapped || typeof player.onNpcInteract !== 'function') { return false; }
     original = player.npcinteract_callback;
     player.onNpcInteract(function(npc) {
-        queueCompletionDialogue(player, npc).catch(function(error) {
+        queueMissionCompletion(player, npc).then(function(result) {
+            if(result && result.completed) { return; }
+            if(isNpcLinkedMissionCompleted(player, npc)) { return; }
+            invokeOriginalNpcInteraction(player, original, npc);
+        }).catch(function(error) {
             logProgressError(player, error);
+            invokeOriginalNpcInteraction(player, original, npc);
         });
-        if(original) { original(npc); }
     });
     player.__storyCompletionDialogueWrapped = true;
     return true;
@@ -155,7 +243,11 @@ function attach(WorldServer) {
 
 exports.resolveGiverProfileId = resolveGiverProfileId;
 exports.normalizeObjectiveAmount = normalizeObjectiveAmount;
+exports.findCompletableMission = findCompletableMission;
 exports.findCompletionDialogue = findCompletionDialogue;
+exports.sanitizeDialogue = sanitizeDialogue;
 exports.queueCompletionDialogue = queueCompletionDialogue;
+exports.queueMissionCompletion = queueMissionCompletion;
+exports.isNpcLinkedMissionCompleted = isNpcLinkedMissionCompleted;
 exports.wrapNpcInteraction = wrapNpcInteraction;
 exports.attach = attach;
