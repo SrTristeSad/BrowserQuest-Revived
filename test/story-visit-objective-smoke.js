@@ -213,7 +213,7 @@ async function main() {
     assert.ok(visitSource.indexOf('this.__storyVisitPreviousLocationIds = resolveLocationIds') !== -1, 'previous authoritative position areas must be captured before setPosition');
     assert.ok(visitSource.indexOf('player.onMove(function(x, y)') !== -1, 'only the validated MOVE callback path should trigger visit evaluation');
     assert.ok(killSource.indexOf('StoryVisitProgress.attach(WorldServer);') !== -1, 'game startup story hooks must attach visit progress before worlds are created');
-    assert.ok(worldStoreSource.indexOf('published.checkpoints = clone(map.checkpoints);') !== -1, 'World Editor publication must preserve checkpoint identities');
+    assert.ok(worldStoreSource.indexOf('published.checkpoints=clone(map.checkpoints);') !== -1, 'World Editor publication must preserve checkpoint identities');
 
     console.log('Story visit objective smoke test passed.');
 }
