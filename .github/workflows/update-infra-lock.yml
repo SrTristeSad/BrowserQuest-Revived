@@ -1,0 +1,36 @@
+name: Update infrastructure lockfile
+
+on:
+  push:
+    branches: [pgsql-redis-accounts]
+
+permissions:
+  contents: write
+
+jobs:
+  update-lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Refresh package lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install and run checks
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+      - name: Commit package lock
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already current"
+          else
+            git commit -m "chore: refresh lockfile for PostgreSQL and Redis"
+            git push
+          fi
