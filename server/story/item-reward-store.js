@@ -483,7 +483,10 @@ StoryItemRewardStore.prototype.saveCompletionWithRewards = async function(charac
 };
 
 StoryItemRewardStore.prototype.saveCompletionWithItemRewards = function(characterId, storyId, missionId, storyState, rewards) {
-    return this.saveCompletionWithRewards(characterId, storyId, missionId, storyState, rewards);
+    var itemOnly = (Array.isArray(rewards) ? rewards : []).filter(function(reward) {
+        return reward && reward.type === 'item';
+    });
+    return this.saveCompletionWithRewards(characterId, storyId, missionId, storyState, itemOnly);
 };
 
 StoryItemRewardStore.prototype.listPending = async function(characterId) {
