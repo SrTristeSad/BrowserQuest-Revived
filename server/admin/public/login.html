@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BrowserQuest Revived - Administração</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#17130d;color:#f7ecd2;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:24px}.card{width:min(430px,100%);background:#282016;border:1px solid #5a4630;border-radius:14px;padding:28px;box-shadow:0 24px 60px #0008}.brand{font-weight:900;font-size:26px}.sub{color:#bba98b;margin:6px 0 22px}.field{margin:14px 0}label{display:block;font-weight:800;margin-bottom:7px}input{width:100%;border:1px solid #6e5639;background:#16110c;color:#fff4d7;border-radius:8px;padding:13px;font:inherit;outline:none}input:focus{border-color:#d6a757}button{width:100%;margin-top:10px;border:0;border-radius:8px;background:#d49131;color:#1e1409;padding:13px;font-weight:900;font-size:16px;cursor:pointer}.error{min-height:22px;margin-top:14px;color:#ff897d;font-weight:700}.tag{display:inline-block;font-size:11px;font-weight:900;letter-spacing:.08em;background:#4a3722;color:#e8c98e;padding:5px 8px;border-radius:5px;margin-bottom:12px}</style>
+</head>
+<body>
+<main class="card">
+<div class="tag">PAINEL ADMINISTRATIVO</div>
+<div class="brand">BrowserQuest Revived</div>
+<p class="sub">Entre para gerenciar o servidor e criar histórias.</p>
+<form id="login">
+<div class="field"><label for="username">Usuário</label><input id="username" autocomplete="username" required></div>
+<div class="field"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" required></div>
+<button type="submit">Entrar no painel</button>
+<div id="error" class="error"></div>
+</form>
+</main>
+<script>
+const form=document.getElementById('login'),error=document.getElementById('error');
+form.addEventListener('submit',async e=>{e.preventDefault();error.textContent='';const button=form.querySelector('button');button.disabled=true;try{const response=await fetch('/admin/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha no login');location.href='/admin/story-editor';}catch(err){error.textContent=err.message;button.disabled=false;}});
+</script>
+</body>
+</html>
