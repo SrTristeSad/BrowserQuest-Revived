@@ -22,6 +22,16 @@ var migrations = [
             "CREATE UNIQUE INDEX IF NOT EXISTS characters_name_ci_unique_v1 ON characters(LOWER(name))",
             "INSERT INTO settings(key, value) VALUES('registration_enabled', 'true'::jsonb) ON CONFLICT(key) DO NOTHING"
         ]
+    },
+    {
+        id: '003_player_persistence',
+        sql: [
+            "ALTER TABLE characters ADD COLUMN IF NOT EXISTS last_checkpoint_id INTEGER NULL",
+            "ALTER TABLE characters ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NULL",
+            "CREATE TABLE IF NOT EXISTS character_progress_flags (character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE, key TEXT NOT NULL, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(character_id, key))",
+            "CREATE INDEX IF NOT EXISTS character_progress_flags_updated_idx ON character_progress_flags(updated_at DESC)",
+            "CREATE TABLE IF NOT EXISTS character_achievements (character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE, achievement_id INTEGER NOT NULL, unlocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(character_id, achievement_id))"
+        ]
     }
 ];
 

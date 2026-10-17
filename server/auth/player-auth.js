@@ -58,6 +58,17 @@ function authError(message, statusCode, code) {
     return error;
 }
 
+function characterPayload(character) {
+    return {
+        id: Number(character.id),
+        name: character.name,
+        weaponKind: Number(character.weapon_kind || Types.Entities.SWORD1),
+        armorKind: Number(character.armor_kind || Types.Entities.CLOTHARMOR),
+        image: character.image || null,
+        lastCheckpointId: character.last_checkpoint_id === null || character.last_checkpoint_id === undefined ? null : Number(character.last_checkpoint_id)
+    };
+}
+
 function PlayerAuth(options) {
     options = options || {};
     this.services = options.services;
@@ -120,7 +131,7 @@ PlayerAuth.prototype.register = async function(input) {
         );
         user = userResult.rows[0];
         character = (await client.query(
-            'INSERT INTO characters(user_id, name, weapon_kind, armor_kind) VALUES($1,$2,$3,$4) RETURNING id, user_id, name, weapon_kind, armor_kind, image',
+            'INSERT INTO characters(user_id, name, weapon_kind, armor_kind) VALUES($1,$2,$3,$4) RETURNING id, user_id, name, weapon_kind, armor_kind, image, last_checkpoint_id',
             [user.id, characterName, Types.Entities.SWORD1, Types.Entities.CLOTHARMOR]
         )).rows[0];
         await client.query('COMMIT');
@@ -143,7 +154,7 @@ PlayerAuth.prototype.register = async function(input) {
 PlayerAuth.prototype.login = async function(input) {
     var username = normalizeUsername(input.username), password = String(input.password || ''), result, row;
     result = await this.services.postgres.query(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.password_hash, u.role, u.status, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.image FROM users u LEFT JOIN characters c ON c.user_id=u.id WHERE u.username=$1 LIMIT 1",
+        "SELECT u.id AS user_id, u.username, u.display_name, u.password_hash, u.role, u.status, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.image, c.last_checkpoint_id FROM users u LEFT JOIN characters c ON c.user_id=u.id WHERE u.username=$1 LIMIT 1",
         [username]
     );
     row = result.rows[0];
@@ -176,7 +187,8 @@ PlayerAuth.prototype.login = async function(input) {
         name: row.character_name,
         weapon_kind: row.weapon_kind,
         armor_kind: row.armor_kind,
-        image: row.image
+        image: row.image,
+        last_checkpoint_id: row.last_checkpoint_id
     });
 };
 
@@ -196,13 +208,7 @@ PlayerAuth.prototype.createSession = async function(user, character) {
             displayName: user.display_name || user.username,
             role: user.role || 'player'
         },
-        character: {
-            id: Number(character.id),
-            name: character.name,
-            weaponKind: Number(character.weapon_kind || Types.Entities.SWORD1),
-            armorKind: Number(character.armor_kind || Types.Entities.CLOTHARMOR),
-            image: character.image || null
-        }
+        character: characterPayload(character)
     };
 };
 
@@ -216,7 +222,7 @@ PlayerAuth.prototype.getSessionByToken = async function(token, refresh) {
     catch(error) { await this.services.redis.del(key); return null; }
 
     result = await this.services.postgres.query(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.role, u.status, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.image FROM users u JOIN characters c ON c.user_id=u.id WHERE u.id=$1 AND c.id=$2 LIMIT 1",
+        "SELECT u.id AS user_id, u.username, u.display_name, u.role, u.status, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.image, c.last_checkpoint_id FROM users u JOIN characters c ON c.user_id=u.id WHERE u.id=$1 AND c.id=$2 LIMIT 1",
         [session.userId, session.characterId]
     );
     row = result.rows[0];
@@ -229,13 +235,14 @@ PlayerAuth.prototype.getSessionByToken = async function(token, refresh) {
     return {
         token: token,
         user: {id: Number(row.user_id), username: row.username, displayName: row.display_name, role: row.role},
-        character: {
-            id: Number(row.character_id),
+        character: characterPayload({
+            id: row.character_id,
             name: row.character_name,
-            weaponKind: Number(row.weapon_kind || Types.Entities.SWORD1),
-            armorKind: Number(row.armor_kind || Types.Entities.CLOTHARMOR),
-            image: row.image || null
-        }
+            weapon_kind: row.weapon_kind,
+            armor_kind: row.armor_kind,
+            image: row.image,
+            last_checkpoint_id: row.last_checkpoint_id
+        })
     };
 };
 
