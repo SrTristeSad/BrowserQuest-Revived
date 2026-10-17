@@ -15,6 +15,20 @@ function findStoryState(states, storyId) {
     }) || null;
 }
 
+function upsertStoryState(states, nextState) {
+    var result = Array.isArray(states) ? states.slice() : [],
+        normalized = normalizeStoryProgress(nextState),
+        index;
+
+    if(!normalized.storyId) { return result; }
+    index = result.findIndex(function(state) {
+        return state && state.storyId === normalized.storyId;
+    });
+    if(index >= 0) { result[index] = normalized; }
+    else { result.push(normalized); }
+    return result;
+}
+
 async function startMission(options) {
     options = options || {};
 
@@ -83,3 +97,4 @@ async function startMission(options) {
 
 exports.startMission = startMission;
 exports.findStoryState = findStoryState;
+exports.upsertStoryState = upsertStoryState;
