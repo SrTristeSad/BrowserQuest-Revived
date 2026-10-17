@@ -49,8 +49,8 @@ function normalizeBrain(brain, fallbackPreset) {
         enabled: brain.enabled !== false, preset:preset, mode:mode,
         thinkMs:int(brain.thinkMs,400,10000,1200), vision:int(brain.vision,1,50,7),
         wanderRadius:int(brain.wanderRadius,1,50,6), moveChance:Math.max(0,Math.min(1,moveChance)),
-        fleeFromMobs:brain.fleeFromMobs === true, fleeBelowHp:Math.max(0,Math.min(0.95,fleeBelowHp)),
-        aggressive:brain.aggressive === true, leash:int(brain.leash,2,100,10),
+        fleeFromMobs:typeof brain.fleeFromMobs === 'boolean' ? brain.fleeFromMobs : ['villager','merchant','companion'].indexOf(preset) >= 0, fleeBelowHp:Math.max(0,Math.min(0.95,fleeBelowHp)),
+        aggressive:typeof brain.aggressive === 'boolean' ? brain.aggressive : ['aggressive','coward','territorial'].indexOf(preset) >= 0, leash:int(brain.leash,2,100,10),
         followDistance:int(brain.followDistance,1,10,2), patrol:patrol
     };
 }

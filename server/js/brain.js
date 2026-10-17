@@ -208,6 +208,9 @@ Brain.prototype.start = function() {
     this.timer = setInterval(function() {
         self.tick();
     }, this.config.thinkMs + jitter);
+    if(this.timer && typeof this.timer.unref === 'function') {
+        this.timer.unref();
+    }
 };
 
 Brain.prototype.stop = function() {
@@ -277,6 +280,7 @@ Brain.prototype.tickMob = function() {
             this.memory.lastThreatId = player.id;
             this.memory.lastThreatAt = Date.now();
             this.memory.lastDecision = 'flee';
+            if(typeof this.world.clearMobAggroLink === 'function') { this.world.clearMobAggroLink(entity); }
             entity.clearTarget();
             if(this.stepAwayFrom(player)) {
                 return;
@@ -285,8 +289,12 @@ Brain.prototype.tickMob = function() {
     }
 
     if(distance(entity, this.home) > this.config.leash) {
+        if(typeof this.world.clearMobAggroLink === 'function') { this.world.clearMobAggroLink(entity); }
+        if(typeof this.world.clearMobHateLinks === 'function') { this.world.clearMobHateLinks(entity); }
         entity.clearTarget();
         if(typeof entity.forgetEveryone === 'function') {
+            entity.forgetEveryone();
+        } else if(entity.hatelist) {
             entity.hatelist = [];
         }
         this.memory.lastDecision = 'return-home';
