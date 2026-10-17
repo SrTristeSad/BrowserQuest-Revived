@@ -169,6 +169,16 @@ function normalizeCheckpointAreas(list, width, height) {
     return out;
 }
 
+function requireStartingCheckpoint(state, base) {
+    if(Array.isArray(base.checkpoints) && base.checkpoints.some(function(cp){return cp && cp.s === 1;}) &&
+       !state.map.checkpoints.some(function(cp){return cp.s === 1;})) {
+        var error = new Error('O mundo precisa manter pelo menos um checkpoint inicial.');
+        error.code = 'WORLD_START_CHECKPOINT_REQUIRED';
+        error.statusCode = 422;
+        throw error;
+    }
+}
+
 function normalizeDrops(list) {
     if(!Array.isArray(list)) { return []; }
     return list.slice(0, 20).map(function(drop) { return {kind:text(drop.kind,40),chance:int(drop.chance,0,100,0)}; })
@@ -263,6 +273,7 @@ WorldStore.prototype.normalize = function(state) {
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state=this.normalize(input);
+    requireStartingCheckpoint(state,this.base);
     state.revision=previous.revision+1; state.status='draft'; state.updatedAt=new Date().toISOString(); state.publishedAt=previous.publishedAt||null;
     atomicWrite(this.statePath,state); return state;
 };
@@ -293,6 +304,7 @@ WorldStore.prototype.buildClientMap = function(state) {
 };
 WorldStore.prototype.publish = function() {
     var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
+    requireStartingCheckpoint(state,this.base);
     if(!validation.ok){error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));error.code='WORLD_STORY_REFERENCE_VALIDATION';error.details=validation.errors;throw error;}
     publishedMap=this.buildServerMap(state); publishedClient=this.buildClientMap(state); stamp=new Date().toISOString().replace(/[:.]/g,'-');
     fs.mkdirSync(this.versionsDir,{recursive:true,mode:0o700});
