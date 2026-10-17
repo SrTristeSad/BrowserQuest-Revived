@@ -2,13 +2,17 @@
 
 var fs = require('fs'),
     path = require('path'),
-    crypto = require('crypto');
+    crypto = require('crypto'),
+    ReferenceValidator = require('./story-reference-validator');
 
 var OBJECTIVE_TYPES = ['talk', 'kill', 'collect', 'visit', 'interact', 'custom'],
     REWARD_TYPES = ['item', 'achievement', 'story_flag', 'custom'];
 
-function StoryStore(filepath) {
+function StoryStore(filepath, options) {
+    options = options || {};
     this.filepath = filepath;
+    this.worldStatePath = options.worldStatePath || path.join(path.dirname(filepath), 'world-editor.json');
+    this.storyRuntime = options.storyRuntime || null;
     fs.mkdirSync(path.dirname(filepath), {recursive: true, mode: 0o700});
     if(!fs.existsSync(filepath)) {
         this._write({version: 1, stories: []});
@@ -24,6 +28,14 @@ StoryStore.prototype._read = function() {
         return data;
     } catch(error) {
         throw new Error('Could not read story store: ' + error.message);
+    }
+};
+
+StoryStore.prototype._readWorldState = function() {
+    try {
+        return JSON.parse(fs.readFileSync(this.worldStatePath, 'utf8'));
+    } catch(error) {
+        return null;
     }
 };
 
@@ -66,11 +78,34 @@ StoryStore.prototype.getPublishedStories = function() {
     });
 };
 
+StoryStore.prototype.validateForPublication = function(story) {
+    var worldState = this._readWorldState(), result, error;
+    if(!worldState) {
+        error = new Error('Publique/configure o mundo no World Editor antes de publicar histórias.');
+        error.code = 'WORLD_EDITOR_STATE_REQUIRED';
+        throw error;
+    }
+    result = ReferenceValidator.validateStoryReferences(story, worldState, {storyRuntime: this.storyRuntime});
+    if(!result.ok) {
+        error = new Error('Referências inválidas: ' + result.errors.slice(0, 6).map(function(item) {
+            return item.path + ' — ' + item.message;
+        }).join(' | '));
+        error.code = 'STORY_REFERENCE_VALIDATION';
+        error.details = result.errors;
+        throw error;
+    }
+    return result;
+};
+
 StoryStore.prototype.save = function(input) {
     var data = this._read(),
         now = new Date().toISOString(),
         normalized = normalizeStory(input),
         index;
+
+    if(normalized.status === 'published') {
+        this.validateForPublication(normalized);
+    }
 
     index = data.stories.findIndex(function(story) {
         return story.id === normalized.id;
