@@ -136,7 +136,7 @@ module.exports = Map = cls.Class.extend({
 
     forEachAdjacentGroup: function(groupId, callback) {
         if(groupId) {
-            _.each(this.getAdjacentGroupPositions(groupId), function(position) {
+            _.each(this.getAdjacentGroupPositions(id), function(position) {
                 callback(position.x + '-' + position.y);
             });
         }
@@ -161,8 +161,17 @@ module.exports = Map = cls.Class.extend({
         var self = this;
         this.checkpoints = {};
         this.startingAreas = [];
-        _.each(cpList, function(cp) {
-            var checkpoint = new Checkpoint(cp.id, cp.x, cp.y, cp.w, cp.h);
+        _.each(cpList || [], function(cp) {
+            var width = cp.w !== undefined ? cp.w : cp.width,
+                height = cp.h !== undefined ? cp.h : cp.height,
+                checkpoint;
+            width = Number(width);
+            height = Number(height);
+            if(!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+                log.error('Ignoring invalid checkpoint ' + cp.id + ': missing valid dimensions.');
+                return;
+            }
+            checkpoint = new Checkpoint(cp.id, Number(cp.x), Number(cp.y), width, height);
             self.checkpoints[checkpoint.id] = checkpoint;
             if(cp.s === 1) { self.startingAreas.push(checkpoint); }
         });
