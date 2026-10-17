@@ -1,0 +1,33 @@
+name: Phase 3 Server Capacity Patch
+
+on:
+  push:
+    branches: [phase3-server-capacity-backend]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-server-capacity:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply server capacity patch
+        run: node scripts/phase3-server-capacity-patch.mjs
+      - name: Syntax check
+        run: node --check server/admin/http.js
+      - name: Commit server capacity backend
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+SrTristeSad@users.noreply.github.com"
+          git add server/admin/http.js
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "feat: add server capacity settings backend"
+            git push
+          fi
