@@ -8,7 +8,7 @@ define(['lib/class', 'lib/underscore.min', 'lib/stacktrace', 'util'], function()
     document.head.appendChild(css);
 
     function startClassicClient() {
-        require(["main"]);
+        require(['storyui', 'main']);
     }
 
     script.src = 'js/auth-ui.js';
