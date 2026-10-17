@@ -41,7 +41,9 @@ function runOptionalAuthSmoke() {
             cwd: process.cwd(),
             env: Object.assign({}, process.env, {
                 TEST_HTTP_URL: derivedHttpBase(),
-                TEST_WS_URL: target
+                TEST_WS_URL: target,
+                TEST_ADMIN_USERNAME: process.env.TEST_ADMIN_USERNAME || 'owner',
+                TEST_ADMIN_PASSWORD: process.env.TEST_ADMIN_PASSWORD || 'StrongPassword123!'
             }),
             stdio: 'inherit'
         });
