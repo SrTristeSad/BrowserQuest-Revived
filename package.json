@@ -1,6 +1,6 @@
 {
   "name": "browserquest-revived",
-  "version": "0.6.0",
+  "version": "0.5.0",
   "private": true,
   "description": "A modernized revival of Mozilla BrowserQuest that preserves the original game and visual design.",
   "license": "MPL-2.0",
