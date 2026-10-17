@@ -28,6 +28,7 @@ module.exports = Player = Character.extend({
         this.disconnectTimeout = null;
         this.accountUserId = null;
         this.characterId = null;
+        this.storyState = [];
         this.mutedUntil = 0;
         this.muteReason = '';
         
@@ -250,6 +251,14 @@ module.exports = Player = Character.extend({
             }
             this.accountUserId = auth.user ? auth.user.id : null;
             this.characterId = auth.character.id || null;
+            if(this.storyProgress && this.characterId) {
+                try {
+                    this.storyState = await this.storyProgress.list(this.characterId);
+                } catch(error) {
+                    this.storyState = [];
+                    log.error('Falha ao carregar progresso de história do personagem ' + this.characterId + ': ' + error.message);
+                }
+            }
             armor = Number(auth.character.armorKind);
             weapon = Number(auth.character.weaponKind);
 
