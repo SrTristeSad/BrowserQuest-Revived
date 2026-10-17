@@ -62,6 +62,7 @@ function normalizeStoryProgress(value, storyId) {
         version: 1,
         storyId: id,
         activeMissionId: cleanId(value.activeMissionId, 120),
+        pendingChoiceMissionId: cleanId(value.pendingChoiceMissionId, 120),
         objectiveProgress: clampProgress(value.objectiveProgress),
         completedMissionIds: normalizeStringList(value.completedMissionIds, 500),
         flags: normalizeFlags(value.flags),
