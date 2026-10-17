@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def replace_once(path, old, new, label):
@@ -7,6 +8,15 @@ def replace_once(path, old, new, label):
     if old not in text:
         raise SystemExit(f'anchor not found: {label}')
     p.write_text(text.replace(old, new, 1))
+
+
+def regex_once(path, pattern, replacement, label):
+    p = Path(path)
+    text = p.read_text()
+    out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    if count != 1:
+        raise SystemExit(f'regex anchor not found: {label}')
+    p.write_text(out)
 
 # Brain timers must not keep tests/process shutdown alive.
 replace_once(
@@ -38,11 +48,46 @@ replace_once(
     'world store preset defaults'
 )
 
-# Some original BrowserQuest NPCs only have idle_down. Movement must degrade gracefully instead of requesting missing animations.
-replace_once(
+# Some original BrowserQuest NPCs only have idle_down. Movement must degrade gracefully.
+animate_replacement = r'''        animate: function(animation, speed, count, onEndCount) {
+            var oriented = ['atk', 'walk', 'idle'],
+                o = this.orientation,
+                requested = animation,
+                direction;
+
+            if(!(this.currentAnimation && this.currentAnimation.name === "death")) {
+                this.flipSpriteX = false;
+                this.flipSpriteY = false;
+
+                if(_.indexOf(oriented, animation) >= 0) {
+                    direction = (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));
+                    animation += "_" + direction;
+                    this.flipSpriteX = (this.orientation === Types.Orientations.LEFT);
+                }
+
+                // Many legacy NPCs only provide idle_down. Keep movement functional
+                // using an available frame until a full walking spritesheet is supplied.
+                if(this.animations && !this.animations[animation]) {
+                    if(direction && this.animations["idle_" + direction]) {
+                        animation = "idle_" + direction;
+                    } else if(this.animations.idle_down) {
+                        animation = "idle_down";
+                    } else if(this.animations[requested]) {
+                        animation = requested;
+                    } else {
+                        animation = _.keys(this.animations)[0];
+                    }
+                }
+
+                this.setAnimation(animation, speed, count, onEndCount);
+            }
+        },
+
+        turnTo: function'''
+regex_once(
     'client/js/character.js',
-    '''    \tanimate: function(animation, speed, count, onEndCount) {\n    \t    var oriented = ['atk', 'walk', 'idle'];\n    \t        o = this.orientation;\n            \n            if(!(this.currentAnimation && this.currentAnimation.name === "death")) { // don't change animation if the character is dying\n            \tthis.flipSpriteX = false;\n        \t    this.flipSpriteY = false;\n    \t    \n        \t    if(_.indexOf(oriented, animation) >= 0) {\n        \t        animation += "_" + (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));\n        \t        this.flipSpriteX = (this.orientation === Types.Orientations.LEFT) ? true : false;\n        \t    }\n\n        \t\tthis.setAnimation(animation, speed, count, onEndCount);\n        \t}\n    \t},''',
-    '''    \tanimate: function(animation, speed, count, onEndCount) {\n    \t    var oriented = ['atk', 'walk', 'idle'],\n                o = this.orientation,\n                requested = animation,\n                direction;\n            \n            if(!(this.currentAnimation && this.currentAnimation.name === "death")) { // don't change animation if the character is dying\n            \tthis.flipSpriteX = false;\n        \t    this.flipSpriteY = false;\n    \t    \n        \t    if(_.indexOf(oriented, animation) >= 0) {\n                    direction = (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));\n        \t        animation += "_" + direction;\n        \t        this.flipSpriteX = (this.orientation === Types.Orientations.LEFT) ? true : false;\n        \t    }\n\n                // Legacy NPC art is often static (for example only idle_down).\n                // Keep movement functional using an available frame instead of logging missing-animation errors.\n                if(this.animations && !this.animations[animation]) {\n                    if(direction && this.animations["idle_" + direction]) {\n                        animation = "idle_" + direction;\n                    } else if(this.animations.idle_down) {\n                        animation = "idle_down";\n                    } else if(this.animations[requested]) {\n                        animation = requested;\n                    } else {\n                        animation = _.keys(this.animations)[0];\n                    }\n                }\n\n        \t\tthis.setAnimation(animation, speed, count, onEndCount);\n        \t}\n    \t},''',
+    r'\s*animate: function\(animation, speed, count, onEndCount\) \{.*?\n\s*\},\s*\n\s*turnTo: function',
+    '\n' + animate_replacement,
     'client animation fallback'
 )
 
