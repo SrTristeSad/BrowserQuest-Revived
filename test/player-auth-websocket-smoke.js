@@ -121,6 +121,48 @@ function reservedGuestHandshake(reservedName) {
     });
 }
 
+async function verifyAdminInfrastructure() {
+    var adminUsername = process.env.TEST_ADMIN_USERNAME,
+        adminPassword = process.env.TEST_ADMIN_PASSWORD;
+    if(!adminUsername || !adminPassword) { return; }
+
+    var login = await requestJson('/admin/api/login', 'POST', {username: adminUsername, password: adminPassword}),
+        setCookie = login.headers['set-cookie'];
+    assert.ok(setCookie && setCookie.length, 'admin login must set a session cookie');
+    var adminCookie = setCookie[0].split(';')[0];
+    assert.ok(/^bq_admin_session=/.test(adminCookie));
+
+    var health = await requestJson('/admin/api/health', 'GET', undefined, adminCookie);
+    assert.strictEqual(health.data.postgres, true);
+    assert.strictEqual(health.data.redis, true);
+    assert.strictEqual(health.data.adminSessions, 'redis');
+
+    var settings = await requestJson('/admin/api/settings/access', 'GET', undefined, adminCookie);
+    assert.strictEqual(settings.data.accessMode, 'mixed');
+    assert.strictEqual(settings.data.registrationEnabled, true);
+
+    var changed = await requestJson('/admin/api/settings/access', 'POST', {
+        accessMode: 'account_only',
+        registrationEnabled: false
+    }, adminCookie);
+    assert.strictEqual(changed.data.accessMode, 'account_only');
+    assert.strictEqual(changed.data.registrationEnabled, false);
+
+    var publicPolicy = await requestJson('/api/auth/policy', 'GET');
+    assert.strictEqual(publicPolicy.data.accessMode, 'account_only');
+    assert.strictEqual(publicPolicy.data.registrationEnabled, false);
+
+    await requestJson('/admin/api/settings/access', 'POST', {
+        accessMode: 'mixed',
+        registrationEnabled: true
+    }, adminCookie);
+    publicPolicy = await requestJson('/api/auth/policy', 'GET');
+    assert.strictEqual(publicPolicy.data.accessMode, 'mixed');
+    assert.strictEqual(publicPolicy.data.registrationEnabled, true);
+
+    await requestJson('/admin/api/logout', 'POST', {}, adminCookie);
+}
+
 async function main() {
     var suffix = Date.now().toString(36).slice(-8),
         username = 'wsauth_' + suffix,
@@ -157,7 +199,9 @@ async function main() {
     var afterLogout = await requestJson('/api/auth/session', 'GET', undefined, cookie);
     assert.strictEqual(afterLogout.data.loggedIn, false);
 
-    console.log('Player auth HTTP/WebSocket smoke tests passed.');
+    await verifyAdminInfrastructure();
+
+    console.log('Player auth/admin settings HTTP/WebSocket smoke tests passed.');
 }
 
 main().catch(function(error) {
