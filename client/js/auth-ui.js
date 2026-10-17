@@ -4,7 +4,8 @@
     var state = {
         policy: null,
         session: null,
-        mode: 'login'
+        mode: 'login',
+        identityObservers: []
     };
 
     window.BQAuthState = state;
@@ -134,27 +135,72 @@
         if(modal) { modal.hidden = true; }
     }
 
+    function clearIdentityObservers() {
+        state.identityObservers.forEach(function(observer) {
+            try { observer.disconnect(); } catch(ignore) {}
+        });
+        state.identityObservers = [];
+    }
+
+    function lockAccountIdentity(character) {
+        var nameInput = document.getElementById('nameinput'),
+            storedName = document.getElementById('playername'),
+            name = character.name;
+
+        clearIdentityObservers();
+
+        function enforceInput() {
+            if(!state.session || !state.session.character) { return; }
+            if(nameInput.value !== name) { nameInput.value = name; }
+            if(nameInput.getAttribute('value') !== name) { nameInput.setAttribute('value', name); }
+            nameInput.readOnly = true;
+        }
+
+        function enforceStoredName() {
+            if(!state.session || !state.session.character) { return; }
+            if(storedName.textContent !== name) { storedName.textContent = name; }
+        }
+
+        if(nameInput) {
+            enforceInput();
+            nameInput.addEventListener('input', enforceInput);
+            if(window.MutationObserver) {
+                var inputObserver = new MutationObserver(enforceInput);
+                inputObserver.observe(nameInput, {attributes: true, attributeFilter: ['value', 'readonly']});
+                state.identityObservers.push(inputObserver);
+            }
+        }
+
+        if(storedName) {
+            enforceStoredName();
+            if(window.MutationObserver) {
+                var nameObserver = new MutationObserver(enforceStoredName);
+                nameObserver.observe(storedName, {childList: true, characterData: true, subtree: true});
+                state.identityObservers.push(nameObserver);
+            }
+        }
+    }
+
     function applyAccount(session) {
         state.session = session && session.loggedIn ? session : null;
         var character = state.session && state.session.character,
-            nameInput = document.getElementById('nameinput'),
-            storedName = document.getElementById('playername');
+            nameInput = document.getElementById('nameinput');
 
         if(character) {
-            if(nameInput) {
-                nameInput.value = character.name;
-                nameInput.setAttribute('value', character.name);
-                nameInput.readOnly = true;
-            }
-            if(storedName) { storedName.textContent = character.name; }
+            lockAccountIdentity(character);
             document.body.classList.remove('bq-account-required');
             renderAccountBadge();
             closeModal();
         } else {
-            if(nameInput && state.policy && state.policy.accessMode === 'account_only') {
-                nameInput.value = '';
-                nameInput.setAttribute('value', '');
-                nameInput.readOnly = true;
+            clearIdentityObservers();
+            if(nameInput) {
+                if(state.policy && state.policy.accessMode === 'account_only') {
+                    nameInput.value = '';
+                    nameInput.setAttribute('value', '');
+                    nameInput.readOnly = true;
+                } else {
+                    nameInput.readOnly = false;
+                }
             }
             renderAccountBadge();
         }
@@ -239,10 +285,8 @@
         }, true);
     }
 
-    function init() {
-        buildModal();
-        protectAccountOnlyClicks();
-        request('/api/auth/session', {method: 'GET'}).then(function(session) {
+    function loadInitialState() {
+        return request('/api/auth/session', {method: 'GET'}).then(function(session) {
             state.policy = {
                 accessMode: session.accessMode,
                 registrationEnabled: session.registrationEnabled,
@@ -257,19 +301,42 @@
                 document.body.classList.add('bq-account-required');
                 openModal('login');
             }
+            return state;
         }).catch(function() {
-            request('/api/auth/policy', {method: 'GET'}).then(function(policy) {
+            return request('/api/auth/policy', {method: 'GET'}).then(function(policy) {
                 state.policy = policy;
                 renderAccountBadge();
+                if(policy.accessMode === 'account_only') {
+                    document.body.classList.add('bq-account-required');
+                    openModal('login');
+                }
+                return state;
             }).catch(function() {
                 state.policy = {accessMode: 'name_only', registrationEnabled: false, accountsEnabled: false};
+                return state;
             });
         });
     }
 
-    if(document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
+    function init() {
+        buildModal();
+        protectAccountOnlyClicks();
+        return loadInitialState();
     }
+
+    window.BQAuth = {
+        openLogin: function() { openModal('login'); },
+        getCharacterName: function() {
+            return state.session && state.session.character ? state.session.character.name : null;
+        },
+        isLoggedIn: function() { return Boolean(state.session); }
+    };
+
+    window.BQAuthReady = new Promise(function(resolve) {
+        if(document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', resolve, {once: true});
+        } else {
+            resolve();
+        }
+    }).then(init);
 })();

@@ -37,6 +37,8 @@ function requestJson(pathname, method, body, cookie) {
                 if(response.statusCode < 200 || response.statusCode >= 300) {
                     var failure = new Error(data.error || ('HTTP ' + response.statusCode));
                     failure.statusCode = response.statusCode;
+                    failure.code = data.code;
+                    failure.data = data;
                     return reject(failure);
                 }
                 resolve({data: data, headers: response.headers});
@@ -87,6 +89,79 @@ function authenticatedHandshake(cookie, expectedName) {
     });
 }
 
+function guestHandshake(name) {
+    return new Promise(function(resolve, reject) {
+        var socket = new WebSocket(wsUrl), done = false,
+            timeout = setTimeout(function() {
+                if(done) { return; }
+                done = true;
+                socket.terminate();
+                reject(new Error('Guest handshake timed out'));
+            }, 7000);
+
+        socket.on('message', function(data) {
+            var text = data.toString('utf8');
+            if(text === 'go') {
+                socket.send(JSON.stringify([0, name, 21, 60]));
+                return;
+            }
+            var message;
+            try { message = JSON.parse(text); } catch(ignore) { return; }
+            if(Array.isArray(message) && message[0] === 1) {
+                try {
+                    assert.strictEqual(message[2], name);
+                    done = true;
+                    clearTimeout(timeout);
+                    socket.close();
+                    resolve();
+                } catch(error) {
+                    done = true;
+                    clearTimeout(timeout);
+                    socket.terminate();
+                    reject(error);
+                }
+            }
+        });
+        socket.on('close', function(code, reason) {
+            if(!done) {
+                done = true;
+                clearTimeout(timeout);
+                reject(new Error('Guest was unexpectedly rejected: ' + code + ' ' + reason.toString()));
+            }
+        });
+        socket.on('error', function(error) {
+            if(!done) { done = true; clearTimeout(timeout); reject(error); }
+        });
+    });
+}
+
+function expectGuestRejectedBeforeGo() {
+    return new Promise(function(resolve, reject) {
+        var socket = new WebSocket(wsUrl), receivedGo = false, done = false,
+            timeout = setTimeout(function() {
+                if(done) { return; }
+                done = true;
+                socket.terminate();
+                reject(new Error('account_only guest rejection timed out'));
+            }, 7000);
+
+        socket.on('message', function(data) {
+            if(data.toString('utf8') === 'go') { receivedGo = true; }
+        });
+        socket.on('close', function(code) {
+            if(done) { return; }
+            done = true;
+            clearTimeout(timeout);
+            if(receivedGo) { reject(new Error('account_only sent go to an unauthenticated guest')); }
+            else if(code !== 1008) { reject(new Error('account_only rejected guest with unexpected close code ' + code)); }
+            else { resolve(); }
+        });
+        socket.on('error', function(error) {
+            if(!done) { done = true; clearTimeout(timeout); reject(error); }
+        });
+    });
+}
+
 function reservedGuestHandshake(reservedName) {
     return new Promise(function(resolve, reject) {
         var socket = new WebSocket(wsUrl), welcomed = false, done = false,
@@ -121,46 +196,29 @@ function reservedGuestHandshake(reservedName) {
     });
 }
 
-async function verifyAdminInfrastructure() {
+async function adminLogin() {
     var adminUsername = process.env.TEST_ADMIN_USERNAME,
         adminPassword = process.env.TEST_ADMIN_PASSWORD;
-    if(!adminUsername || !adminPassword) { return; }
-
+    if(!adminUsername || !adminPassword) { return null; }
     var login = await requestJson('/admin/api/login', 'POST', {username: adminUsername, password: adminPassword}),
         setCookie = login.headers['set-cookie'];
     assert.ok(setCookie && setCookie.length, 'admin login must set a session cookie');
     var adminCookie = setCookie[0].split(';')[0];
     assert.ok(/^bq_admin_session=/.test(adminCookie));
+    return adminCookie;
+}
 
-    var health = await requestJson('/admin/api/health', 'GET', undefined, adminCookie);
-    assert.strictEqual(health.data.postgres, true);
-    assert.strictEqual(health.data.redis, true);
-    assert.strictEqual(health.data.adminSessions, 'redis');
-
-    var settings = await requestJson('/admin/api/settings/access', 'GET', undefined, adminCookie);
-    assert.strictEqual(settings.data.accessMode, 'mixed');
-    assert.strictEqual(settings.data.registrationEnabled, true);
-
+async function setAccess(adminCookie, accessMode, registrationEnabled) {
     var changed = await requestJson('/admin/api/settings/access', 'POST', {
-        accessMode: 'account_only',
-        registrationEnabled: false
+        accessMode: accessMode,
+        registrationEnabled: registrationEnabled
     }, adminCookie);
-    assert.strictEqual(changed.data.accessMode, 'account_only');
-    assert.strictEqual(changed.data.registrationEnabled, false);
+    assert.strictEqual(changed.data.accessMode, accessMode);
+    assert.strictEqual(changed.data.registrationEnabled, registrationEnabled);
 
     var publicPolicy = await requestJson('/api/auth/policy', 'GET');
-    assert.strictEqual(publicPolicy.data.accessMode, 'account_only');
-    assert.strictEqual(publicPolicy.data.registrationEnabled, false);
-
-    await requestJson('/admin/api/settings/access', 'POST', {
-        accessMode: 'mixed',
-        registrationEnabled: true
-    }, adminCookie);
-    publicPolicy = await requestJson('/api/auth/policy', 'GET');
-    assert.strictEqual(publicPolicy.data.accessMode, 'mixed');
-    assert.strictEqual(publicPolicy.data.registrationEnabled, true);
-
-    await requestJson('/admin/api/logout', 'POST', {}, adminCookie);
+    assert.strictEqual(publicPolicy.data.accessMode, accessMode);
+    assert.strictEqual(publicPolicy.data.registrationEnabled, registrationEnabled);
 }
 
 async function main() {
@@ -193,13 +251,48 @@ async function main() {
     await authenticatedHandshake(cookie, characterName);
     await reservedGuestHandshake(characterName);
 
+    var adminCookie = await adminLogin();
+    if(adminCookie) {
+        var health = await requestJson('/admin/api/health', 'GET', undefined, adminCookie);
+        assert.strictEqual(health.data.postgres, true);
+        assert.strictEqual(health.data.redis, true);
+        assert.strictEqual(health.data.adminSessions, 'redis');
+
+        var settings = await requestJson('/admin/api/settings/access', 'GET', undefined, adminCookie);
+        assert.strictEqual(settings.data.accessMode, 'mixed');
+        assert.strictEqual(settings.data.registrationEnabled, true);
+
+        await setAccess(adminCookie, 'account_only', false);
+        await authenticatedHandshake(cookie, characterName);
+        await expectGuestRejectedBeforeGo();
+
+        var blockedRegistration = false;
+        try {
+            await requestJson('/api/auth/register', 'POST', {
+                username: 'blocked_' + suffix,
+                password: password,
+                characterName: 'Blocked' + suffix.slice(-6)
+            });
+        } catch(error) {
+            blockedRegistration = error.statusCode === 403 && error.code === 'REGISTRATION_DISABLED';
+        }
+        assert.strictEqual(blockedRegistration, true, 'registration must respect admin policy');
+
+        await setAccess(adminCookie, 'name_only', false);
+        await guestHandshake('Classic' + suffix.slice(-7));
+
+        await setAccess(adminCookie, 'mixed', true);
+    }
+
     var logout = await requestJson('/api/auth/logout', 'POST', {}, cookie);
     assert.strictEqual(logout.data.loggedIn, false);
 
     var afterLogout = await requestJson('/api/auth/session', 'GET', undefined, cookie);
     assert.strictEqual(afterLogout.data.loggedIn, false);
 
-    await verifyAdminInfrastructure();
+    if(adminCookie) {
+        await requestJson('/admin/api/logout', 'POST', {}, adminCookie);
+    }
 
     console.log('Player auth/admin settings HTTP/WebSocket smoke tests passed.');
 }

@@ -45,6 +45,14 @@ function secureRequest(request) {
     return request.headers['x-forwarded-proto'] === 'https' || Boolean(request.socket.encrypted);
 }
 
+function originAllowed(request) {
+    var origin = request.headers.origin,
+        host = request.headers.host;
+    if(!origin || !host) { return true; }
+    try { return new URL(origin).host === host; }
+    catch(error) { return false; }
+}
+
 function sessionCookie(token, maxAge, secure) {
     return PlayerAuthModule.SESSION_COOKIE + '=' + encodeURIComponent(token || '') + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' + String(maxAge || 0) + (secure ? '; Secure' : '');
 }
@@ -59,6 +67,13 @@ function publicSession(session, policy) {
     };
 }
 
+function accountsDisabledError(response) {
+    sendJson(response, 403, {
+        error: 'O administrador configurou este servidor para acesso somente por nome.',
+        code: 'ACCOUNTS_DISABLED'
+    });
+}
+
 function createPlayerAuthHandler(options) {
     options = options || {};
     var auth = options.auth;
@@ -67,6 +82,11 @@ function createPlayerAuthHandler(options) {
     async function handle(request, response, pathname) {
         var body, policy, session, rate, result;
         try {
+            if(request.method !== 'GET' && request.method !== 'HEAD' && !originAllowed(request)) {
+                sendJson(response, 403, {error: 'Origem da requisição não permitida.', code: 'ORIGIN_NOT_ALLOWED'});
+                return;
+            }
+
             if(request.method === 'GET' && pathname === '/api/auth/policy') {
                 policy = await auth.getPolicy();
                 sendJson(response, 200, policy);
@@ -75,7 +95,9 @@ function createPlayerAuthHandler(options) {
 
             if(request.method === 'GET' && pathname === '/api/auth/session') {
                 policy = await auth.getPolicy();
-                session = await auth.getSessionFromCookieHeader(request.headers.cookie, true);
+                // In name_only mode accounts are deliberately invisible to the client.
+                // Keep the Redis token intact so it can work again if accounts are re-enabled.
+                session = policy.accountsEnabled ? await auth.getSessionFromCookieHeader(request.headers.cookie, true) : null;
                 sendJson(response, 200, publicSession(session, policy));
                 return;
             }
@@ -96,6 +118,11 @@ function createPlayerAuthHandler(options) {
             }
 
             if(request.method === 'POST' && pathname === '/api/auth/login') {
+                policy = await auth.getPolicy();
+                if(!policy.accountsEnabled) {
+                    accountsDisabledError(response);
+                    return;
+                }
                 rate = await auth.consumeRateLimit('login', requestIp(request), 8, 10 * 60);
                 if(!rate.allowed) {
                     sendJson(response, 429, {error: 'Muitas tentativas de login. Tente novamente mais tarde.', retryAfter: rate.retryAfter});
@@ -103,7 +130,6 @@ function createPlayerAuthHandler(options) {
                 }
                 body = await readJson(request);
                 result = await auth.login(body);
-                policy = await auth.getPolicy();
                 sendJson(response, 200, publicSession(result, policy), {
                     'Set-Cookie': sessionCookie(result.token, result.expiresIn, secureRequest(request))
                 });
@@ -131,7 +157,14 @@ function createPlayerAuthHandler(options) {
     return function playerAuthHandler(request, response) {
         var pathname = String(request.url || '/').split('?')[0];
         if(pathname.indexOf('/api/auth/') !== 0) { return false; }
-        handle(request, response, pathname);
+        handle(request, response, pathname).catch(function(error) {
+            console.error('[BrowserQuest] Player auth HTTP:', error && error.stack ? error.stack : error);
+            if(!response.headersSent) {
+                sendJson(response, 500, {error: 'Falha interna na autenticação.'});
+            } else {
+                response.end();
+            }
+        });
         return true;
     };
 }
