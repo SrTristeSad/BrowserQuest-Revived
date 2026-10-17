@@ -82,6 +82,7 @@ function createAdminHandler(options) {
         services = options.infrastructure || null,
         runtime = options.runtime || null,
         playerAuth = options.playerAuth || null,
+        storyRuntime = options.storyRuntime || null,
         processStartedAt = Date.now(),
         publicDir = path.join(__dirname, 'public'),
         adminPath = path.join(configDir, 'admin.json'),
@@ -91,6 +92,12 @@ function createAdminHandler(options) {
             Auth.createRedisSessionManager(services.redis, {ttlSeconds: 8 * 60 * 60}) :
             Auth.createSessionManager({ttl: 8 * 60 * 60 * 1000}),
         stories = new StoryStore(storiesPath),
+        reloadStoryRuntime = function() {
+            if(storyRuntime && typeof storyRuntime.reload === 'function') {
+                return storyRuntime.reload();
+            }
+            return null;
+        },
         world = new WorldStore({
             baseMapPath: path.join(__dirname, '..', 'maps', 'world_server.json'),
             baseClientMapPath: path.join(__dirname, '..', '..', 'client', 'maps', 'world_client.json'),
@@ -847,7 +854,11 @@ function createAdminHandler(options) {
             if(!await requireAdmin(request, response, true)) { return; }
             try { body = await readJson(request); }
             catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
-            try { json(response, 200, stories.save(body)); }
+            try {
+                var savedStory = stories.save(body);
+                reloadStoryRuntime();
+                json(response, 200, savedStory);
+            }
             catch(error) { json(response, 400, {error: error.message}); }
             return;
         }
@@ -863,7 +874,10 @@ function createAdminHandler(options) {
 
         if(match && request.method === 'DELETE') {
             if(!await requireAdmin(request, response, true)) { return; }
-            if(stories.remove(match[1])) { json(response, 200, {ok: true}); }
+            if(stories.remove(match[1])) {
+                reloadStoryRuntime();
+                json(response, 200, {ok: true});
+            }
             else { json(response, 404, {error: 'História não encontrada.'}); }
             return;
         }
