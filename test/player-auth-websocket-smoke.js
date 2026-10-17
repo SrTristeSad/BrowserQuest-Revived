@@ -8,9 +8,21 @@ var assert = require('assert'),
     WebSocket = require('ws'),
     URL = require('url').URL;
 
+function loadActiveWorld() {
+    var configDir = process.env.BROWSERQUEST_CONFIG_DIR,
+        publishedPath = configDir ? path.join(configDir, 'world_server_published.json') : null,
+        basePath = path.join(__dirname, '..', 'server', 'maps', 'world_server.json'),
+        activePath = publishedPath && fs.existsSync(publishedPath) ? publishedPath : basePath;
+
+    return {
+        path: activePath,
+        data: JSON.parse(fs.readFileSync(activePath, 'utf8'))
+    };
+}
+
 var httpBase = process.env.TEST_HTTP_URL || 'http://127.0.0.1:8010',
     wsUrl = process.env.TEST_WS_URL || 'ws://127.0.0.1:8010/',
-    baseWorld = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'server', 'maps', 'world_server.json'), 'utf8'));
+    activeWorld = loadActiveWorld();
 
 function requestJson(pathname, method, body, cookie) {
     return new Promise(function(resolve, reject) {
@@ -52,12 +64,11 @@ function requestJson(pathname, method, body, cookie) {
 }
 
 function checkpointContaining(x, y) {
-    return (baseWorld.checkpoints || []).find(function(checkpoint) {
-        return x >= checkpoint.x && x < checkpoint.x + checkpoint.w &&
-               y >= checkpoint.y && y < checkpoint.y + checkpoint.h;
-    }) || (baseWorld.checkpoints || []).find(function(checkpoint) {
-        return x >= checkpoint.x && x < checkpoint.x + checkpoint.width &&
-               y >= checkpoint.y && y < checkpoint.y + checkpoint.height;
+    return (activeWorld.data.checkpoints || []).find(function(checkpoint) {
+        var width = Number(checkpoint.w || checkpoint.width || 0),
+            height = Number(checkpoint.h || checkpoint.height || 0);
+        return x >= checkpoint.x && x < checkpoint.x + width &&
+               y >= checkpoint.y && y < checkpoint.y + height;
     }) || null;
 }
 
@@ -82,7 +93,7 @@ function authenticatedPersistenceHandshake(cookie, expectedName) {
                 done = true;
                 clearTimeout(timeout);
                 socket.terminate();
-                reject(new Error('Initial account spawn is not inside a known checkpoint'));
+                reject(new Error('Initial account spawn is not inside a known checkpoint from active map: ' + activeWorld.path));
                 return;
             }
             socket.send(JSON.stringify([26, checkpoint.id]));
@@ -289,7 +300,7 @@ async function main() {
 
     await verifyAdminInfrastructure();
 
-    console.log('Player persistence/auth/admin HTTP/WebSocket smoke tests passed.');
+    console.log('Player persistence/auth/admin HTTP/WebSocket smoke tests passed using ' + activeWorld.path + '.');
 }
 
 main().catch(function(error) {
