@@ -27,7 +27,7 @@ jobs:
       - name: Syntax checks
         run: npm run check
 
-      - name: Start server and verify status endpoint
+      - name: Start server and verify HTTP/WebSocket
         shell: bash
         run: |
           set -euo pipefail
@@ -38,6 +38,7 @@ jobs:
           for attempt in $(seq 1 20); do
             if curl --fail --silent http://127.0.0.1:8000/status > /tmp/browserquest-status.json; then
               cat /tmp/browserquest-status.json
+              node test/websocket-smoke.js
               exit 0
             fi
             sleep 1
