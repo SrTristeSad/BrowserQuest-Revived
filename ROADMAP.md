@@ -1,18 +1,29 @@
 # BrowserQuest Revived — Plano Mestre de Desenvolvimento
 
-Este documento é a fonte oficial do que já foi concluído e do que ainda vamos construir no **BrowserQuest Revived**. A prioridade é transformar a base original do BrowserQuest em um jogo administrável, expansível e fácil de instalar em **aaPanel/Node.js**, sem depender de Docker, Redis, MySQL ou serviços externos obrigatórios.
+Este documento é a fonte oficial do que já foi concluído e do que ainda vamos construir no **BrowserQuest Revived**. A prioridade é transformar a base original do BrowserQuest em um jogo administrável, expansível e fácil de instalar em **aaPanel/Node.js**, sem Docker.
+
+## Arquitetura de dados escolhida
+
+A arquitetura oficial passa a ser:
+
+- **PostgreSQL (PgSQL)** = fonte de verdade e armazenamento permanente.
+- **Redis** = memória rápida/temporária para sessões, rate limit, presença online, cache e eventos efêmeros.
+- **Node.js + aaPanel** = implantação principal.
+- **Sem Docker/Compose.**
+
+Regra importante: **dados que não podem ser perdidos nunca dependem somente do Redis**. Usuários, personagens, inventário, progresso, histórias, bans, configurações e auditoria pertencem ao PostgreSQL. Se o Redis reiniciar, o servidor pode perder cache/presença/sessões temporárias, mas não o progresso real do jogador.
 
 ## Regras do projeto
 
 - Preservar o visual, a identidade e a jogabilidade base do BrowserQuest sempre que possível.
-- Servidor autoritativo para estado importante: identidade, combate, NPCs/mobs, missões e progresso persistente.
-- **Sem Docker.** Implantação principal via Node.js + aaPanel.
-- Banco local quando necessário: **SQLite**, sem exigir MySQL/Redis.
+- Servidor autoritativo para identidade, combate, NPCs/mobs, missões e progresso persistente.
+- PostgreSQL como banco principal e durável.
+- Redis para estado efêmero e aceleração, nunca como banco principal do jogo.
 - Nenhuma exigência de telefone/SMS para jogadores.
 - E-mail também não deve ser obrigatório na primeira versão de contas.
-- Toda feature administrativa precisa ser funcional; evitar botões de aparência que não façam nada.
+- Toda feature administrativa precisa ser funcional; evitar botões que apenas aparentam funcionar.
 - Mudanças grandes devem manter compatibilidade com o cliente/protocolo legado quando isso não impedir a evolução do projeto.
-- Manter testes automatizados para instalação, HTTP, WebSocket, editores, autenticação, Brain System e fluxos críticos.
+- Manter testes automatizados para instalação, HTTP, WebSocket, editores, autenticação, PostgreSQL, Redis, Brain System e fluxos críticos.
 
 ---
 
@@ -59,9 +70,55 @@ Este documento é a fonte oficial do que já foi concluído e do que ainda vamos
 
 ---
 
-# Fase 1 — Sistema de contas e formas de acesso
+# Fase 1 — PostgreSQL + Redis + sistema de contas
 
-**Prioridade máxima.** Antes de empilhar novas features grandes, precisamos definir quem é o jogador e onde o progresso pertence.
+**Prioridade máxima.** Antes de empilhar novas features grandes, precisamos definir quem é o jogador, onde o progresso pertence e como o servidor persiste estado.
+
+## Setup de PostgreSQL e Redis
+
+O administrador não precisa conhecer comandos de banco. O `/setup` deve fazer a configuração guiada.
+
+### PostgreSQL
+
+- [ ] Campos no setup: host, porta, database, usuário, senha e SSL quando necessário.
+- [ ] Botão/teste automático de conexão antes de concluir a instalação.
+- [ ] Criar schema/tabelas automaticamente por migrations.
+- [ ] Mostrar erro legível quando credenciais, host ou permissões estiverem incorretos.
+- [ ] Nunca gravar senha do PostgreSQL em logs.
+- [ ] Health check do PostgreSQL em `/health`/painel.
+
+### Redis
+
+- [ ] Campos no setup: host, porta, usuário quando aplicável, senha e TLS quando necessário.
+- [ ] Teste automático com `PING` antes de concluir instalação.
+- [ ] Prefixo de chaves próprio do BrowserQuest para evitar colisão com outros sistemas.
+- [ ] Health check do Redis em `/health`/painel.
+- [ ] Nunca gravar senha do Redis em logs.
+- [ ] TTL obrigatório para dados temporários.
+
+### Responsabilidades
+
+**PostgreSQL:**
+
+- usuários;
+- personagens;
+- equipamento/inventário persistente;
+- progresso de história/missões;
+- conquistas persistentes;
+- bans/suspensões;
+- configurações permanentes do servidor;
+- auditoria administrativa;
+- metadados persistentes de conteúdo quando aplicável.
+
+**Redis:**
+
+- sessões de usuário/admin;
+- rate limit;
+- presença online;
+- cache de consultas frequentes;
+- locks curtos quando necessários;
+- eventos/pub-sub efêmeros se futuramente houver mais de um processo;
+- estado transitório que pode ser reconstruído.
 
 ## Política de acesso escolhida pelo administrador
 
@@ -74,35 +131,38 @@ O administrador poderá configurar:
 
 - [ ] `Somente nome`.
 - [ ] `Somente conta`.
-- [ ] `Permitir os dois` — não é uma terceira forma de login; apenas libera simultaneamente nome/convidado e conta.
+- [ ] `Permitir os dois` — libera simultaneamente convidado e conta.
 - [ ] Permitir ou bloquear novos cadastros.
 - [ ] Reservar nomes pertencentes a contas registradas para impedir impersonação por convidados.
 - [ ] Definir inicialmente 1 personagem por conta, deixando estrutura preparada para mais no futuro.
 
-## Persistência SQLite
+## Schema inicial PostgreSQL
 
-- [ ] Adicionar SQLite local dentro de `var/`.
-- [ ] Tabela de usuários.
-- [ ] Tabela de personagens.
-- [ ] Tabela de sessões.
-- [ ] Tabela de configurações do servidor/admin.
-- [ ] Tabela de auditoria administrativa.
-- [ ] Status de conta: ativa, suspensa e banida.
-- [ ] Migração/compatibilidade da conta atual do dono/admin para a nova camada de persistência sem quebrar instalações existentes.
+- [ ] `users`.
+- [ ] `characters`.
+- [ ] `settings`.
+- [ ] `admin_audit_log`.
+- [ ] `moderation_actions`/bans/suspensões.
+- [ ] tabelas de progresso de história/missão.
+- [ ] migrations versionadas desde a primeira implantação.
+- [ ] índices para username, personagem, status e buscas administrativas.
+- [ ] foreign keys e transações onde necessário.
+- [ ] migration/compatibilidade da conta atual do dono/admin sem quebrar instalações existentes.
 
-## Autenticação do jogador
+## Sessões e autenticação
 
 - [ ] Registro com usuário + senha.
 - [ ] Login.
 - [ ] Logout.
-- [ ] Sessão persistente segura.
+- [ ] Sessões armazenadas no Redis com TTL.
 - [ ] `HttpOnly` cookie.
 - [ ] `SameSite` apropriado.
 - [ ] `Secure` em HTTPS.
-- [ ] Token de sessão aleatório; armazenar apenas hash do token no banco.
+- [ ] Token de sessão criptograficamente aleatório; Redis recebe identificador/hash apropriado, nunca senha.
 - [ ] Senhas com `scrypt` + salt aleatório.
-- [ ] Rate limit em login e registro.
-- [ ] Nome de usuário normalizado e único.
+- [ ] Rate limit de login/registro usando Redis.
+- [ ] Nome de usuário normalizado e único no PostgreSQL.
+- [ ] Ban/status sempre confirmado no PostgreSQL; cache Redis pode acelerar, mas não é a fonte final.
 - [ ] Sem telefone/SMS.
 - [ ] Sem e-mail obrigatório.
 
@@ -112,42 +172,44 @@ O administrador poderá configurar:
 - [ ] Tela clássica permanece intacta no modo `Somente nome`.
 - [ ] Tela de login/registro aparece quando contas estiverem habilitadas.
 - [ ] Em `Permitir os dois`, oferecer claramente “Entrar com conta” e “Jogar como convidado”.
-- [ ] WebSocket identificar automaticamente sessão autenticada pelo cookie.
+- [ ] WebSocket identificar automaticamente sessão autenticada.
 - [ ] Em `Somente conta`, recusar WebSocket não autenticado.
 - [ ] Jogador autenticado não pode falsificar nome/equipamento enviados pelo cliente.
 - [ ] Nome e personagem autenticado são definidos pelo servidor.
+- [ ] Presença online pode ser mantida no Redis com TTL/heartbeat.
 
 ### Critério de conclusão da Fase 1
 
-Um admin consegue trocar a política de acesso pelo painel sem alterar código; convidados continuam funcionando quando liberados e uma conta registrada consegue entrar, reconectar e manter sua identidade com segurança.
+Uma instalação nova consegue configurar PostgreSQL + Redis pelo navegador; migrations são aplicadas automaticamente; o admin consegue escolher a política de acesso; convidados funcionam quando liberados e contas registradas entram/reconectam com identidade segura.
 
 ---
 
 # Fase 2 — Progresso persistente do jogador
 
-Depois de existir identidade confiável, mover gradualmente o estado importante do navegador para o servidor.
+Depois de existir identidade confiável, mover gradualmente o estado importante do navegador para PostgreSQL.
 
 - [ ] Persistir personagem por conta.
 - [ ] Persistir armadura equipada.
 - [ ] Persistir arma equipada.
-- [ ] Persistir estado necessário de inventário/itens conforme o sistema for evoluindo.
+- [ ] Persistir inventário/itens conforme o sistema evoluir.
 - [ ] Persistir progresso de história/missões.
 - [ ] Persistir flags de história.
 - [ ] Persistir punições/status da conta.
-- [ ] Migrar conquistas importantes do `localStorage` para persistência do servidor.
+- [ ] Migrar conquistas importantes do `localStorage` para PostgreSQL.
 - [ ] Manter `localStorage` apenas como cache/preferências locais quando houver conta.
 - [ ] Convidado continua podendo usar o comportamento legado/local enquanto o admin permitir acesso por nome.
 - [ ] Tratar reconexão sem duplicar personagem/estado.
+- [ ] Redis pode cachear leituras frequentes, mas toda alteração permanente deve terminar salva no PostgreSQL.
 
 ### Critério de conclusão da Fase 2
 
-Uma conta consegue trocar de navegador/dispositivo, fazer login e recuperar personagem e progresso essencial sem depender do `localStorage` antigo.
+Uma conta consegue trocar de navegador/dispositivo, fazer login e recuperar personagem e progresso essencial sem depender do `localStorage` antigo ou de dados efêmeros do Redis.
 
 ---
 
 # Fase 3 — Painel administrativo completo
 
-O `/admin` deve deixar de ser apenas porta para os editores e virar o centro operacional do servidor.
+O `/admin` deve virar o centro operacional do servidor.
 
 ## Dashboard
 
@@ -156,8 +218,11 @@ O `/admin` deve deixar de ser apenas porta para os editores e virar o centro ope
 - [ ] Número total de jogadores online.
 - [ ] Jogadores por mundo.
 - [ ] Estado HTTP/WebSocket.
+- [ ] Estado PostgreSQL.
+- [ ] Estado Redis.
+- [ ] Latência simples de conexão aos serviços.
 - [ ] Limite de jogadores por mundo.
-- [ ] Indicadores de saúde simples e úteis.
+- [ ] Indicadores de saúde úteis.
 
 ## Jogadores online
 
@@ -165,17 +230,19 @@ O `/admin` deve deixar de ser apenas porta para os editores e virar o centro ope
 - [ ] Mostrar se é conta ou convidado.
 - [ ] Mundo atual.
 - [ ] Nome/ID.
+- [ ] Tempo de conexão/presença usando dados efêmeros do Redis.
 - [ ] Kick com motivo.
 - [ ] Mute quando o sistema de chat/moderação suportar isso.
 
 ## Contas
 
-- [ ] Pesquisar/listar contas.
+- [ ] Pesquisar/listar contas no PostgreSQL.
 - [ ] Ver personagem/progresso básico.
 - [ ] Suspender.
 - [ ] Banir.
 - [ ] Remover suspensão/ban.
-- [ ] Encerrar sessões ativas.
+- [ ] Encerrar sessões no Redis.
+- [ ] Invalidar todas as sessões de uma conta.
 
 ## Configurações
 
@@ -184,28 +251,28 @@ O `/admin` deve deixar de ser apenas porta para os editores e virar o centro ope
 - [ ] Reservar nomes registrados.
 - [ ] Configurar número de mundos.
 - [ ] Configurar limite de jogadores.
-- [ ] Mostrar claramente quando uma alteração exige reinício.
+- [ ] Mostrar claramente quando alteração exige reinício.
 
 ## Comunicação e auditoria
 
 - [ ] Anúncio global do administrador.
-- [ ] Log de ações administrativas.
+- [ ] Log de ações administrativas no PostgreSQL.
 - [ ] Registrar quem executou kick/ban/suspensão/configuração.
-- [ ] Não registrar senhas ou tokens sensíveis.
+- [ ] Não registrar senhas, tokens ou secrets.
 
 ## Segurança
 
 - [ ] Proteção de origem/CSRF para ações administrativas.
 - [ ] Limite de tamanho do body HTTP.
-- [ ] Rate limit do setup de 6 dígitos.
-- [ ] Rate limit de login administrativo.
+- [ ] Rate limit do setup, login e APIs usando Redis.
 - [ ] Headers básicos de segurança.
 - [ ] SQL sempre parametrizado/prepared statements.
-- [ ] Conteúdo dinâmico do painel inserido com `textContent`/escape correto.
+- [ ] Conteúdo dinâmico do painel escapado corretamente.
+- [ ] Princípio de menor privilégio no usuário PostgreSQL usado pelo jogo.
 
 ### Critério de conclusão da Fase 3
 
-Um dono consegue operar o servidor pelo navegador sem precisar editar JSON manualmente nem abrir shell para tarefas normais de administração.
+Um dono consegue operar o servidor pelo navegador sem editar JSON nem abrir shell para tarefas normais.
 
 ---
 
@@ -214,7 +281,7 @@ Um dono consegue operar o servidor pelo navegador sem precisar editar JSON manua
 O editor visual e armazenamento já existem. Falta o runtime que consome histórias publicadas.
 
 - [ ] Carregar histórias publicadas no servidor.
-- [ ] Criar estado de missão por jogador/conta.
+- [ ] Criar estado de missão por jogador/conta no PostgreSQL.
 - [ ] Iniciar missão conversando com NPC vinculado.
 - [ ] Objetivo `talk`.
 - [ ] Objetivo `kill`.
@@ -237,17 +304,18 @@ O editor visual e armazenamento já existem. Falta o runtime que consome histór
 - [ ] Vincular NPC do World Editor a histórias/missões reais.
 - [ ] Vincular objetivo `kill` ao perfil correto de mob.
 - [ ] Validar referências quebradas antes de publicar uma história.
-- [ ] Testes ponta a ponta: publicar história -> entrar no jogo -> aceitar -> cumprir -> receber recompensa.
+- [ ] Redis opcionalmente cacheia definição de história publicada; PostgreSQL/arquivos persistentes continuam sendo fonte durável.
+- [ ] Teste ponta a ponta: publicar -> aceitar -> cumprir -> receber recompensa -> reiniciar -> progresso permanece.
 
 ### Critério de conclusão da Fase 4
 
-Uma campanha inteira criada no Story Editor pode ser jogada sem editar código fonte.
+Uma campanha inteira criada no Story Editor pode ser jogada e persistida sem editar código fonte.
 
 ---
 
 # Fase 5 — World Editor completo
 
-O editor lógico atual é a base. A evolução planejada é permitir editar de fato quase todo o mundo.
+O editor lógico atual é a base. A evolução planejada permitirá editar quase todo o mundo.
 
 ## Mapa/terreno
 
@@ -262,26 +330,26 @@ O editor lógico atual é a base. A evolução planejada é permitir editar de f
 - [ ] Baús.
 - [ ] Itens estáticos.
 - [ ] Áreas de nascimento/roaming de mobs.
-- [ ] Manter um formato-mestre e gerar automaticamente mapa do cliente + servidor.
+- [ ] Manter formato-mestre e gerar automaticamente mapa do cliente + servidor.
 
 ## Workflow editorial
 
 - [x] Rascunho.
 - [x] Publicação.
 - [x] Snapshot/versões básicas.
-- [ ] Restaurar uma versão anterior pelo painel.
+- [ ] Restaurar versão anterior pelo painel.
 - [ ] Validação forte antes de publicar.
-- [ ] Preview/teste do mundo antes de torná-lo ativo.
+- [ ] Preview/teste do mundo antes de ativá-lo.
 
 ### Critério de conclusão da Fase 5
 
-O administrador consegue construir/modificar uma área completa do jogo visualmente e publicar cliente + servidor sincronizados.
+O administrador consegue construir/modificar uma área completa visualmente e publicar cliente + servidor sincronizados.
 
 ---
 
 # Fase 6 — Importador de sprites e animações
 
-Hoje custom NPCs/mobs reutilizam arte já existente. O próximo passo visual já discutido é permitir conteúdo novo.
+Hoje custom NPCs/mobs reutilizam arte existente. O próximo passo visual é permitir conteúdo novo.
 
 - [ ] Upload/importação de PNG.
 - [ ] Validar dimensão e formato da spritesheet.
@@ -289,28 +357,29 @@ Hoje custom NPCs/mobs reutilizam arte já existente. O próximo passo visual já
 - [ ] Modelo de NPC estático/simples.
 - [ ] Modelo de NPC animado.
 - [ ] Modelo de mob.
-- [ ] Mapear linhas/frames de `idle`.
+- [ ] Mapear `idle`.
 - [ ] Mapear caminhada.
 - [ ] Mapear ataque.
 - [ ] Mapear morte.
 - [ ] Suporte às direções usadas pelo BrowserQuest.
-- [ ] Reutilizar uma spritesheet importada em múltiplos perfis.
+- [ ] Reutilizar spritesheet importada em múltiplos perfis.
 - [ ] Detectar animações ausentes e usar fallback seguro.
-- [ ] Não permitir que um upload inválido quebre o carregamento global do cliente.
+- [ ] Não limitar artificialmente a 16x16/32x32/64x64; validar tamanho real do frame e organização da folha.
+- [ ] Não permitir que upload inválido quebre o cliente global.
 
 ### Critério de conclusão da Fase 6
 
-Um admin importa um PNG, define suas animações, cria um NPC/mob com essa arte e o publica sem alterar arquivos manualmente.
+Um admin importa um PNG, define frames/animações, cria NPC/mob e publica sem alterar arquivos manualmente.
 
 ---
 
 # Fase 7 — Brain System v2: mundo mais vivo
 
-A v1 resolveu movimentação e reações básicas. A v2 adicionará comportamento social e rotina sem transformar o projeto em um sistema pesado de IA.
+A v1 resolveu movimentação e reações básicas. A v2 adicionará comportamento social e rotina sem rede neural pesada.
 
-- [ ] Percepção de outros NPCs, não apenas jogador/mob.
-- [ ] Memória curta com expiração mais explícita.
-- [ ] Prioridades/utility score para escolher entre ações concorrentes.
+- [ ] Percepção de outros NPCs.
+- [ ] Memória curta com expiração explícita.
+- [ ] Prioridades/utility score.
 - [ ] Guarda proteger aldeão/NPC próximo.
 - [ ] NPC reagir a combate nas proximidades.
 - [ ] NPC parar/olhar para jogador próximo.
@@ -318,33 +387,40 @@ A v1 resolveu movimentação e reações básicas. A v2 adicionará comportament
 - [ ] Rotinas simples por pontos/horários/estado do mundo.
 - [ ] Trabalho/atividade configurável.
 - [ ] Reações ligadas a missão/flag de história.
-- [ ] Melhorar pathfinding para A* quando necessário, mantendo custo controlado.
-- [ ] Evitar decisões simultâneas desnecessárias com timers distribuídos/jitter.
+- [ ] Pathfinding A* quando necessário, mantendo custo controlado.
+- [ ] Timers distribuídos/jitter para evitar todos os cérebros pensando no mesmo instante.
 - [ ] Presets editáveis no World Editor.
-- [ ] Entidade pode ser explicitamente configurada como fixa/sem cérebro quando o criador realmente quiser isso.
+- [ ] Entidade explicitamente fixa/sem cérebro apenas quando o criador desejar.
+- [ ] Redis poderá ajudar em coordenação efêmera no futuro, mas decisão autoritativa permanece no servidor de jogo.
 
 ### Critério de conclusão da Fase 7
 
-NPCs parecem habitantes do mundo e conseguem reagir ao contexto sem scripts específicos espalhados pelo servidor.
+NPCs parecem habitantes do mundo e reagem ao contexto sem scripts específicos espalhados pelo servidor.
 
 ---
 
 # Fase 8 — Backups, restauração e operação
 
-- [ ] Backup simples de `var/` pelo painel.
-- [ ] Incluir SQLite, histórias, mundo publicado e configurações.
+- [ ] Backup do PostgreSQL pelo painel/processo de operação.
+- [ ] Backup das configurações e conteúdos de `var/`.
+- [ ] Histórias.
+- [ ] Mundo publicado.
+- [ ] Assets importados.
 - [ ] Download/exportação de backup.
 - [ ] Restauração validada.
 - [ ] Snapshot antes de operações destrutivas importantes.
 - [ ] Histórico de versões do World Editor acessível pelo painel.
 - [ ] Histórico de versões do Story Editor.
-- [ ] Diagnóstico aaPanel mostrando permissões, arquivos e configuração essenciais.
+- [ ] Diagnóstico aaPanel mostrando Node, PostgreSQL, Redis, permissões e configuração.
 - [ ] Procedimento documentado de atualização sem perder dados.
+- [ ] Redis não precisa de backup para preservar progresso; deve poder ser reconstruído a partir do PostgreSQL/estado atual.
 
 ---
 
 # Fase 9 — Robustez, desempenho e testes
 
+- [ ] Testes PostgreSQL/migrations.
+- [ ] Testes Redis/conexão/TTL.
 - [ ] Testes de registro/login/logout/sessão.
 - [ ] Testar os três estados administrativos de acesso: nome, conta, ambos.
 - [ ] Testar reserva de nomes registrados.
@@ -354,32 +430,38 @@ NPCs parecem habitantes do mundo e conseguem reagir ao contexto sem scripts espe
 - [ ] Testar publicação/restauração de mapas.
 - [ ] Testar importador de sprites inválidos/válidos.
 - [ ] Testar Brain System com várias entidades simultâneas.
-- [ ] Limites para impedir que configuração de admin gere centenas de ticks desnecessários.
+- [ ] Testar queda do Redis: nenhum progresso permanente pode ser perdido.
+- [ ] Testar reconexão do Redis e invalidação/recriação de cache.
+- [ ] Testar queda temporária do PostgreSQL com comportamento seguro/readiness=false.
+- [ ] Connection pooling PostgreSQL com limites adequados.
+- [ ] Limites para impedir centenas de ticks desnecessários.
 - [ ] Verificar vazamentos de timers/sessões/conexões.
 - [ ] Testes de reconexão WebSocket.
-- [ ] Teste de reinício do processo e recuperação dos dados persistidos.
+- [ ] Teste de reinício e recuperação dos dados persistidos.
 - [ ] Manter CI em Node.js 24.
 
 ---
 
-# Fase 10 — Preparação para uma versão realmente instalável
+# Fase 10 — Release instalável/upgrade seguro
 
-- [ ] Setup novo cria dono/admin + SQLite + política inicial de acesso de forma atômica.
+- [ ] Setup cria/configura owner/admin + PostgreSQL + Redis + política de acesso de forma atômica.
+- [ ] Migrations automáticas e versionadas.
 - [ ] Instalação limpa testada no aaPanel.
-- [ ] Atualização de instalação existente sem perder `var/`.
+- [ ] Tela do setup ensina exatamente quais dados copiar do PostgreSQL e Redis do aaPanel.
+- [ ] Botões `Testar PostgreSQL` e `Testar Redis` antes de instalar.
+- [ ] Atualização de instalação existente sem perder conteúdo de `var/`.
 - [ ] README com instalação e atualização.
 - [ ] ROADMAP mantido atualizado.
-- [ ] `/health` e `/ready` refletindo falhas reais de dependências internas.
-- [ ] Garantir que o jogo funciona atrás de proxy HTTPS do aaPanel.
+- [ ] `/health` e `/ready` refletem falhas reais do PostgreSQL/Redis.
+- [ ] Funcionar atrás de proxy HTTPS do aaPanel.
 - [ ] Nenhuma dependência de Docker.
-- [ ] Nenhuma dependência obrigatória de MySQL/Redis.
 - [ ] Backup recomendado antes de upgrade.
 
 ---
 
 # Ordem recomendada de execução
 
-1. **Contas + SQLite + política de acesso.**
+1. **PostgreSQL + Redis + contas + política de acesso.**
 2. **Persistência do jogador.**
 3. **Administração/moderação completa.**
 4. **Story Runtime.**
@@ -390,7 +472,7 @@ NPCs parecem habitantes do mundo e conseguem reagir ao contexto sem scripts espe
 9. **Hardening, desempenho e testes finais.**
 10. **Release instalável/upgrade seguro.**
 
-A ordem existe para evitar retrabalho. Por exemplo: missões persistentes dependem de identidade do jogador; administração de contas depende da camada de contas; e histórias/Brain System ficam muito mais úteis depois que mundo, personagem e progresso têm identidade estável.
+A ordem existe para evitar retrabalho. Missões persistentes dependem de identidade; administração de contas depende da camada de contas; e histórias/Brain System ficam mais úteis quando mundo, personagem e progresso têm identidade estável.
 
 ---
 
@@ -401,9 +483,10 @@ Uma fase só deve ser marcada como concluída quando:
 - [ ] funciona no servidor real, não apenas no editor;
 - [ ] tem interface utilizável quando for recurso administrativo;
 - [ ] dados importantes sobrevivem ao reinício;
-- [ ] não quebra o fluxo clássico quando a compatibilidade for esperada;
+- [ ] queda do Redis nunca destrói progresso permanente;
+- [ ] não quebra o fluxo clássico quando compatibilidade for esperada;
 - [ ] possui validação de entrada;
-- [ ] possui pelo menos smoke/integration test do fluxo crítico;
+- [ ] possui smoke/integration test do fluxo crítico;
 - [ ] CI fica verde;
 - [ ] documentação é atualizada.
 
@@ -411,14 +494,14 @@ Uma fase só deve ser marcada como concluída quando:
 
 # Fora do plano por enquanto
 
-Para manter o projeto leve e compatível com a VPS/aaPanel, não faz parte do plano atual:
+Para manter o projeto controlável, não faz parte do plano atual:
 
 - Docker/Compose;
 - Kubernetes;
-- Redis obrigatório;
-- MySQL obrigatório;
-- rede neural/modelo de IA para NPCs;
+- MySQL como banco principal;
+- SQLite como banco principal de produção;
+- rede neural/modelo pesado de IA para NPCs;
 - telefone/SMS obrigatório para conta;
-- infraestrutura distribuída antes de existir necessidade real.
+- infraestrutura distribuída complexa antes de existir necessidade real.
 
-O objetivo é continuar com **Node.js + armazenamento local + servidor autoritativo**, evoluindo a arquitetura somente quando uma limitação real justificar isso.
+A arquitetura oficial passa a ser **Node.js + PostgreSQL + Redis**, com servidor autoritativo e implantação principal via aaPanel.
