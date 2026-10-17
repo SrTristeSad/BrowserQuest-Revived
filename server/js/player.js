@@ -31,6 +31,7 @@ module.exports = Player = Character.extend({
         this.accountUserId = null;
         this.characterId = null;
         this.storyState = [];
+        this.storyInteractionNpcId = null;
         this.mutedUntil = 0;
         this.muteReason = '';
         
@@ -221,7 +222,12 @@ module.exports = Player = Character.extend({
                 if(npc && npc.type === 'npc') {
                     var npcDistance = Math.abs(self.x - npc.x) + Math.abs(self.y - npc.y);
                     if(npcDistance === 1 && self.npcinteract_callback) {
-                        self.npcinteract_callback(npc);
+                        self.storyInteractionNpcId = npc.id;
+                        try {
+                            self.npcinteract_callback(npc);
+                        } finally {
+                            self.storyInteractionNpcId = null;
+                        }
                     }
                 }
             }
@@ -467,7 +473,9 @@ module.exports = Player = Character.extend({
     },
 
     startStoryMission: function(storyId, missionId) {
-        var self = this;
+        var self = this,
+            sourceNpcId = this.storyInteractionNpcId;
+
         return MissionService.startMission({
             runtime: this.storyRuntime,
             progressStore: this.storyProgress,
@@ -477,6 +485,20 @@ module.exports = Player = Character.extend({
             states: this.storyState
         }).then(function(result) {
             self.storyState = MissionService.upsertStoryState(self.storyState, result.state);
+
+            if(result && result.changed && sourceNpcId && result.mission && result.mission.mission) {
+                var dialogue = Array.isArray(result.mission.mission.introDialogue) ? result.mission.mission.introDialogue : [],
+                    lines = dialogue.map(function(line) {
+                        return Utils.sanitize(line && line.text || '');
+                    }).filter(function(text) {
+                        return text;
+                    });
+
+                if(lines.length) {
+                    self.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, lines]);
+                }
+            }
+
             return result;
         });
     },
