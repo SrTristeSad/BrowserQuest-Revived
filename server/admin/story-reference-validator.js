@@ -60,10 +60,16 @@ function validateStoryReferences(story, worldState, options) {
     Object.keys(missions.items).forEach(function(missionId) {
         var mission = missions.items[missionId],
             prefix = 'mission:' + missionId,
-            objective = mission.objective || {};
+            objective = mission.objective || {},
+            giver;
 
         if(!mission.giverNpc || !npcs[mission.giverNpc]) {
             add(errors, 'invalid_giver_npc', prefix + '.giverNpc', 'O NPC que entrega a missão precisa existir no World Editor.');
+        } else {
+            giver = npcs[mission.giverNpc];
+            if(String(giver.storyId || '').trim() !== story.id || String(giver.missionId || '').trim() !== missionId) {
+                add(errors, 'invalid_giver_story_link', prefix + '.giverNpc', 'O NPC que entrega a missão precisa estar vinculado a esta mesma storyId/missionId no World Editor.');
+            }
         }
 
         if(mission.nextMissionId) {
