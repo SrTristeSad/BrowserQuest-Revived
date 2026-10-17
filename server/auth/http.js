@@ -92,7 +92,10 @@ function createPlayerAuthHandler(options) {
     async function requireAccountSession(request) {
         var policy = await auth.getPolicy(), session;
         if(!policy.accountsEnabled) {
-            throw PlayerAuthModule.authError ? PlayerAuthModule.authError('Contas estão desativadas.', 403, 'ACCOUNTS_DISABLED') : Object.assign(new Error('Contas estão desativadas.'), {statusCode: 403, code: 'ACCOUNTS_DISABLED'});
+            var disabled = new Error('Contas estão desativadas.');
+            disabled.statusCode = 403;
+            disabled.code = 'ACCOUNTS_DISABLED';
+            throw disabled;
         }
         session = await auth.getSessionFromCookieHeader(request.headers.cookie, true);
         if(!session || !session.character) {
@@ -120,8 +123,6 @@ function createPlayerAuthHandler(options) {
 
             if(request.method === 'GET' && pathname === '/api/auth/session') {
                 policy = await auth.getPolicy();
-                // In name_only mode accounts are deliberately invisible to the client.
-                // Keep the Redis token intact so it can work again if accounts are re-enabled.
                 session = policy.accountsEnabled ? await auth.getSessionFromCookieHeader(request.headers.cookie, true) : null;
                 sendJson(response, 200, await publicSession(session, policy, progress, false));
                 return;
@@ -136,7 +137,6 @@ function createPlayerAuthHandler(options) {
                 body = await readJson(request);
                 result = await auth.register(body);
                 policy = await auth.getPolicy();
-                // New accounts start clean and immediately gain a server-side progress record.
                 sendJson(response, 201, await publicSession(result, policy, progress, true), {
                     'Set-Cookie': sessionCookie(result.token, result.expiresIn, secureRequest(request))
                 });
@@ -193,6 +193,9 @@ function createPlayerAuthHandler(options) {
 
             sendJson(response, 404, {error: 'Rota de autenticação não encontrada.'});
         } catch(error) {
+            if(!error.statusCode) {
+                console.error('[BrowserQuest] Player auth request failed:', error && error.stack ? error.stack : error);
+            }
             sendJson(response, error.statusCode || 400, {
                 error: error.message || 'Falha na autenticação.',
                 code: error.code || undefined
