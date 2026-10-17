@@ -2,6 +2,8 @@
 
 Revival and modernization of the original **Mozilla BrowserQuest** while preserving the original game, pixel art, maps, audio and visual identity.
 
+> Development plan: see [`ROADMAP.md`](ROADMAP.md) and the master tracking issue.
+
 ## Current status
 
 The project runs on **Node.js 24 LTS** and now includes:
