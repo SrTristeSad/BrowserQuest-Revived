@@ -32,6 +32,7 @@ async function completeMission(options) {
 
     var runtime = options.runtime,
         progressStore = options.progressStore || null,
+        itemRewardStore = options.itemRewardStore || null,
         characterId = Number(options.characterId) || 0,
         storyId = String(options.storyId || '').trim(),
         missionId = String(options.missionId || '').trim(),
@@ -43,7 +44,8 @@ async function completeMission(options) {
         amount,
         currentProgress,
         completedMissionIds,
-        state;
+        state,
+        rewardResult = null;
 
     if(!runtime || typeof runtime.getMission !== 'function') {
         throw completionError('STORY_RUNTIME_UNAVAILABLE', 'Story Runtime indisponível.');
@@ -59,26 +61,26 @@ async function completeMission(options) {
 
     mission = missionEntry.mission;
     if(String(mission.giverNpc || '').trim() !== giverProfileId) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current ? normalizeStoryProgress(current) : null};
+        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current ? normalizeStoryProgress(current) : null, itemRewards: []};
     }
 
     if(!current) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: null};
+        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: null, itemRewards: []};
     }
 
     current = normalizeStoryProgress(current);
     if(current.completedMissionIds.indexOf(missionId) >= 0 && !current.activeMissionId) {
-        return {changed: false, alreadyCompleted: true, mission: missionEntry, state: current};
+        return {changed: false, alreadyCompleted: true, mission: missionEntry, state: current, itemRewards: []};
     }
     if(current.activeMissionId !== missionId) {
-        return {changed: false, alreadyCompleted: current.completedMissionIds.indexOf(missionId) >= 0, mission: missionEntry, state: current};
+        return {changed: false, alreadyCompleted: current.completedMissionIds.indexOf(missionId) >= 0, mission: missionEntry, state: current, itemRewards: []};
     }
 
     objective = mission.objective || {};
     amount = normalizeObjectiveAmount(objective);
     currentProgress = Math.max(0, Math.floor(Number(current.objectiveProgress) || 0));
     if(currentProgress < amount) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current};
+        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current, itemRewards: []};
     }
 
     completedMissionIds = appendCompletedMission(current.completedMissionIds, missionId);
@@ -100,7 +102,19 @@ async function completeMission(options) {
         if(typeof progressStore.save !== 'function') {
             throw completionError('STORY_PROGRESS_UNAVAILABLE', 'Persistência de Story Runtime indisponível.');
         }
-        state = await progressStore.save(characterId, storyId, state);
+
+        if(itemRewardStore && typeof itemRewardStore.saveCompletionWithItemRewards === 'function') {
+            rewardResult = await itemRewardStore.saveCompletionWithItemRewards(
+                characterId,
+                storyId,
+                missionId,
+                state,
+                mission.rewards || []
+            );
+            state = rewardResult.state;
+        } else {
+            state = await progressStore.save(characterId, storyId, state);
+        }
     }
 
     return {
@@ -108,7 +122,8 @@ async function completeMission(options) {
         alreadyCompleted: false,
         mission: missionEntry,
         state: state,
-        completedMissionId: missionId
+        completedMissionId: missionId,
+        itemRewards: rewardResult ? rewardResult.itemRewards : []
     };
 }
 

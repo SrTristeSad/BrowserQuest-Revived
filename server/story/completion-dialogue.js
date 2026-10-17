@@ -2,6 +2,7 @@
 
 var MissionCompletion = require('./mission-completion'),
     MissionService = require('./mission-service'),
+    StoryItemRewardStore = require('./item-reward-store').StoryItemRewardStore,
     Utils = require('../js/utils'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress,
     Types = require('../../shared/js/gametypes');
@@ -91,6 +92,37 @@ function sanitizeDialogue(dialogue) {
     });
 }
 
+function createItemRewardStore(player) {
+    var postgres = player && player.storyProgress && player.storyProgress.postgres;
+    return postgres ? new StoryItemRewardStore({postgres: postgres}) : null;
+}
+
+function applyGrantedItemRewards(player, itemRewards) {
+    var applied = [];
+    if(!player || !Array.isArray(itemRewards)) { return applied; }
+
+    itemRewards.forEach(function(reward) {
+        var kind = Number(reward && reward.itemKind),
+            kindName = Number.isInteger(kind) ? Types.getKindAsString(kind) : '',
+            equipMessage;
+
+        if(!reward || !reward.changed || reward.status !== 'granted' || reward.category !== 'equipment') { return; }
+        if(!kindName || (reward.slot !== 'weapon' && reward.slot !== 'armor')) { return; }
+        if(typeof player.equipItem !== 'function' || typeof player.equip !== 'function') { return; }
+
+        player.equipItem({kind: kind});
+        equipMessage = player.equip(kind);
+        if(player.send && equipMessage && typeof equipMessage.serialize === 'function') {
+            player.send(equipMessage.serialize());
+        }
+        if(player.broadcast) {
+            player.broadcast(equipMessage);
+        }
+        applied.push(kind);
+    });
+    return applied;
+}
+
 function queueCompletionDialogue(player, npc) {
     var giverProfileId = resolveGiverProfileId(npc),
         sourceNpcId = npc && npc.id;
@@ -126,7 +158,7 @@ function queueMissionCompletion(player, npc) {
         sourceNpcId = npc && npc.id;
 
     if(!player || player.type !== 'player' || !giverProfileId || sourceNpcId == null || typeof player.queueStoryOperation !== 'function') {
-        return Promise.resolve({completed: false, sent: false, result: null, lines: []});
+        return Promise.resolve({completed: false, sent: false, result: null, lines: [], appliedItems: []});
     }
 
     return player.queueStoryOperation(async function() {
@@ -136,15 +168,17 @@ function queueMissionCompletion(player, npc) {
                 states: player.storyState
             }),
             completion,
-            lines;
+            lines,
+            appliedItems;
 
         if(!candidate) {
-            return {completed: false, sent: false, result: null, lines: []};
+            return {completed: false, sent: false, result: null, lines: [], appliedItems: []};
         }
 
         completion = await MissionCompletion.completeMission({
             runtime: player.storyRuntime,
             progressStore: player.storyProgress,
+            itemRewardStore: createItemRewardStore(player),
             characterId: player.characterId,
             storyId: candidate.state.storyId,
             missionId: candidate.state.activeMissionId,
@@ -153,10 +187,11 @@ function queueMissionCompletion(player, npc) {
         });
 
         if(!completion.changed) {
-            return {completed: false, sent: false, result: completion, lines: []};
+            return {completed: false, sent: false, result: completion, lines: [], appliedItems: []};
         }
 
         player.storyState = MissionService.upsertStoryState(player.storyState, completion.state);
+        appliedItems = applyGrantedItemRewards(player, completion.itemRewards || []);
         lines = sanitizeDialogue(candidate.dialogue);
         if(lines.length) {
             player.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, lines]);
@@ -166,7 +201,8 @@ function queueMissionCompletion(player, npc) {
             completed: true,
             sent: lines.length > 0,
             result: completion,
-            lines: lines
+            lines: lines,
+            appliedItems: appliedItems
         };
     });
 }
@@ -246,6 +282,8 @@ exports.normalizeObjectiveAmount = normalizeObjectiveAmount;
 exports.findCompletableMission = findCompletableMission;
 exports.findCompletionDialogue = findCompletionDialogue;
 exports.sanitizeDialogue = sanitizeDialogue;
+exports.createItemRewardStore = createItemRewardStore;
+exports.applyGrantedItemRewards = applyGrantedItemRewards;
 exports.queueCompletionDialogue = queueCompletionDialogue;
 exports.queueMissionCompletion = queueMissionCompletion;
 exports.isNpcLinkedMissionCompleted = isNpcLinkedMissionCompleted;

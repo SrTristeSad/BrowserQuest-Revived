@@ -340,9 +340,12 @@ async function main() {
     assert.ok(completionServiceSource.indexOf("activeMissionId: ''") !== -1, 'completion service must clear the active mission');
     assert.ok(completionServiceSource.indexOf('objectiveProgress: 0') !== -1, 'completion service must clear partial progress');
     assert.ok(completionServiceSource.indexOf('appendCompletedMission(current.completedMissionIds, missionId)') !== -1, 'completion service must append the completed mission id through the bounded history helper');
-    assert.ok(completionServiceSource.indexOf('progressStore.save') !== -1, 'authenticated completion must persist story state');
+    assert.ok(completionServiceSource.indexOf('progressStore.save') !== -1, 'completion service must retain the normal persistence fallback');
+    assert.ok(completionServiceSource.indexOf('saveCompletionWithItemRewards') !== -1, 'authenticated item rewards must use the atomic reward persistence path when available');
+    assert.ok(completionServiceSource.indexOf('mission.rewards || []') !== -1, 'only published mission rewards may enter the reward pipeline');
     assert.strictEqual(completionServiceSource.indexOf('nextMissionId'), -1, 'completion must not start the next mission yet');
-    assert.strictEqual(completionServiceSource.indexOf('rewards'), -1, 'completion must not grant rewards yet');
+    assert.strictEqual(completionServiceSource.indexOf('achievement'), -1, 'completion service must not implement achievement rewards in the item microtask');
+    assert.strictEqual(completionServiceSource.indexOf('story_flag'), -1, 'completion service must not implement story_flag rewards in the item microtask');
     assert.ok(completionSource.indexOf('queueMissionCompletion(player, npc)') !== -1, 'NPC interaction hook must use the queued persistent completion operation');
     assert.ok(completionSource.indexOf('isNpcLinkedMissionCompleted(player, npc)') !== -1, 'completed linked missions must not be restarted by the same NPC');
     assert.ok(completionSource.indexOf('player.storyInteractionNpcId = npc') !== -1, 'deferred normal NPC callback must restore the interaction NPC id');
