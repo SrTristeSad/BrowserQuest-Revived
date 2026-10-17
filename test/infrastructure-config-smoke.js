@@ -4,6 +4,10 @@ var assert = require('assert'),
     Infrastructure = require('../server/storage/infrastructure'),
     SetupInfrastructure = require('../server/setup/infrastructure-setup');
 
+var NativeMap = global.Map;
+require('../server/js/map');
+assert.strictEqual(global.Map, NativeMap, 'server/js/map must not overwrite the native JavaScript Map constructor');
+
 var pg = Infrastructure.normalizePostgres({
     host: '127.0.0.1', port: 5432, database: 'browserquest', user: 'browserquest', password: 'secret', ssl: false
 });
