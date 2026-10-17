@@ -29,12 +29,45 @@ function appendCompletedMission(completedMissionIds, missionId) {
     return result;
 }
 
+function resolveLinearNextMission(runtime, storyId, missionId, mission, completedMissionIds) {
+    var nextMissionId = String(mission && mission.nextMissionId || '').trim(),
+        nextMissionEntry;
+
+    if(!nextMissionId) {
+        return {nextMissionId: '', nextMission: null};
+    }
+    if(nextMissionId === missionId) {
+        throw completionError('NEXT_MISSION_SELF_REFERENCE', 'A próxima missão não pode apontar para a própria missão concluída.');
+    }
+    if(Array.isArray(completedMissionIds) && completedMissionIds.indexOf(nextMissionId) >= 0) {
+        throw completionError('NEXT_MISSION_ALREADY_COMPLETED', 'A próxima missão já foi concluída nesta história.');
+    }
+
+    nextMissionEntry = runtime.getMission(storyId, nextMissionId);
+    if(!nextMissionEntry || !nextMissionEntry.mission) {
+        throw completionError('NEXT_MISSION_NOT_FOUND', 'A próxima missão publicada não existe nesta história.');
+    }
+    if(nextMissionEntry.storyId && nextMissionEntry.storyId !== storyId) {
+        throw completionError('NEXT_MISSION_WRONG_STORY', 'A próxima missão precisa pertencer à mesma história publicada.');
+    }
+    if(String(nextMissionEntry.mission.id || '').trim() !== nextMissionId) {
+        throw completionError('NEXT_MISSION_INVALID', 'A próxima missão publicada não corresponde ao destino configurado.');
+    }
+
+    return {
+        nextMissionId: nextMissionId,
+        nextMission: nextMissionEntry
+    };
+}
+
 function unchangedResult(missionEntry, state, alreadyCompleted) {
     return {
         changed: false,
         alreadyCompleted: !!alreadyCompleted,
         mission: missionEntry,
         state: state,
+        nextMissionId: '',
+        nextMission: null,
         itemRewards: [],
         inventory: null
     };
@@ -57,6 +90,8 @@ async function completeMission(options) {
         amount,
         currentProgress,
         completedMissionIds,
+        transition,
+        now,
         state,
         expandedRewardResult,
         expandedRewards,
@@ -100,15 +135,17 @@ async function completeMission(options) {
     }
 
     completedMissionIds = appendCompletedMission(current.completedMissionIds, missionId);
+    transition = resolveLinearNextMission(runtime, storyId, missionId, mission, completedMissionIds);
+    now = new Date().toISOString();
     state = normalizeStoryProgress({
         version: current.version,
         storyId: current.storyId,
-        activeMissionId: '',
+        activeMissionId: transition.nextMissionId,
         objectiveProgress: 0,
         completedMissionIds: completedMissionIds,
         flags: current.flags,
-        startedAt: current.startedAt,
-        updatedAt: new Date().toISOString()
+        startedAt: transition.nextMissionId ? now : current.startedAt,
+        updatedAt: now
     });
 
     expandedRewardResult = CustomRewardService.expandCustomRewards({
@@ -159,6 +196,8 @@ async function completeMission(options) {
         mission: missionEntry,
         state: state,
         completedMissionId: missionId,
+        nextMissionId: transition.nextMissionId,
+        nextMission: transition.nextMission,
         itemRewards: rewardResult ? rewardResult.itemRewards : [],
         inventory: rewardResult ? rewardResult.inventory : null
     };
@@ -166,4 +205,5 @@ async function completeMission(options) {
 
 exports.normalizeObjectiveAmount = normalizeObjectiveAmount;
 exports.appendCompletedMission = appendCompletedMission;
+exports.resolveLinearNextMission = resolveLinearNextMission;
 exports.completeMission = completeMission;
