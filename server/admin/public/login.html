@@ -11,7 +11,7 @@
 <main class="card">
 <div class="tag">PAINEL ADMINISTRATIVO</div>
 <div class="brand">BrowserQuest Revived</div>
-<p class="sub">Entre para gerenciar o servidor e criar histórias.</p>
+<p class="sub">Entre para gerenciar o servidor, o acesso dos jogadores e os editores.</p>
 <form id="login">
 <div class="field"><label for="username">Usuário</label><input id="username" autocomplete="username" required></div>
 <div class="field"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" required></div>
@@ -21,7 +21,7 @@
 </main>
 <script>
 const form=document.getElementById('login'),error=document.getElementById('error');
-form.addEventListener('submit',async e=>{e.preventDefault();error.textContent='';const button=form.querySelector('button');button.disabled=true;try{const response=await fetch('/admin/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha no login');location.href='/admin/story-editor';}catch(err){error.textContent=err.message;button.disabled=false;}});
+form.addEventListener('submit',async e=>{e.preventDefault();error.textContent='';const button=form.querySelector('button');button.disabled=true;try{const response=await fetch('/admin/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha no login');location.href='/admin';}catch(err){error.textContent=err.message;button.disabled=false;}});
 </script>
 </body>
 </html>
