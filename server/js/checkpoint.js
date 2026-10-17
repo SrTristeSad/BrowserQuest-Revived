@@ -12,6 +12,20 @@ module.exports = Checkpoint = cls.Class.extend({
         this.width = width;
         this.height = height;
     },
+
+    containsPosition: function(x, y) {
+        return _.isNumber(x)
+            && _.isNumber(y)
+            && x >= this.x
+            && y >= this.y
+            && x < this.x + this.width
+            && y < this.y + this.height;
+    },
+
+    getVisitLocationId: function() {
+        var checkpointId = String(this.id == null ? '' : this.id).trim();
+        return checkpointId ? 'checkpoint:' + checkpointId : '';
+    },
     
     getRandomPosition: function() {
         var pos = {};
