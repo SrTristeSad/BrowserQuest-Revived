@@ -420,7 +420,7 @@ function createAdminHandler(options) {
             catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
             var reason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Conexão encerrada pelo administrador.',
                 controls = controlRuntime(),
-                kicked = controls && typeof controls.kickPlayer === 'function' ? controls.kickPlayer(match[1], reason) : null;
+                kicked = controls && typeof controls.kickPlayer === 'function' ? await controls.kickPlayer(match[1], reason) : null;
             if(!kicked) { json(response, 404, {error: 'Jogador não está mais conectado.'}); return; }
             await audit(session, 'player.kick', kicked.username || kicked.name || kicked.id, {
                 playerId: kicked.id,
