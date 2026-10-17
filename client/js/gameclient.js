@@ -10,6 +10,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
             this.connected_callback = null;
             this.spawn_callback = null;
             this.movement_callback = null;
+            this.pendingNpcInteractions = {};
         
             this.handlers = [];
             this.handlers[Types.Messages.WELCOME] = this.receiveWelcome;
@@ -22,6 +23,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
             this.handlers[Types.Messages.HEALTH] = this.receiveHealth;
             this.handlers[Types.Messages.CHAT] = this.receiveChat;
             this.handlers[Types.Messages.ANNOUNCEMENT] = this.receiveAnnouncement;
+            this.handlers[Types.Messages.STORY_DIALOGUE] = this.receiveStoryDialogue;
             this.handlers[Types.Messages.EQUIP] = this.receiveEquipItem;
             this.handlers[Types.Messages.DROP] = this.receiveDrop;
             this.handlers[Types.Messages.TELEPORT] = this.receiveTeleport;
@@ -281,6 +283,22 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
                 this.announcement_callback(text);
             }
         },
+
+        receiveStoryDialogue: function(data) {
+            var npcId = data[1],
+                lines = Array.isArray(data[2]) ? data[2] : [],
+                npc = this.pendingNpcInteractions[npcId],
+                message;
+
+            if(npc && lines.length && typeof npc.setStoryDialogue === 'function') {
+                npc.setStoryDialogue(lines);
+                message = npc.talk();
+                if(message && this.chat_callback) {
+                    this.chat_callback(npcId, message);
+                }
+            }
+            delete this.pendingNpcInteractions[npcId];
+        },
     
         receiveEquipItem: function(data) {
             var id = data[1],
@@ -299,7 +317,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
             var item = EntityFactory.createEntity(kind, id);
             item.wasDropped = true;
             item.playersInvolved = data[4];
-        
+            
             if(this.drop_callback) {
                 this.drop_callback(item, mobId);
             }
@@ -319,7 +337,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
             var id = data[1],
                 dmg = data[2];
         
-            if(this.dmg_callback) {
+            if(this.dmg_callback) {
                 this.dmg_callback(id, dmg);
             }
         },
@@ -328,7 +346,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
             var worldPlayers = data[1],
                 totalPlayers = data[2];
         
-            if(this.population_callback) {
+            if(this.population_callback) {
                 this.population_callback(worldPlayers, totalPlayers);
             }
         },
@@ -546,6 +564,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
 
         sendNpcInteract: function(npc) {
             if(npc) {
+                this.pendingNpcInteractions[npc.id] = npc;
                 this.sendMessage([Types.Messages.NPC_INTERACT, npc.id]);
             }
         }
