@@ -12,7 +12,7 @@
     "start:aapanel": "node app.js",
     "start:server": "node server/js/main.js",
     "doctor:aapanel": "node scripts/doctor-aapanel.mjs",
-    "check": "node --check app.js && node --check server/js/main.js && node --check server/js/ws.js"
+    "check": "node --check app.js && node --check server/js/main.js && node --check server/js/ws.js && node --check server/admin/auth.js && node --check server/admin/http.js && node --check server/admin/story-store.js"
   },
   "dependencies": {
     "log": "1.4.0",
