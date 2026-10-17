@@ -1,0 +1,141 @@
+name: Account Persistence Restart
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  account-state-after-restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null || ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql redis-server
+          fi
+          sudo service postgresql start
+          sudo service redis-server start
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='browserquest'" | grep -q 1; then
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE browserquest LOGIN PASSWORD 'browserquest_test'"
+          fi
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='browserquest'" | grep -q 1; then
+            sudo -u postgres createdb -O browserquest browserquest
+          fi
+          redis-cli ping | grep -q PONG
+
+      - name: Install, persist account state, restart Node and reconnect
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETUP_DIR="$(mktemp -d)"
+          export BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config"
+          export PORT=8012
+          USERNAME="restart_account"
+          CHARACTER="RestartHero"
+          PASSWORD="StrongPassword123!"
+          AXE="$(node -e "console.log(require('./shared/js/gametypes').Entities.AXE)")"
+          ARMOR="$(node -e "console.log(require('./shared/js/gametypes').Entities.PLATEARMOR)")"
+          CHECKPOINT="$(node -e "const m=require('./server/maps/world_server.json'); console.log(m.checkpoints[0].id)")"
+
+          APP_PID=""
+          cleanup() {
+            if test -n "$APP_PID"; then kill "$APP_PID" 2>/dev/null || true; fi
+            rm -rf "$SETUP_DIR"
+          }
+          trap cleanup EXIT
+
+          start_app() {
+            node app.js >> /tmp/browserquest-account-restart.log 2>&1 &
+            APP_PID=$!
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent http://127.0.0.1:8012/setup >/dev/null 2>&1 || curl --fail --silent http://127.0.0.1:8012/api/auth/policy >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/browserquest-account-restart.log
+            return 1
+          }
+
+          start_app
+          CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-account-restart.log | tail -1 | grep -oE '[0-9]{6}')"
+          test -n "$CODE"
+
+          cat > /tmp/account-restart-setup.json <<JSON
+          {"code":"$CODE","worlds":1,"players":10,"accessMode":"mixed","pgHost":"127.0.0.1","pgPort":5432,"pgDatabase":"browserquest","pgUser":"browserquest","pgPassword":"browserquest_test","pgSsl":false,"redisHost":"127.0.0.1","redisPort":6379,"redisUsername":"","redisPassword":"","redisDatabase":0,"redisTls":false,"adminUsername":"owner_restart_account","adminPassword":"StrongPassword123!","adminPasswordConfirm":"StrongPassword123!"}
+          JSON
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/account-restart-setup.json http://127.0.0.1:8012/setup/install | grep -q '"ok":true'
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8012/api/auth/policy | grep -q '"accessMode":"mixed"'; then break; fi
+            sleep 1
+          done
+
+          curl --fail --silent -c /tmp/player-before.cookies \
+            -H 'content-type: application/json' \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"characterName\":\"$CHARACTER\"}" \
+            http://127.0.0.1:8012/api/auth/register | grep -q '"loggedIn":true'
+
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -v ON_ERROR_STOP=1 \
+            -c "UPDATE characters SET weapon_kind=$AXE, armor_kind=$ARMOR, checkpoint_id=$CHECKPOINT, updated_at=NOW() WHERE user_id=(SELECT id FROM users WHERE username='$USERNAME')"
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -tAc \
+            "SELECT weapon_kind || ':' || armor_kind || ':' || checkpoint_id FROM characters c JOIN users u ON u.id=c.user_id WHERE u.username='$USERNAME'" | grep -q "$AXE:$ARMOR:$CHECKPOINT"
+
+          COOKIE="$(awk '$6=="bq_player_session" {print $6"="$7}' /tmp/player-before.cookies | tail -1)"
+          test -n "$COOKIE"
+          TEST_WS_URL=ws://127.0.0.1:8012/ \
+          TEST_PLAYER_COOKIE="$COOKIE" \
+          TEST_CHARACTER_NAME="$CHARACTER" \
+          TEST_EXPECTED_WEAPON="$AXE" \
+          TEST_EXPECTED_ARMOR="$ARMOR" \
+          TEST_CHECKPOINT_ID="$CHECKPOINT" \
+            node test/account-persistence-websocket-smoke.js
+
+          kill -TERM "$APP_PID"
+          wait "$APP_PID"
+          APP_PID=""
+          grep -q 'Estado persistente salvo. Encerrando.' /tmp/browserquest-account-restart.log
+
+          start_app
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8012/api/auth/policy | grep -q '"accessMode":"mixed"'; then break; fi
+            sleep 1
+          done
+
+          curl --fail --silent -c /tmp/player-after.cookies \
+            -H 'content-type: application/json' \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
+            http://127.0.0.1:8012/api/auth/login | grep -q '"loggedIn":true'
+          COOKIE_AFTER="$(awk '$6=="bq_player_session" {print $6"="$7}' /tmp/player-after.cookies | tail -1)"
+          test -n "$COOKIE_AFTER"
+
+          TEST_WS_URL=ws://127.0.0.1:8012/ \
+          TEST_PLAYER_COOKIE="$COOKIE_AFTER" \
+          TEST_CHARACTER_NAME="$CHARACTER" \
+          TEST_EXPECTED_WEAPON="$AXE" \
+          TEST_EXPECTED_ARMOR="$ARMOR" \
+          TEST_CHECKPOINT_ID="$CHECKPOINT" \
+            node test/account-persistence-websocket-smoke.js
+
+          curl --fail --silent http://127.0.0.1:8012/status | grep -q '^\['
+          echo 'Account equipment/checkpoint survived a complete Node restart.'

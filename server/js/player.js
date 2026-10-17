@@ -282,6 +282,18 @@ module.exports = Player = Character.extend({
         this.server.addPlayer(this);
         this.server.enter_callback(this);
         this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints]);
+        if(auth.type === 'account') {
+            // WELCOME stays backward-compatible; existing EQUIP messages synchronize
+            // the account's authoritative PostgreSQL equipment to this client.
+            this.send(this.equip(this.armor).serialize());
+            this.send(this.equip(this.weapon).serialize());
+        }
+        if(auth.type === 'account') {
+            // WELCOME stays backward-compatible; existing EQUIP messages synchronize
+            // the account's authoritative PostgreSQL equipment to this client.
+            this.send(this.equip(this.armor).serialize());
+            this.send(this.equip(this.weapon).serialize());
+        }
         this.hasEnteredGame = true;
         this.handshakePending = false;
         this.isDead = false;
