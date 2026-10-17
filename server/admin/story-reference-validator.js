@@ -1,8 +1,6 @@
 'use strict';
 
-var StoryStoreModule = require('./story-store'),
-    normalizeStory = StoryStoreModule.normalizeStory,
-    ChoiceService = require('../story/choice-service'),
+var ChoiceService = require('../story/choice-service'),
     ItemRewards = require('../story/item-reward-store'),
     StateRewards = require('../story/state-reward-service'),
     AchievementCatalog = require('../persistence/account-progress').ACHIEVEMENT_IDS,
@@ -18,7 +16,7 @@ function indexById(list) {
 
 function missionIndex(story) {
     var out = Object.create(null), duplicates = [];
-    (story.chapters || []).forEach(function(chapter) {
+    (story && story.chapters || []).forEach(function(chapter) {
         (chapter.missions || []).forEach(function(mission) {
             if(out[mission.id]) { duplicates.push(mission.id); }
             else { out[mission.id] = mission; }
@@ -39,16 +37,19 @@ function add(errors, code, path, message) {
     errors.push({code: code, path: path, message: message});
 }
 
-function validateStoryReferences(input, worldState, options) {
+function validateStoryReferences(story, worldState, options) {
     options = options || {};
-    var story = normalizeStory(input),
-        errors = [],
+    var errors = [],
         npcs = indexById(worldState && worldState.npcs),
         mobs = indexById(worldState && worldState.mobs),
         checkpoints = checkpointIds(worldState),
         missions = missionIndex(story),
         runtime = options.storyRuntime || null;
 
+    if(!story || !story.id) {
+        add(errors, 'invalid_story', 'story', 'História inválida.');
+        return {ok: false, errors: errors};
+    }
     if(!story.entryMissionId || !missions.items[story.entryMissionId]) {
         add(errors, 'invalid_entry_mission', 'entryMissionId', 'A missão inicial precisa apontar para uma missão real desta história.');
     }
@@ -74,14 +75,14 @@ function validateStoryReferences(input, worldState, options) {
         }
 
         (mission.choices || []).forEach(function(choice, index) {
-            var path = prefix + '.choices[' + index + ']';
+            var choicePath = prefix + '.choices[' + index + ']';
             if(!choice.nextMissionId || !missions.items[choice.nextMissionId]) {
-                add(errors, 'missing_choice_mission', path + '.nextMissionId', 'O destino da escolha não existe nesta história.');
+                add(errors, 'missing_choice_mission', choicePath + '.nextMissionId', 'O destino da escolha não existe nesta história.');
             } else if(choice.nextMissionId === missionId) {
-                add(errors, 'self_choice_mission', path + '.nextMissionId', 'A escolha não pode apontar para a própria missão.');
+                add(errors, 'self_choice_mission', choicePath + '.nextMissionId', 'A escolha não pode apontar para a própria missão.');
             }
             if(!ChoiceService.parseCondition(choice.condition).valid) {
-                add(errors, 'invalid_choice_condition', path + '.condition', 'Condição inválida. Use somente flag:, completed:, ! e &&.');
+                add(errors, 'invalid_choice_condition', choicePath + '.condition', 'Condição inválida. Use somente flag:, completed:, ! e &&.');
             }
         });
 
@@ -119,18 +120,42 @@ function validateStoryReferences(input, worldState, options) {
                 if(!resolved || !resolved.valid) { add(errors, 'invalid_item_reward', rewardPath, 'Recompensa de item inválida ou não entregável.'); }
             } else if(reward.type === 'achievement') {
                 var achievementId = Number(reward.value);
-                if(!Number.isInteger(achievementId) || !AchievementCatalog || AchievementCatalog.indexOf(achievementId) < 0) {
+                if(!Number.isInteger(achievementId) || AchievementCatalog.indexOf(achievementId) < 0) {
                     add(errors, 'invalid_achievement_reward', rewardPath, 'ID de conquista inválido.');
                 }
             } else if(reward.type === 'story_flag') {
-                if(!StateRewards.parseStoryFlagKey(reward.value)) { add(errors, 'invalid_story_flag_reward', rewardPath, 'Chave de story flag inválida.'); }
+                var flag = StateRewards.resolveStoryFlagReward(reward, index);
+                if(!flag || !flag.valid) { add(errors, 'invalid_story_flag_reward', rewardPath, 'Chave de story flag inválida.'); }
             } else if(reward.type === 'custom' && runtime && typeof runtime.hasCustomHandler === 'function' && !runtime.hasCustomHandler('reward', reward.value)) {
                 add(errors, 'missing_custom_reward_handler', rewardPath, 'Handler custom de recompensa não está registrado no servidor.');
             }
         });
     });
 
-    return {ok: errors.length === 0, story: story, errors: errors};
+    return {ok: errors.length === 0, errors: errors};
+}
+
+function validateWorldStoryReferences(worldState, stories) {
+    var errors = [], storyIndex = Object.create(null);
+    (Array.isArray(stories) ? stories : []).forEach(function(story) {
+        storyIndex[story.id] = missionIndex(story).items;
+    });
+    (worldState && worldState.npcs || []).forEach(function(npc) {
+        if(!npc || npc.enabled === false) { return; }
+        var storyId = String(npc.storyId || '').trim(), missionId = String(npc.missionId || '').trim(), completionId = String(npc.completionMissionId || '').trim();
+        if(!storyId && !missionId && !completionId) { return; }
+        if(!storyId || !storyIndex[storyId]) {
+            add(errors, 'invalid_npc_story', 'npc:' + npc.id + '.storyId', 'NPC referencia uma história inexistente.');
+            return;
+        }
+        if(!missionId || !storyIndex[storyId][missionId]) {
+            add(errors, 'invalid_npc_mission', 'npc:' + npc.id + '.missionId', 'NPC referencia uma missão inexistente nessa história.');
+        }
+        if(completionId && !storyIndex[storyId][completionId]) {
+            add(errors, 'invalid_npc_completion_mission', 'npc:' + npc.id + '.completionMissionId', 'Missão de conclusão do NPC não existe nessa história.');
+        }
+    });
+    return {ok: errors.length === 0, errors: errors};
 }
 
 function buildReferenceCatalog(storyStore, worldState) {
@@ -155,4 +180,5 @@ function buildReferenceCatalog(storyStore, worldState) {
 }
 
 exports.validateStoryReferences = validateStoryReferences;
+exports.validateWorldStoryReferences = validateWorldStoryReferences;
 exports.buildReferenceCatalog = buildReferenceCatalog;
