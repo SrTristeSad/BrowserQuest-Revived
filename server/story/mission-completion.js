@@ -3,6 +3,7 @@
 var MissionService = require('./mission-service'),
     StateRewardService = require('./state-reward-service'),
     CustomRewardService = require('./custom-reward-service'),
+    ChoiceService = require('./choice-service'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress;
 
 function completionError(code, message) {
@@ -166,6 +167,22 @@ async function completeMission(options) {
 
     stateRewardResult = StateRewardService.applyStateRewards(state, expandedRewards);
     state = stateRewardResult.state;
+
+    if(awaitingChoice && ChoiceService.getAvailableChoices(runtime, storyId, missionId, state).length === 0) {
+        transition = resolveLinearNextMission(runtime, storyId, missionId, mission, completedMissionIds);
+        awaitingChoice = false;
+        state = normalizeStoryProgress({
+            version: state.version,
+            storyId: state.storyId,
+            activeMissionId: transition.nextMissionId,
+            pendingChoiceMissionId: '',
+            objectiveProgress: 0,
+            completedMissionIds: state.completedMissionIds,
+            flags: state.flags,
+            startedAt: transition.nextMissionId ? now : current.startedAt,
+            updatedAt: now
+        });
+    }
 
     if(progressStore) {
         if(!characterId) {
