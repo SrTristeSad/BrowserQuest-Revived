@@ -13,7 +13,8 @@ var http = require('http'),
     SetupInfrastructure = require('./setup/infrastructure-setup'),
     Infrastructure = require('./storage/infrastructure'),
     Migrations = require('./storage/migrations'),
-    CharacterStore = require('./persistence/character-store').CharacterStore;
+    CharacterStore = require('./persistence/character-store').CharacterStore,
+    GracefulShutdown = require('./lifecycle/graceful-shutdown');
 
 var root = path.join(__dirname, '..'),
     configDir = process.env.BROWSERQUEST_CONFIG_DIR || path.join(root, 'var', 'config'),
@@ -178,7 +179,10 @@ async function startGame(config) {
             return playerAuth.authorizeConnection(connection);
         } : null,
         player_auth_service: playerAuth,
-        player_persistence: characterStore
+        player_persistence: characterStore,
+        // When PostgreSQL persistence is active the bootstrap owns SIGTERM/SIGINT
+        // so pending state can be flushed before the aaPanel process exits.
+        manage_process_signals: services ? false : true
     });
 
     console.log('[BrowserQuest] Instalação encontrada. Iniciando jogo...');
@@ -189,16 +193,12 @@ async function startGame(config) {
     gameMain.start(config);
 
     if(services) {
-        var closeServices = async function() {
-            try {
-                if(characterStore) { await characterStore.flushAll(); }
-                await services.close();
-            } catch(error) {
-                console.error('[BrowserQuest] Falha ao fechar infraestrutura:', error.message);
-            }
-        };
-        process.once('SIGTERM', closeServices);
-        process.once('SIGINT', closeServices);
+        GracefulShutdown.install({
+            characterStore: characterStore,
+            services: services,
+            logger: console,
+            timeoutMs: 5000
+        });
     }
 }
 

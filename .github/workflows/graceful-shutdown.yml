@@ -1,0 +1,57 @@
+name: Graceful Persistence Shutdown
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pending-state-flush:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null || ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql redis-server
+          fi
+          sudo service postgresql start
+          sudo service redis-server start
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='browserquest'" | grep -q 1; then
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE browserquest LOGIN PASSWORD 'browserquest_test'"
+          fi
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='browserquest'" | grep -q 1; then
+            sudo -u postgres createdb -O browserquest browserquest
+          fi
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
+          redis-cli ping | grep -q PONG
+
+      - name: Verify pending state flush on real SIGTERM
+        env:
+          TEST_PG_HOST: 127.0.0.1
+          TEST_PG_PORT: 5432
+          TEST_PG_DATABASE: browserquest
+          TEST_PG_USER: browserquest
+          TEST_PG_PASSWORD: browserquest_test
+          TEST_REDIS_HOST: 127.0.0.1
+          TEST_REDIS_PORT: 6379
+          TEST_REDIS_DATABASE: 0
+        run: node test/graceful-shutdown-live-smoke.js
