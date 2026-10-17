@@ -14,6 +14,7 @@ module.exports = Player = Character.extend({
         
         this.server = worldServer;
         this.connection = connection;
+        this.persistence = connection.playerPersistenceService || null;
 
         this._super(this.connection.id, "player", Types.Entities.WARRIOR, 0, 0, "");
 
@@ -22,6 +23,7 @@ module.exports = Player = Character.extend({
         this.isDead = false;
         this.haters = {};
         this.lastCheckpoint = null;
+        this.lastCheckpointId = null;
         this.formatChecker = new FormatChecker();
         this.disconnectTimeout = null;
         this.accountUserId = null;
@@ -199,8 +201,10 @@ module.exports = Player = Character.extend({
             }
             else if(action === Types.Messages.CHECK) {
                 var checkpoint = self.server.map.getCheckpoint(message[1]);
-                if(checkpoint) {
+                if(checkpoint && self.isInsideCheckpoint(checkpoint)) {
                     self.lastCheckpoint = checkpoint;
+                    self.lastCheckpointId = checkpoint.id;
+                    self.persistCheckpoint(checkpoint.id);
                 }
             }
             else {
@@ -215,6 +219,7 @@ module.exports = Player = Character.extend({
                 clearTimeout(self.firepotionTimeout);
             }
             clearTimeout(self.disconnectTimeout);
+            self.persistTouch();
             if(self.exit_callback) {
                 self.exit_callback();
             }
@@ -234,10 +239,18 @@ module.exports = Player = Character.extend({
             name = String(auth.character.name || '').substr(0, 15);
             this.accountUserId = auth.user ? auth.user.id : null;
             this.characterId = auth.character.id || null;
+            this.lastCheckpointId = auth.character.lastCheckpointId === null || auth.character.lastCheckpointId === undefined ? null : Number(auth.character.lastCheckpointId);
             armor = Number(auth.character.armorKind);
             weapon = Number(auth.character.weaponKind);
             if(!Types.isArmor(armor)) { armor = Types.Entities.CLOTHARMOR; }
             if(!Types.isWeapon(weapon)) { weapon = Types.Entities.SWORD1; }
+            if(this.lastCheckpointId !== null) {
+                this.lastCheckpoint = this.server.map.getCheckpoint(this.lastCheckpointId) || null;
+                if(!this.lastCheckpoint) {
+                    this.lastCheckpointId = null;
+                    this.persistClearCheckpoint();
+                }
+            }
         } else {
             name = Utils.sanitize(message[1]);
             name = (name === "") ? "lorem ipsum" : name.substr(0, 15);
@@ -259,10 +272,49 @@ module.exports = Player = Character.extend({
         
         this.server.addPlayer(this);
         this.server.enter_callback(this);
-        this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints]);
+        this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints, this.armor, this.weapon]);
         this.hasEnteredGame = true;
         this.handshakePending = false;
         this.isDead = false;
+        this.persistTouch();
+    },
+
+    isInsideCheckpoint: function(checkpoint) {
+        if(!checkpoint) { return false; }
+        return this.x >= checkpoint.x && this.x < checkpoint.x + checkpoint.width &&
+               this.y >= checkpoint.y && this.y < checkpoint.y + checkpoint.height;
+    },
+
+    persistEquipment: function() {
+        var self = this;
+        if(!this.persistence || !this.characterId) { return; }
+        Promise.resolve(this.persistence.saveEquipment(this.characterId, this.weapon, this.armor)).catch(function(error) {
+            log.error('Could not persist equipment for ' + self.name + ': ' + error.message);
+        });
+    },
+
+    persistCheckpoint: function(checkpointId) {
+        var self = this;
+        if(!this.persistence || !this.characterId) { return; }
+        Promise.resolve(this.persistence.saveCheckpoint(this.characterId, checkpointId)).catch(function(error) {
+            log.error('Could not persist checkpoint for ' + self.name + ': ' + error.message);
+        });
+    },
+
+    persistClearCheckpoint: function() {
+        var self = this;
+        if(!this.persistence || !this.characterId) { return; }
+        Promise.resolve(this.persistence.clearCheckpoint(this.characterId)).catch(function(error) {
+            log.error('Could not clear checkpoint for ' + self.name + ': ' + error.message);
+        });
+    },
+
+    persistTouch: function() {
+        var self = this;
+        if(!this.persistence || !this.characterId) { return; }
+        Promise.resolve(this.persistence.touch(this.characterId)).catch(function(error) {
+            log.error('Could not update last seen for ' + self.name + ': ' + error.message);
+        });
     },
     
     destroy: function() {
@@ -380,8 +432,10 @@ module.exports = Player = Character.extend({
                 this.equipArmor(item.kind);
                 this.updateHitPoints();
                 this.send(new Messages.HitPoints(this.maxHitPoints).serialize());
+                this.persistEquipment();
             } else if(Types.isWeapon(item.kind)) {
                 this.equipWeapon(item.kind);
+                this.persistEquipment();
             }
         }
     },
