@@ -29,18 +29,26 @@ function requestJson(pathname, method, body, cookie) {
             var chunks = [];
             response.on('data', function(chunk) { chunks.push(chunk); });
             response.on('end', function() {
-                var data;
-                try { data = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
-                catch(error) { return reject(error); }
+                var raw = Buffer.concat(chunks).toString('utf8'), data;
+                try { data = JSON.parse(raw || '{}'); }
+                catch(error) {
+                    error.message = method + ' ' + pathname + ' returned invalid JSON: ' + raw.slice(0, 500) + ' :: ' + error.message;
+                    return reject(error);
+                }
                 if(response.statusCode < 200 || response.statusCode >= 300) {
-                    var failure = new Error(data.error || ('HTTP ' + response.statusCode));
+                    var serverMessage = typeof data.error === 'string' ? data.error : JSON.stringify(data.error || data),
+                        failure = new Error(method + ' ' + pathname + ' -> HTTP ' + response.statusCode + ': ' + serverMessage);
                     failure.statusCode = response.statusCode;
+                    failure.response = data;
                     return reject(failure);
                 }
                 resolve({data: data, headers: response.headers});
             });
         });
-        request.on('error', reject);
+        request.on('error', function(error) {
+            error.message = method + ' ' + pathname + ' transport error: ' + error.message;
+            reject(error);
+        });
         if(payload !== null) { request.write(payload); }
         request.end();
     });
