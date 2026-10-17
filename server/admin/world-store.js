@@ -249,12 +249,45 @@ function normalizeEntity(entity, map, npcIds, mobIds) {
     if(profileType === '' && NPC_KINDS.indexOf(kind) < 0 && MOB_KINDS.indexOf(kind) < 0) { kind='villager'; }
     return {id:text(entity.id,100)||id('entity'),x:int(entity.x,1,Math.max(1,map.width-1),1),y:int(entity.y,1,Math.max(1,map.height-1),1),kind:kind,profileType:profileType,profileId:profileId,source:entity.source === 'base' ? 'base' : 'editor'};
 }
-function normalizeArea(area, map, mobIds) {
-    area = area || {};
-    var profileId=text(area.profileId,80), type=text(area.type,40);
-    if(profileId && !mobIds[profileId]) { profileId=''; }
-    if(!profileId && MOB_KINDS.indexOf(type) < 0) { type='rat'; }
-    return {id:int(area.id,1,999999,Math.floor(Math.random()*900000)+100000),x:int(area.x,1,Math.max(1,map.width-2),1),y:int(area.y,1,Math.max(1,map.height-2),1),width:int(area.width||area.w,1,Math.max(1,map.width),5),height:int(area.height||area.h,1,Math.max(1,map.height),5),nb:int(area.nb,1,500,3),type:type,profileId:profileId};
+function normalizeMobAreas(list, width, height, mobProfiles) {
+    if(!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 3 || height < 3) { return []; }
+    var seen = new Set(), result = [], byId = Object.create(null);
+    (Array.isArray(mobProfiles) ? mobProfiles : []).forEach(function(profile) {
+        if(profile && typeof profile.id === 'string' && MOB_KINDS.includes(profile.baseKind)) {
+            byId[profile.id] = profile.baseKind;
+        }
+    });
+    if(!Array.isArray(list)) { return result; }
+    list.slice(0, 2000).forEach(function(area) {
+        if(!area || typeof area !== 'object' || Array.isArray(area)) { return; }
+        var areaWidth = area.width === undefined ? area.w : area.width,
+            areaHeight = area.height === undefined ? area.h : area.height,
+            id = area.id, x = area.x, y = area.y, nb = area.nb,
+            profileId = area.profileId == null ? '' : area.profileId,
+            kind = area.type;
+        if(![id, x, y, areaWidth, areaHeight, nb].every(Number.isSafeInteger) ||
+           id < 0 || id > 999999 || seen.has(id) || x < 1 || y < 1 ||
+           areaWidth < 1 || areaHeight < 1 || x + areaWidth >= width ||
+           y + areaHeight >= height || nb < 1 || nb > 500 ||
+           typeof profileId !== 'string' || profileId.length > 80 ||
+           (profileId && !Object.prototype.hasOwnProperty.call(byId, profileId)) ||
+           !MOB_KINDS.includes(kind) || (profileId && byId[profileId] !== kind)) { return; }
+        seen.add(id);
+        result.push({id:id, x:x, y:y, width:areaWidth, height:areaHeight, nb:nb,
+                     type:kind, profileId:profileId});
+    });
+    return result;
+}
+
+function requireValidMobAreas(list, width, height, profiles) {
+    if(list == null) { return; }
+    if(!Array.isArray(list) || list.length > 2000 ||
+       normalizeMobAreas(list, width, height, profiles).length !== list.length) {
+        var error = new Error('Áreas de mobs inválidas: confira IDs, limites, quantidade, tipo e perfil de mob.');
+        error.code = 'WORLD_MOB_AREA_VALIDATION';
+        error.statusCode = 422;
+        throw error;
+    }
 }
 
 function WorldStore(options) {
@@ -304,11 +337,12 @@ WorldStore.prototype.normalize = function(state) {
     map.chestAreas=Array.isArray(map.chestAreas)?map.chestAreas.slice(0,1000):[];
     map.staticChests=Array.isArray(map.staticChests)?map.staticChests.slice(0,5000):[];
     map.entities=Array.isArray(map.entities)?map.entities.slice(0,10000).map(function(e){return normalizeEntity(e,map,npcIds,mobIds);}):[];
-    map.roamingAreas=Array.isArray(map.roamingAreas)?map.roamingAreas.slice(0,2000).map(function(a){return normalizeArea(a,map,mobIds);}):[];
+    map.roamingAreas=normalizeMobAreas(map.roamingAreas,baseWidth,baseHeight,mobs);
     return {schemaVersion:1,revision:int(state.revision,1,Number.MAX_SAFE_INTEGER,1),status:state.status==='published'?'published':'draft',updatedAt:state.updatedAt||new Date().toISOString(),publishedAt:state.publishedAt||null,map:map,npcs:npcs,mobs:mobs,catalogs:{npcKinds:NPC_KINDS.slice(),mobKinds:MOB_KINDS.slice(),tiles:tiles}};
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state;
+    requireValidMobAreas(input && input.map && input.map.roamingAreas, this.base.width, this.base.height, input && input.mobs);
     requireValidDoorLinks(input && input.map && input.map.doors,this.base.width,this.base.height);
     state=this.normalize(input);
     requireStartingCheckpoint(state,this.base);
@@ -342,6 +376,8 @@ WorldStore.prototype.buildClientMap = function(state) {
 };
 WorldStore.prototype.publish = function() {
     var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
+    var rawDraft=readJson(this.statePath);
+    requireValidMobAreas(rawDraft.map && rawDraft.map.roamingAreas,this.base.width,this.base.height,rawDraft.mobs);
     requireValidDoorLinks(readJson(this.statePath).map.doors,this.base.width,this.base.height);
     requireStartingCheckpoint(state,this.base);
     if(!validation.ok){error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));error.code='WORLD_STORY_REFERENCE_VALIDATION';error.details=validation.errors;throw error;}
@@ -363,4 +399,6 @@ exports.buildTileCatalog=buildTileCatalog;
 exports.readPngDimensions=readPngDimensions;
 exports.normalizeCheckpointAreas=normalizeCheckpointAreas;
 exports.normalizeDoorLinks=normalizeDoorLinks;
+exports.normalizeMobAreas=normalizeMobAreas;
+exports.requireValidMobAreas=requireValidMobAreas;
 exports.requireValidDoorLinks=requireValidDoorLinks;
