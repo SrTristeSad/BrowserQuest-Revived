@@ -4,11 +4,22 @@ var assert = require('assert'),
     fs = require('fs'),
     os = require('os'),
     path = require('path'),
-    WorldStore = require('../server/admin/world-store').WorldStore;
+    WorldStoreModule = require('../server/admin/world-store'),
+    WorldStore = WorldStoreModule.WorldStore;
+
+function fakePng(width, height) {
+    var buffer = Buffer.alloc(24);
+    Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).copy(buffer, 0);
+    buffer.write('IHDR', 12, 4, 'ascii');
+    buffer.writeUInt32BE(width, 16);
+    buffer.writeUInt32BE(height, 20);
+    return buffer;
+}
 
 var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bq-world-tiles-')),
     baseServerPath = path.join(dir, 'base-server.json'),
     baseClientPath = path.join(dir, 'base-client.json'),
+    tilesetPath = path.join(dir, 'tilesheet.png'),
     statePath = path.join(dir, 'state.json'),
     publishedServerPath = path.join(dir, 'published-server.json'),
     publishedClientPath = path.join(dir, 'published-client.json'),
@@ -51,11 +62,16 @@ var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bq-world-tiles-')),
 try {
     fs.writeFileSync(baseServerPath, JSON.stringify(baseServer));
     fs.writeFileSync(baseClientPath, JSON.stringify(baseClient));
+    fs.writeFileSync(tilesetPath, fakePng(64, 48)); // 4 x 3 tiles = IDs 0..11.
     fs.writeFileSync(storiesPath, JSON.stringify({stories: []}));
+
+    assert.deepStrictEqual(WorldStoreModule.readPngDimensions(tilesetPath), {width:64,height:48});
 
     store = new WorldStore({
         baseMapPath: baseServerPath,
         baseClientMapPath: baseClientPath,
+        tilesetPath: tilesetPath,
+        tilesetUrl: '/img/1/tilesheet.png',
         statePath: statePath,
         publishedMapPath: publishedServerPath,
         publishedClientJsonPath: publishedClientPath,
@@ -67,19 +83,24 @@ try {
     state = store.load();
     assert.deepStrictEqual(state.map.data, baseTiles, 'initial editor state should import the visual client tiles');
     assert.strictEqual(state.map.data.length, baseServer.width * baseServer.height);
+    assert.deepStrictEqual(state.catalogs.tiles, {
+        url:'/img/1/tilesheet.png',tileSize:16,width:64,height:48,columns:4,rows:3,count:12,measured:true
+    });
 
-    state.map.data[0] = 42;
-    state.map.data[1] = 'not-a-tile';
+    state.map.data[0] = 11;
+    state.map.data[1] = 12;
     state.map.data[2] = -1;
+    state.map.data[3] = 'not-a-tile';
     state.map.data.length = 14;
     state.map.data[12] = 500;
     state.map.data[13] = 501;
 
     saved = store.save(state);
     assert.strictEqual(saved.map.data.length, 12, 'tile data must match map dimensions exactly');
-    assert.strictEqual(saved.map.data[0], 42, 'valid edited tile should survive normalization');
-    assert.strictEqual(saved.map.data[1], 1, 'invalid tile should fall back to the original client tile');
+    assert.strictEqual(saved.map.data[0], 11, 'highest real tilesheet ID should survive normalization');
+    assert.strictEqual(saved.map.data[1], 1, 'ID outside the real tilesheet should fall back to the original client tile');
     assert.strictEqual(saved.map.data[2], -1, 'empty tile marker should remain valid');
+    assert.strictEqual(saved.map.data[3], 3, 'nonnumeric tile should fall back to the original client tile');
 
     reloaded = store.load();
     assert.deepStrictEqual(reloaded.map.data, saved.map.data, 'tile edits should survive draft reload');
@@ -99,7 +120,7 @@ try {
     fs.writeFileSync(statePath, JSON.stringify(legacy));
     assert.deepStrictEqual(store.load().map.data, baseTiles, 'legacy drafts without tile data should migrate from the base client map');
 
-    console.log('World Editor visual tile data round-trip smoke test passed.');
+    console.log('World Editor measured tilesheet and visual tile data smoke test passed.');
 } finally {
     fs.rmSync(dir, {recursive: true, force: true});
 }
