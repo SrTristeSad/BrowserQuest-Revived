@@ -280,6 +280,35 @@ PlayerAuth.prototype.destroySessionsByUserId = async function(userId) {
     return removed;
 };
 
+PlayerAuth.prototype.setMuteForUser = async function(userId, durationSeconds, reason) {
+    var numericUserId = Number(userId), seconds = Math.floor(Number(durationSeconds));
+    if(!Number.isInteger(numericUserId) || numericUserId <= 0) { throw new Error('ID de usuário inválido para mute.'); }
+    if(!Number.isInteger(seconds) || seconds < 60 || seconds > 86400) { throw new Error('Duração do mute deve ficar entre 60 e 86400 segundos.'); }
+    var until = Date.now() + (seconds * 1000), payload = {
+        until: until,
+        reason: String(reason || '').trim().replace(/\s+/g, ' ').slice(0, 120)
+    };
+    await this.services.redis.set('bq:player:mute:user:' + numericUserId, JSON.stringify(payload), {EX: seconds});
+    return {until: until, remainingSeconds: seconds, reason: payload.reason};
+};
+
+PlayerAuth.prototype.getMuteForUser = async function(userId) {
+    var numericUserId = Number(userId), key, raw, ttl, payload;
+    if(!Number.isInteger(numericUserId) || numericUserId <= 0) { return null; }
+    key = 'bq:player:mute:user:' + numericUserId;
+    raw = await this.services.redis.get(key);
+    if(!raw) { return null; }
+    ttl = await this.services.redis.ttl(key);
+    if(ttl <= 0) { await this.services.redis.del(key); return null; }
+    try { payload = JSON.parse(raw); }
+    catch(error) { await this.services.redis.del(key); return null; }
+    return {
+        until: Number(payload.until) || (Date.now() + ttl * 1000),
+        remainingSeconds: ttl,
+        reason: String(payload.reason || '').slice(0, 120)
+    };
+};
+
 PlayerAuth.prototype.isCharacterNameReserved = async function(name) {
     var normalized = normalizeCharacterName(name), result = await this.services.postgres.query(
         'SELECT 1 FROM characters WHERE LOWER(name)=LOWER($1) LIMIT 1',
@@ -301,12 +330,14 @@ PlayerAuth.prototype.authorizeConnection = async function(connection) {
     }
 
     if(session) {
+        var mute = await this.getMuteForUser(session.user.id);
         return {
             allowed: true,
             type: 'account',
             accessMode: policy.accessMode,
             user: session.user,
-            character: session.character
+            character: session.character,
+            mute: mute
         };
     }
     if(policy.accessMode === 'account_only') {
