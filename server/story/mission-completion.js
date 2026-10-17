@@ -3,6 +3,7 @@
 var MissionService = require('./mission-service'),
     StateRewardService = require('./state-reward-service'),
     CustomRewardService = require('./custom-reward-service'),
+    ChoiceService = require('./choice-service'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress;
 
 function completionError(code, message) {
@@ -60,12 +61,17 @@ function resolveLinearNextMission(runtime, storyId, missionId, mission, complete
     };
 }
 
+function hasPlayerChoices(mission) {
+    return Array.isArray(mission && mission.choices) && mission.choices.length > 0;
+}
+
 function unchangedResult(missionEntry, state, alreadyCompleted) {
     return {
         changed: false,
         alreadyCompleted: !!alreadyCompleted,
         mission: missionEntry,
         state: state,
+        awaitingChoice: !!(state && state.pendingChoiceMissionId),
         nextMissionId: '',
         nextMission: null,
         itemRewards: [],
@@ -90,6 +96,7 @@ async function completeMission(options) {
         amount,
         currentProgress,
         completedMissionIds,
+        awaitingChoice,
         transition,
         now,
         state,
@@ -120,7 +127,7 @@ async function completeMission(options) {
     }
 
     current = normalizeStoryProgress(current);
-    if(current.completedMissionIds.indexOf(missionId) >= 0 && !current.activeMissionId) {
+    if(current.completedMissionIds.indexOf(missionId) >= 0 && current.activeMissionId !== missionId) {
         return unchangedResult(missionEntry, current, true);
     }
     if(current.activeMissionId !== missionId) {
@@ -135,12 +142,14 @@ async function completeMission(options) {
     }
 
     completedMissionIds = appendCompletedMission(current.completedMissionIds, missionId);
-    transition = resolveLinearNextMission(runtime, storyId, missionId, mission, completedMissionIds);
+    awaitingChoice = hasPlayerChoices(mission);
+    transition = awaitingChoice ? {nextMissionId: '', nextMission: null} : resolveLinearNextMission(runtime, storyId, missionId, mission, completedMissionIds);
     now = new Date().toISOString();
     state = normalizeStoryProgress({
         version: current.version,
         storyId: current.storyId,
         activeMissionId: transition.nextMissionId,
+        pendingChoiceMissionId: awaitingChoice ? missionId : '',
         objectiveProgress: 0,
         completedMissionIds: completedMissionIds,
         flags: current.flags,
@@ -158,6 +167,22 @@ async function completeMission(options) {
 
     stateRewardResult = StateRewardService.applyStateRewards(state, expandedRewards);
     state = stateRewardResult.state;
+
+    if(awaitingChoice && ChoiceService.getAvailableChoices(runtime, storyId, missionId, state).length === 0) {
+        transition = resolveLinearNextMission(runtime, storyId, missionId, mission, completedMissionIds);
+        awaitingChoice = false;
+        state = normalizeStoryProgress({
+            version: state.version,
+            storyId: state.storyId,
+            activeMissionId: transition.nextMissionId,
+            pendingChoiceMissionId: '',
+            objectiveProgress: 0,
+            completedMissionIds: state.completedMissionIds,
+            flags: state.flags,
+            startedAt: transition.nextMissionId ? now : current.startedAt,
+            updatedAt: now
+        });
+    }
 
     if(progressStore) {
         if(!characterId) {
@@ -196,6 +221,7 @@ async function completeMission(options) {
         mission: missionEntry,
         state: state,
         completedMissionId: missionId,
+        awaitingChoice: awaitingChoice,
         nextMissionId: transition.nextMissionId,
         nextMission: transition.nextMission,
         itemRewards: rewardResult ? rewardResult.itemRewards : [],
@@ -206,4 +232,5 @@ async function completeMission(options) {
 exports.normalizeObjectiveAmount = normalizeObjectiveAmount;
 exports.appendCompletedMission = appendCompletedMission;
 exports.resolveLinearNextMission = resolveLinearNextMission;
+exports.hasPlayerChoices = hasPlayerChoices;
 exports.completeMission = completeMission;

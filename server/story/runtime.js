@@ -2,7 +2,8 @@
 
 var CustomHandlers = require('./custom-handler-registry'),
     CustomHandlerRegistry = CustomHandlers.CustomHandlerRegistry,
-    parseHandlerId = CustomHandlers.parseHandlerId;
+    parseHandlerId = CustomHandlers.parseHandlerId,
+    ChoiceService = require('./choice-service');
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -84,8 +85,18 @@ StoryRuntime.prototype.reload = function() {
                 self._warn(storyId, 'missing_next_mission', mission.nextMissionId, 'Próxima missão não existe nesta história.', mission.id);
             }
             (Array.isArray(mission.choices) ? mission.choices : []).forEach(function(choice) {
-                if(choice && choice.nextMissionId && !entry.missions.has(choice.nextMissionId)) {
-                    self._warn(storyId, 'missing_choice_mission', choice.nextMissionId, 'Destino de escolha não existe nesta história.', mission.id);
+                var target = String(choice && choice.nextMissionId || '').trim(),
+                    condition = ChoiceService.parseCondition(choice && choice.condition);
+                if(target === mission.id) {
+                    self._warn(storyId, 'self_choice_mission', target, 'Escolha aponta para a própria missão.', mission.id);
+                } else if(target && !entry.missions.has(target)) {
+                    self._warn(storyId, 'missing_choice_mission', target, 'Destino de escolha não existe nesta história.', mission.id);
+                }
+                if(!target) {
+                    self._warn(storyId, 'missing_choice_target', '', 'Escolha publicada não possui missão de destino.', mission.id);
+                }
+                if(!condition.valid) {
+                    self._warn(storyId, 'invalid_choice_condition', choice && choice.condition, 'Condição de escolha inválida ou insegura.', mission.id);
                 }
             });
 

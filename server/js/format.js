@@ -2,7 +2,8 @@
 
 var cls = require('./lib/class'),
     _ = require('underscore'),
-    Types = require('../../shared/js/gametypes');
+    Types = require('../../shared/js/gametypes'),
+    StoryProtocol = require('../../shared/js/storyprotocol');
 
 var FormatChecker = cls.Class.extend({
     init: function() {
@@ -21,6 +22,7 @@ var FormatChecker = cls.Class.extend({
         this.formats[Types.Messages.OPEN] = ['n'];
         this.formats[Types.Messages.CHECK] = ['n'];
         this.formats[Types.Messages.NPC_INTERACT] = ['n'];
+        this.formats[StoryProtocol.STORY_CHOICE_SELECT] = ['s', 's', 'n'];
     },
 
     check: function(msg) {
