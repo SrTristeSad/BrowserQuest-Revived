@@ -2,6 +2,7 @@
 
 var crypto = require('crypto'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress,
+    AchievementProgress = require('../persistence/account-progress'),
     Types = require('../../shared/js/gametypes');
 
 var INVENTORY_KEY = 'items',
@@ -143,6 +144,27 @@ function resolveItemReward(reward, rewardIndex) {
     };
 }
 
+function resolveAchievementReward(reward, rewardIndex) {
+    if(!reward || reward.type !== 'achievement') { return null; }
+    var achievementId = AchievementProgress.parseAchievementId(reward.value);
+    if(achievementId === null) {
+        return {
+            valid: false,
+            rewardIndex: rewardIndex,
+            achievementId: null,
+            status: 'invalid',
+            reason: 'unknown_achievement'
+        };
+    }
+    return {
+        valid: true,
+        rewardIndex: rewardIndex,
+        achievementId: achievementId,
+        status: 'granted',
+        reason: null
+    };
+}
+
 async function readInventory(client, characterId, lock) {
     var result = await client.query(
         "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='story_inventory' AND key=$2" + (lock ? ' FOR UPDATE' : ''),
@@ -159,6 +181,60 @@ async function writeInventory(client, characterId, inventory) {
         [Number(characterId), INVENTORY_KEY, JSON.stringify(normalized)]
     );
     return normalized;
+}
+
+async function grantAchievementRewards(client, characterId, descriptors) {
+    var valid = descriptors.filter(function(descriptor) { return descriptor.valid; }),
+        results = descriptors.filter(function(descriptor) { return !descriptor.valid; }).map(function(descriptor) {
+            return Object.assign({changed: false, alreadyUnlocked: false}, descriptor);
+        }),
+        current,
+        merged,
+        unlocked,
+        queryResult,
+        changed = false;
+
+    if(!valid.length) {
+        return {achievementRewards: results, achievements: null};
+    }
+
+    queryResult = await client.query(
+        "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='legacy' AND key='achievements' FOR UPDATE",
+        [Number(characterId)]
+    );
+    current = AchievementProgress.normalizeAchievements(queryResult.rowCount ? queryResult.rows[0].value : AchievementProgress.DEFAULT_ACHIEVEMENTS);
+    unlocked = current.unlocked.slice();
+
+    valid.forEach(function(descriptor) {
+        var alreadyUnlocked = unlocked.indexOf(descriptor.achievementId) >= 0;
+        if(!alreadyUnlocked) {
+            unlocked.push(descriptor.achievementId);
+            changed = true;
+        }
+        results.push(Object.assign({
+            changed: !alreadyUnlocked,
+            alreadyUnlocked: alreadyUnlocked
+        }, descriptor));
+    });
+
+    merged = AchievementProgress.normalizeAchievements({
+        unlocked: unlocked,
+        ratCount: current.ratCount,
+        skeletonCount: current.skeletonCount,
+        totalKills: current.totalKills,
+        totalDmg: current.totalDmg,
+        totalRevives: current.totalRevives
+    });
+
+    if(changed) {
+        await client.query(
+            "INSERT INTO character_progress(character_id, namespace, key, value) VALUES($1,'legacy','achievements',$2::jsonb) ON CONFLICT(character_id, namespace, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()",
+            [Number(characterId), JSON.stringify(merged)]
+        );
+    }
+
+    results.sort(function(a, b) { return a.rewardIndex - b.rewardIndex; });
+    return {achievementRewards: results, achievements: merged};
 }
 
 function StoryItemRewardStore(options) {
@@ -253,18 +329,25 @@ StoryItemRewardStore.prototype.materializePending = async function(characterId) 
     }
 };
 
-StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(characterId, storyId, missionId, storyState, rewards) {
+StoryItemRewardStore.prototype.saveCompletionWithRewards = async function(characterId, storyId, missionId, storyState, rewards) {
     var id = Number(characterId),
         cleanStoryId = cleanText(storyId, 120),
         cleanMissionId = cleanText(missionId, 120),
         normalizedState = normalizeStoryProgress(storyState, cleanStoryId),
-        descriptors = (Array.isArray(rewards) ? rewards : []).map(function(reward, index) {
+        rewardList = Array.isArray(rewards) ? rewards : [],
+        descriptors = rewardList.map(function(reward, index) {
             return resolveItemReward(reward, index);
+        }).filter(function(reward) {
+            return reward !== null;
+        }),
+        achievementDescriptors = rewardList.map(function(reward, index) {
+            return resolveAchievementReward(reward, index);
         }).filter(function(reward) {
             return reward !== null;
         }),
         client,
         results = [],
+        achievementResult,
         inventory = null,
         inventoryLoaded = false,
         inventoryDirty = false,
@@ -376,19 +459,31 @@ StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(ch
             inventory = await readInventory(client, id, false);
         }
 
+        achievementResult = await grantAchievementRewards(client, id, achievementDescriptors);
+
         await client.query(
             "INSERT INTO character_progress(character_id, namespace, key, value) VALUES($1,'story',$2,$3::jsonb) ON CONFLICT(character_id, namespace, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()",
             [id, cleanStoryId, JSON.stringify(normalizedState)]
         );
 
         await client.query('COMMIT');
-        return {state: normalizedState, itemRewards: results, inventory: inventory};
+        return {
+            state: normalizedState,
+            itemRewards: results,
+            inventory: inventory,
+            achievementRewards: achievementResult.achievementRewards,
+            achievements: achievementResult.achievements
+        };
     } catch(error) {
         try { await client.query('ROLLBACK'); } catch(ignore) {}
         throw error;
     } finally {
         client.release();
     }
+};
+
+StoryItemRewardStore.prototype.saveCompletionWithItemRewards = function(characterId, storyId, missionId, storyState, rewards) {
+    return this.saveCompletionWithRewards(characterId, storyId, missionId, storyState, rewards);
 };
 
 StoryItemRewardStore.prototype.listPending = async function(characterId) {
@@ -411,3 +506,5 @@ exports.normalizeInventory = normalizeInventory;
 exports.addInventoryItem = addInventoryItem;
 exports.rewardKey = rewardKey;
 exports.resolveItemReward = resolveItemReward;
+exports.resolveAchievementReward = resolveAchievementReward;
+exports.grantAchievementRewards = grantAchievementRewards;
