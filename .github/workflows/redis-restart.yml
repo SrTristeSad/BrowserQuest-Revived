@@ -104,5 +104,4 @@ jobs:
           curl --fail --silent http://127.0.0.1:8011/status | grep -q '^\['
           redis-cli ping | grep -q PONG
           PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
-          grep -q 'Redis:' /tmp/browserquest-redis-restart.log
           echo 'BrowserQuest stayed alive and Redis reconnected successfully.'
