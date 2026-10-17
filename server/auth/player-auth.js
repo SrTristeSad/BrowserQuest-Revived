@@ -1,6 +1,7 @@
 'use strict';
 
 var crypto = require('crypto'),
+    pg = require('pg'),
     AdminAuth = require('../admin/auth'),
     Types = require('../../shared/js/gametypes');
 
@@ -221,7 +222,7 @@ PlayerAuth.prototype.getSessionByToken = async function(token, refresh) {
             [session.userId, session.characterId]
         );
     } catch(error) {
-        var poolOptions = this.services.postgres.options || {};
+        var poolOptions = this.services.postgres.options || {}, directClient;
         console.error('[BrowserQuest] PostgreSQL session query diagnostics:', JSON.stringify({
             host: poolOptions.host,
             port: poolOptions.port,
@@ -240,6 +241,18 @@ PlayerAuth.prototype.getSessionByToken = async function(token, refresh) {
             errorCode: error.code,
             errorMessage: error.message
         }));
+        try {
+            directClient = new pg.Client(poolOptions);
+            await directClient.connect();
+            await directClient.query('SELECT 1');
+            console.error('[BrowserQuest] Direct PostgreSQL diagnostic connection unexpectedly succeeded.');
+        } catch(directError) {
+            console.error('[BrowserQuest] Direct PostgreSQL diagnostic stack:', directError && directError.stack ? directError.stack : directError);
+        } finally {
+            if(directClient) {
+                try { await directClient.end(); } catch(ignoreEnd) {}
+            }
+        }
         throw error;
     }
     row = result.rows[0];
