@@ -159,6 +159,9 @@ module.exports = Player = Character.extend({
                     if(Types.isItem(kind)) {
                         self.broadcast(item.despawn());
                         self.server.removeEntity(item);
+                        self.progressStoryCollect(kind).catch(function(error) {
+                            log.error('Story collect progress failed for ' + self.name + ': ' + (error && error.message ? error.message : error));
+                        });
                         
                         if(kind === Types.Entities.FIREPOTION) {
                             self.updateHitPoints();
@@ -502,6 +505,30 @@ module.exports = Player = Character.extend({
                 progressStore: self.storyProgress,
                 characterId: self.characterId,
                 targetProfileId: targetProfileId,
+                states: self.storyState
+            }).then(function(result) {
+                (result.updates || []).forEach(function(update) {
+                    self.storyState = MissionService.upsertStoryState(self.storyState, update.state);
+                });
+                return result;
+            });
+        });
+    },
+
+    progressStoryCollect: function(kind) {
+        var self = this,
+            targetKind = String(Types.getKindAsString(kind) || '').trim();
+
+        if(!Types.isItem(kind) || !targetKind) {
+            return Promise.resolve({changed: false, updates: []});
+        }
+
+        return this.queueStoryOperation(function() {
+            return MissionService.progressCollectObjectives({
+                runtime: self.storyRuntime,
+                progressStore: self.storyProgress,
+                characterId: self.characterId,
+                targetKind: targetKind,
                 states: self.storyState
             }).then(function(result) {
                 (result.updates || []).forEach(function(update) {

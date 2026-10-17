@@ -249,8 +249,86 @@ async function progressKillObjectives(options) {
     };
 }
 
+async function progressCollectObjectives(options) {
+    options = options || {};
+
+    var runtime = options.runtime,
+        progressStore = options.progressStore || null,
+        characterId = Number(options.characterId) || 0,
+        targetKind = String(options.targetKind || '').trim(),
+        states = Array.isArray(options.states) ? options.states : [],
+        updates = [],
+        i;
+
+    if(!runtime || typeof runtime.getMission !== 'function') {
+        throw missionError('STORY_RUNTIME_UNAVAILABLE', 'Story Runtime indisponível.');
+    }
+    if(!targetKind) {
+        return {changed: false, updates: []};
+    }
+
+    for(i = 0; i < states.length; i += 1) {
+        var current = normalizeStoryProgress(states[i]),
+            missionEntry,
+            objective,
+            objectiveTarget,
+            amount,
+            currentProgress,
+            state;
+
+        if(!current.storyId || !current.activeMissionId) { continue; }
+
+        missionEntry = runtime.getMission(current.storyId, current.activeMissionId);
+        if(!missionEntry || !missionEntry.mission) { continue; }
+
+        objective = missionEntry.mission.objective || {};
+        objectiveTarget = String(objective.target || '').trim();
+        if(objective.type !== 'collect' || !objectiveTarget || objectiveTarget !== targetKind) { continue; }
+
+        amount = Number(objective.amount || 1);
+        if(!Number.isFinite(amount) || amount < 1) { amount = 1; }
+        amount = Math.min(Math.floor(amount), 100000);
+        currentProgress = Math.max(0, Math.floor(Number(current.objectiveProgress) || 0));
+        if(currentProgress >= amount) { continue; }
+
+        state = normalizeStoryProgress({
+            version: current.version,
+            storyId: current.storyId,
+            activeMissionId: current.activeMissionId,
+            objectiveProgress: Math.min(amount, currentProgress + 1),
+            completedMissionIds: current.completedMissionIds,
+            flags: current.flags,
+            startedAt: current.startedAt,
+            updatedAt: new Date().toISOString()
+        });
+
+        if(progressStore) {
+            if(!characterId) {
+                throw missionError('CHARACTER_REQUIRED', 'Personagem autenticado é obrigatório para persistir progresso de missão.');
+            }
+            if(typeof progressStore.save !== 'function') {
+                throw missionError('STORY_PROGRESS_UNAVAILABLE', 'Persistência de Story Runtime indisponível.');
+            }
+            state = await progressStore.save(characterId, current.storyId, state);
+        }
+
+        updates.push({
+            mission: missionEntry,
+            state: state,
+            objectiveAmount: amount,
+            objectiveComplete: state.objectiveProgress >= amount
+        });
+    }
+
+    return {
+        changed: updates.length > 0,
+        updates: updates
+    };
+}
+
 exports.startMission = startMission;
 exports.progressTalkObjectives = progressTalkObjectives;
 exports.progressKillObjectives = progressKillObjectives;
+exports.progressCollectObjectives = progressCollectObjectives;
 exports.findStoryState = findStoryState;
 exports.upsertStoryState = upsertStoryState;
