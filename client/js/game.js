@@ -1618,6 +1618,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
             var msg;
         
             if(npc) {
+                this.client.sendNpcInteract(npc);
                 msg = npc.talk();
                 this.previousClickPosition = {};
                 if(msg) {

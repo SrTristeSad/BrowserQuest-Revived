@@ -20,6 +20,7 @@ var FormatChecker = cls.Class.extend({
         this.formats[Types.Messages.ZONE] = [];
         this.formats[Types.Messages.OPEN] = ['n'];
         this.formats[Types.Messages.CHECK] = ['n'];
+        this.formats[Types.Messages.NPC_INTERACT] = ['n'];
     },
 
     check: function(msg) {

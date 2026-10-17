@@ -28,7 +28,8 @@ Types = {
         BLINK: 24,
         OPEN: 25,
         CHECK: 26,
-        ANNOUNCEMENT: 27
+        ANNOUNCEMENT: 27,
+        NPC_INTERACT: 28
     },
     
     Entities: {
