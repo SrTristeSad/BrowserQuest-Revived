@@ -15,6 +15,7 @@ module.exports = Player = Character.extend({
         this.server = worldServer;
         this.connection = connection;
         this.characterPersistence = connection.characterPersistence || null;
+        this.storyProgress = connection.storyProgress || null;
 
         this._super(this.connection.id, "player", Types.Entities.WARRIOR, 0, 0, "");
 

@@ -103,6 +103,7 @@ function start(config) {
         if(!authorize) {
             connection.authContext = {allowed: true, type: 'guest', accessMode: 'name_only'};
             connection.characterPersistence = null;
+            connection.storyProgress = null;
             selectWorldAndConnect(connection);
             return;
         }
@@ -115,6 +116,7 @@ function start(config) {
             connection.authContext = context;
             connection.playerAuthService = config.player_auth_service || null;
             connection.characterPersistence = config.player_persistence || null;
+            connection.storyProgress = context.type === 'account' ? (config.story_progress || null) : null;
             selectWorldAndConnect(connection);
         }).catch(function(error) {
             log.error('Player authorization failed: ' + (error && error.stack ? error.stack : error));
