@@ -62,6 +62,16 @@ async function main() {
                         }
                     };
                 }
+                if(storyId === 'story-collect' && missionId === 'collect-flasks') {
+                    return {
+                        storyId: storyId,
+                        chapterId: 'chapter-four',
+                        mission: {
+                            id: missionId,
+                            objective: {type: 'collect', target: 'flask', amount: 2}
+                        }
+                    };
+                }
                 return null;
             }
         },
@@ -97,6 +107,16 @@ async function main() {
                 storyId: 'story-custom-kill',
                 activeMissionId: 'kill-elite-rat',
                 objectiveProgress: 0
+            },
+            {
+                version: 1,
+                storyId: 'story-collect',
+                activeMissionId: 'collect-flasks',
+                objectiveProgress: 0,
+                completedMissionIds: ['meet-alchemist'],
+                flags: {hasBottle: true},
+                startedAt: '2026-10-17T00:00:00.000Z',
+                updatedAt: '2026-10-17T00:00:00.000Z'
             }
         ],
         wrongTarget,
@@ -106,7 +126,12 @@ async function main() {
         wrongKill,
         firstKill,
         customKill,
-        fakePlayer;
+        fakePlayer,
+        savedBeforeCollect,
+        wrongCollect,
+        firstCollect,
+        secondCollect,
+        cappedCollect;
 
     assert.strictEqual(original[0].activeMissionId, 'old', 'upsert must not mutate the input list');
     assert.strictEqual(replaced.length, 2);
@@ -228,10 +253,66 @@ async function main() {
     await StoryKillProgress.progressKill(fakePlayer, {type: 'mob', kind: Types.Entities.RAT, editorData: null});
     assert.strictEqual(MissionService.findStoryState(fakePlayer.storyState, 'story-kill').objectiveProgress, 2, 'authoritative kill bridge must update the player story state');
 
+    savedBeforeCollect = saved.length;
+    wrongCollect = await MissionService.progressCollectObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetKind: 'burger',
+        states: states
+    });
+    assert.strictEqual(wrongCollect.changed, false, 'wrong collected item kind must not advance collect objectives');
+    assert.strictEqual(wrongCollect.updates.length, 0);
+    assert.strictEqual(saved.length, savedBeforeCollect, 'wrong collected item must not write story progress');
+
+    firstCollect = await MissionService.progressCollectObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetKind: 'flask',
+        states: states
+    });
+    assert.strictEqual(firstCollect.changed, true);
+    assert.strictEqual(firstCollect.updates.length, 1, 'matching canonical item kind must advance only its collect mission');
+    assert.strictEqual(firstCollect.updates[0].state.storyId, 'story-collect');
+    assert.strictEqual(firstCollect.updates[0].state.activeMissionId, 'collect-flasks', 'collect progress must not complete the mission yet');
+    assert.strictEqual(firstCollect.updates[0].state.objectiveProgress, 1);
+    assert.strictEqual(firstCollect.updates[0].objectiveAmount, 2);
+    assert.strictEqual(firstCollect.updates[0].objectiveComplete, false);
+    assert.deepStrictEqual(firstCollect.updates[0].state.completedMissionIds, ['meet-alchemist']);
+    assert.strictEqual(firstCollect.updates[0].state.flags.hasBottle, true);
+    assert.strictEqual(saved.length, savedBeforeCollect + 1);
+
+    states = MissionService.upsertStoryState(states, firstCollect.updates[0].state);
+    secondCollect = await MissionService.progressCollectObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetKind: 'flask',
+        states: states
+    });
+    assert.strictEqual(secondCollect.updates[0].state.objectiveProgress, 2);
+    assert.strictEqual(secondCollect.updates[0].objectiveComplete, true, 'reaching collect amount may be reported without concluding the mission');
+    assert.strictEqual(secondCollect.updates[0].state.activeMissionId, 'collect-flasks');
+
+    states = MissionService.upsertStoryState(states, secondCollect.updates[0].state);
+    cappedCollect = await MissionService.progressCollectObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetKind: 'flask',
+        states: states
+    });
+    assert.strictEqual(cappedCollect.changed, false, 'collect progress must stop at the published objective amount');
+    assert.strictEqual(cappedCollect.updates.length, 0);
+    assert.strictEqual(saved.length, savedBeforeCollect + 2, 'capped collect objective must not perform extra writes');
+
     assert.ok(serviceSource.indexOf("objective.type !== 'talk'") !== -1, 'service must ignore non-talk objectives for talk progress');
     assert.ok(serviceSource.indexOf('objectiveTarget !== targetProfileId') !== -1, 'talk service must match the published target to the stable NPC profile id');
     assert.ok(serviceSource.indexOf("objective.type !== 'kill'") !== -1, 'kill service must ignore non-kill objectives');
     assert.ok(serviceSource.indexOf('objectiveTarget !== targetId') !== -1, 'kill service must match only the authoritative mob target');
+    assert.ok(serviceSource.indexOf("objective.type !== 'collect'") !== -1, 'collect service must ignore non-collect objectives');
+    assert.ok(serviceSource.indexOf('objectiveTarget !== targetKind') !== -1, 'collect service must match only the authoritative canonical item kind');
     assert.ok(serviceSource.indexOf('Math.min(amount, currentProgress + 1)') !== -1, 'objective progress must increment by one and clamp to amount');
 
     assert.ok(killSource.indexOf("mob.editorData.id") !== -1, 'kill bridge must prefer the stable World Editor mob profile id');
@@ -249,6 +330,15 @@ async function main() {
     assert.ok(playerSource.indexOf("String(npc.editorData.id || '').trim()") !== -1, 'talk objectives must use the server-side stable World Editor NPC profile id');
     assert.ok(playerSource.indexOf('MissionService.progressTalkObjectives({') !== -1, 'Player must delegate talk progress to MissionService');
     assert.ok(playerSource.indexOf('self.progressStoryTalk(npc).catch(function(error)') !== -1, 'validated NPC interactions must attempt talk objective progress');
+    assert.ok(playerSource.indexOf('progressStoryCollect: function(kind)') !== -1, 'Player must expose internal collect objective progress');
+    assert.ok(playerSource.indexOf("String(Types.getKindAsString(kind) || '').trim()") !== -1, 'collect objectives must derive the canonical item kind on the server');
+    assert.ok(playerSource.indexOf('if(!Types.isItem(kind) || !targetKind)') !== -1, 'collect progress must reject non-item kinds');
+    assert.ok(playerSource.indexOf('MissionService.progressCollectObjectives({') !== -1, 'Player must delegate collect progress to MissionService');
+    assert.ok(playerSource.indexOf('self.progressStoryCollect(kind).catch(function(error)') !== -1, 'accepted loot must attempt collect objective progress');
+    assert.ok(
+        playerSource.indexOf('self.server.removeEntity(item);') < playerSource.indexOf('self.progressStoryCollect(kind).catch(function(error)'),
+        'collect progress must be triggered only after accepted loot removes the item from the world'
+    );
     assert.ok(playerSource.indexOf('startStoryMission: function(storyId, missionId)') !== -1, 'Player must expose internal startStoryMission');
     assert.ok(playerSource.indexOf('runtime: self.storyRuntime') !== -1, 'queued Story Runtime operations must use the live runtime');
     assert.ok(playerSource.indexOf('progressStore: self.storyProgress') !== -1, 'queued Story Runtime operations must use account persistence when present');
@@ -259,7 +349,7 @@ async function main() {
         'talk progress must be queued before the same interaction can enqueue a linked mission start'
     );
 
-    console.log('Player story mission, talk and kill objective smoke test passed.');
+    console.log('Player story mission, talk, kill and collect objective smoke test passed.');
 }
 
 main().catch(function(error) {
