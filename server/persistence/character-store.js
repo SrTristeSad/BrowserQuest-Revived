@@ -4,6 +4,7 @@ function CharacterStore(options) {
     options = options || {};
     this.postgres = options.postgres;
     this.debounceMs = Number(options.debounceMs || 300);
+    this.retryMs = Number(options.retryMs || 1000);
     this.pending = new Map();
     this.timers = new Map();
     if(!this.postgres) {
@@ -25,6 +26,19 @@ CharacterStore.prototype.load = async function(characterId) {
     };
 };
 
+CharacterStore.prototype.armFlush = function(id, delay) {
+    var self = this;
+    if(this.timers.has(id)) {
+        clearTimeout(this.timers.get(id));
+    }
+    this.timers.set(id, setTimeout(function() {
+        self.timers.delete(id);
+        self.flush(id).catch(function(error) {
+            console.error('[BrowserQuest] Falha ao persistir personagem ' + id + ':', error.message);
+        });
+    }, delay));
+};
+
 CharacterStore.prototype.schedule = function(characterId, patch) {
     var id = Number(characterId), current;
     if(!Number.isInteger(id) || id <= 0 || !patch) { return; }
@@ -36,17 +50,16 @@ CharacterStore.prototype.schedule = function(characterId, patch) {
         current.checkpointId = patch.checkpointId === null ? null : Number(patch.checkpointId);
     }
     this.pending.set(id, current);
+    this.armFlush(id, this.debounceMs);
+};
 
-    if(this.timers.has(id)) {
-        clearTimeout(this.timers.get(id));
-    }
-    var self = this;
-    this.timers.set(id, setTimeout(function() {
-        self.timers.delete(id);
-        self.flush(id).catch(function(error) {
-            console.error('[BrowserQuest] Falha ao persistir personagem ' + id + ':', error.message);
-        });
-    }, this.debounceMs));
+CharacterStore.prototype.restorePending = function(id, patch) {
+    var newer = this.pending.get(id) || {};
+    if(newer.weaponKind === undefined && patch.weaponKind !== undefined) { newer.weaponKind = patch.weaponKind; }
+    if(newer.armorKind === undefined && patch.armorKind !== undefined) { newer.armorKind = patch.armorKind; }
+    if(newer.checkpointId === undefined && patch.checkpointId !== undefined) { newer.checkpointId = patch.checkpointId; }
+    this.pending.set(id, newer);
+    this.armFlush(id, this.retryMs);
 };
 
 CharacterStore.prototype.flush = async function(characterId) {
@@ -57,6 +70,8 @@ CharacterStore.prototype.flush = async function(characterId) {
         clearTimeout(this.timers.get(id));
         this.timers.delete(id);
     }
+    // Remove this exact snapshot before the query. If newer state is scheduled while
+    // the query is running it gets a new pending object and will not be overwritten.
     this.pending.delete(id);
 
     if(patch.weaponKind !== undefined && Number.isInteger(patch.weaponKind)) {
@@ -74,11 +89,16 @@ CharacterStore.prototype.flush = async function(characterId) {
     if(!columns.length) { return false; }
 
     values.push(id);
-    await this.postgres.query(
-        'UPDATE characters SET ' + columns.join(', ') + ', updated_at=NOW() WHERE id=$' + index,
-        values
-    );
-    return true;
+    try {
+        await this.postgres.query(
+            'UPDATE characters SET ' + columns.join(', ') + ', updated_at=NOW() WHERE id=$' + index,
+            values
+        );
+        return true;
+    } catch(error) {
+        this.restorePending(id, patch);
+        throw error;
+    }
 };
 
 CharacterStore.prototype.flushAll = async function() {
