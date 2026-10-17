@@ -1,0 +1,36 @@
+name: Phase 3 Player Mute UI Patch
+
+on:
+  push:
+    branches: [phase3-player-mute-ui]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-player-mute-ui:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply player mute UI patch
+        run: node scripts/phase3-player-mute-ui-patch.mjs
+      - name: Verify mute control
+        run: |
+          grep -q "textContent='Silenciar'" server/admin/public/dashboard.html
+          grep -q "/mute'" server/admin/public/dashboard.html
+          grep -q 'durationMinutes' server/admin/public/dashboard.html
+      - name: Commit player mute UI
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+SrTristeSad@users.noreply.github.com"
+          git add server/admin/public/dashboard.html
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "feat: add player mute control to dashboard"
+            git push
+          fi
