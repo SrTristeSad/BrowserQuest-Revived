@@ -40,6 +40,11 @@ function runScript(script, extraEnv) {
 }
 
 function runOptionalAuthSmoke() {
+    if(process.env.TEST_SKIP_AUTH_SMOKE === '1') {
+        process.exit(0);
+        return;
+    }
+
     authApiAvailable(function(available) {
         if(!available) {
             process.exit(0);
