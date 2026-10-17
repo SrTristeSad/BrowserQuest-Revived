@@ -305,6 +305,10 @@ function createAdminHandler(options) {
         });
     }
 
+    function controlRuntime() {
+        return runtime && runtime.server && runtime.server.adminRuntime ? runtime.server.adminRuntime : null;
+    }
+
     async function handle(request, response, pathname) {
         var session, body, match;
 
@@ -404,6 +408,26 @@ function createAdminHandler(options) {
         if(pathname === '/admin/api/players' && request.method === 'GET') {
             if(!await requireAdmin(request, response, true)) { return; }
             json(response, 200, {players: onlinePlayers()});
+            return;
+        }
+
+        match = pathname.match(/^\/admin\/api\/players\/([0-9]+)\/kick$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+            var reason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Conexão encerrada pelo administrador.',
+                controls = controlRuntime(),
+                kicked = controls && typeof controls.kickPlayer === 'function' ? controls.kickPlayer(match[1], reason) : null;
+            if(!kicked) { json(response, 404, {error: 'Jogador não está mais conectado.'}); return; }
+            await audit(session, 'player.kick', kicked.username || kicked.name || kicked.id, {
+                playerId: kicked.id,
+                userId: kicked.userId,
+                characterId: kicked.characterId,
+                reason: reason
+            }, request);
+            json(response, 200, {ok: true, player: kicked});
             return;
         }
 

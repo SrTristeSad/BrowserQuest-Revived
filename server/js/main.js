@@ -190,6 +190,25 @@ function start(config) {
                 });
             });
             return players;
+        },
+        kickPlayer: function(playerId, reason) {
+            var found = null;
+            worlds.some(function(world, worldIndex) {
+                var player = world.players && world.players[String(playerId)], auth;
+                if(!player) { return false; }
+                auth = player.connection && player.connection.authContext;
+                found = {
+                    id: String(player.id),
+                    name: player.name || null,
+                    world: world.id || ('world' + (worldIndex + 1)),
+                    userId: auth && auth.user ? Number(auth.user.id) : null,
+                    username: auth && auth.user ? auth.user.username : null,
+                    characterId: auth && auth.character ? Number(auth.character.id) : null
+                };
+                player.connection.close(String(reason || 'Conexão encerrada pelo administrador.').slice(0, 120));
+                return true;
+            });
+            return found;
         }
     };
 
