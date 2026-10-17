@@ -93,6 +93,12 @@ function sanitizeDialogue(dialogue) {
     });
 }
 
+function resolveNextMissionIntro(completion) {
+    var mission = completion && completion.nextMission && completion.nextMission.mission;
+    if(!mission) { return []; }
+    return sanitizeDialogue(mission.introDialogue);
+}
+
 function createItemRewardStore(player) {
     var postgres = player && player.storyProgress && player.storyProgress.postgres;
     return postgres ? new StoryItemRewardStore({postgres: postgres}) : null;
@@ -183,7 +189,7 @@ function queueMissionCompletion(player, npc) {
         sourceNpcId = npc && npc.id;
 
     if(!player || player.type !== 'player' || !giverProfileId || sourceNpcId == null || typeof player.queueStoryOperation !== 'function') {
-        return Promise.resolve({completed: false, sent: false, result: null, lines: [], appliedItems: []});
+        return Promise.resolve({completed: false, sent: false, result: null, lines: [], nextLines: [], appliedItems: []});
     }
 
     return player.queueStoryOperation(async function() {
@@ -194,10 +200,11 @@ function queueMissionCompletion(player, npc) {
             }),
             completion,
             lines,
+            nextLines,
             appliedItems;
 
         if(!candidate) {
-            return {completed: false, sent: false, result: null, lines: [], appliedItems: []};
+            return {completed: false, sent: false, result: null, lines: [], nextLines: [], appliedItems: []};
         }
 
         completion = await MissionCompletion.completeMission({
@@ -212,7 +219,7 @@ function queueMissionCompletion(player, npc) {
         });
 
         if(!completion.changed) {
-            return {completed: false, sent: false, result: completion, lines: [], appliedItems: []};
+            return {completed: false, sent: false, result: completion, lines: [], nextLines: [], appliedItems: []};
         }
 
         player.storyState = MissionService.upsertStoryState(player.storyState, completion.state);
@@ -221,15 +228,21 @@ function queueMissionCompletion(player, npc) {
         }
         appliedItems = applyGrantedItemRewards(player, completion.itemRewards || []);
         lines = sanitizeDialogue(candidate.dialogue);
+        nextLines = resolveNextMissionIntro(completion);
+
         if(lines.length) {
             player.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, lines]);
+        }
+        if(nextLines.length) {
+            player.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, nextLines]);
         }
 
         return {
             completed: true,
-            sent: lines.length > 0,
+            sent: lines.length > 0 || nextLines.length > 0,
             result: completion,
             lines: lines,
+            nextLines: nextLines,
             appliedItems: appliedItems
         };
     });
@@ -313,6 +326,7 @@ exports.normalizeObjectiveAmount = normalizeObjectiveAmount;
 exports.findCompletableMission = findCompletableMission;
 exports.findCompletionDialogue = findCompletionDialogue;
 exports.sanitizeDialogue = sanitizeDialogue;
+exports.resolveNextMissionIntro = resolveNextMissionIntro;
 exports.createItemRewardStore = createItemRewardStore;
 exports.loadStoryInventory = loadStoryInventory;
 exports.applyGrantedItemRewards = applyGrantedItemRewards;
