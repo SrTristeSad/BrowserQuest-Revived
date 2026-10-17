@@ -36,7 +36,8 @@ function start(config) {
 
     server = new ws.MultiVersionWebsocketServer(config.port, {
         host: config.host,
-        serveClient: config.serve_client !== false
+        serveClient: config.serve_client !== false,
+        httpHandler: config.http_handler || null
     });
     metrics = config.metrics_enabled ? new Metrics(config) : null;
 
