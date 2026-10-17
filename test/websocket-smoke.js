@@ -31,23 +31,36 @@ function authApiAvailable(callback) {
     request.setTimeout(1500, function() { request.destroy(); callback(false); });
 }
 
+function runScript(script, extraEnv) {
+    return childProcess.spawnSync(process.execPath, [script], {
+        cwd: process.cwd(),
+        env: Object.assign({}, process.env, extraEnv || {}),
+        stdio: 'inherit'
+    });
+}
+
 function runOptionalAuthSmoke() {
     authApiAvailable(function(available) {
         if(!available) {
             process.exit(0);
             return;
         }
-        var result = childProcess.spawnSync(process.execPath, ['test/player-auth-websocket-smoke.js'], {
-            cwd: process.cwd(),
-            env: Object.assign({}, process.env, {
+
+        var sharedEnv = {
                 TEST_HTTP_URL: derivedHttpBase(),
                 TEST_WS_URL: target,
                 TEST_ADMIN_USERNAME: process.env.TEST_ADMIN_USERNAME || 'owner',
                 TEST_ADMIN_PASSWORD: process.env.TEST_ADMIN_PASSWORD || 'StrongPassword123!'
-            }),
-            stdio: 'inherit'
-        });
-        process.exit(result.status || 0);
+            },
+            authResult = runScript('test/player-auth-websocket-smoke.js', sharedEnv);
+
+        if(authResult.status !== 0) {
+            process.exit(authResult.status || 1);
+            return;
+        }
+
+        var progressResult = runScript('test/account-progress-http-smoke.js', sharedEnv);
+        process.exit(progressResult.status || 0);
     });
 }
 
