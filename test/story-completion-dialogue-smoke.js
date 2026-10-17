@@ -144,6 +144,7 @@ async function main() {
         incomplete,
         wrongGiver,
         deterministic,
+        bounded,
         direct,
         repeated,
         player,
@@ -161,6 +162,11 @@ async function main() {
     assert.strictEqual(StoryCompletionDialogue.resolveGiverProfileId({id: 'legacy', type: 'npc'}), '', 'legacy NPC without a stable World Editor profile must not receive completion flow');
     assert.strictEqual(StoryCompletionDialogue.normalizeObjectiveAmount({amount: 0}), 1);
     assert.strictEqual(StoryCompletionDialogue.normalizeObjectiveAmount({amount: 100001}), 100000);
+
+    bounded = MissionCompletion.appendCompletedMission(Array.from({length: 500}, function(_, index) { return 'm' + index; }), 'latest');
+    assert.strictEqual(bounded.length, 500, 'completion history must remain within the persisted normalization limit');
+    assert.strictEqual(bounded[bounded.length - 1], 'latest', 'newest completion must never be dropped at the history cap');
+    assert.strictEqual(bounded.indexOf('m0'), -1, 'oldest bounded history entry may be evicted to retain the newest completion');
 
     incomplete = StoryCompletionDialogue.findCompletableMission({
         runtime: runtime,
@@ -265,8 +271,8 @@ async function main() {
     result = await StoryCompletionDialogue.queueCompletionDialogue(player, guard);
     assert.strictEqual(result.sent, true, 'dialogue-only helper must remain available');
     assert.strictEqual(JSON.stringify(player.storyState), beforeState, 'dialogue-only helper must remain read-only');
-    player.sentMessages = [];
 
+    player = createPlayer([readyState], runtime, progressStore);
     result = await StoryCompletionDialogue.queueMissionCompletion(player, guard);
     assert.strictEqual(result.completed, true);
     assert.strictEqual(result.sent, true);
@@ -333,7 +339,7 @@ async function main() {
 
     assert.ok(completionServiceSource.indexOf("activeMissionId: ''") !== -1, 'completion service must clear the active mission');
     assert.ok(completionServiceSource.indexOf('objectiveProgress: 0') !== -1, 'completion service must clear partial progress');
-    assert.ok(completionServiceSource.indexOf('completedMissionIds.push(missionId)') !== -1, 'completion service must append the completed mission id');
+    assert.ok(completionServiceSource.indexOf('appendCompletedMission(current.completedMissionIds, missionId)') !== -1, 'completion service must append the completed mission id through the bounded history helper');
     assert.ok(completionServiceSource.indexOf('progressStore.save') !== -1, 'authenticated completion must persist story state');
     assert.strictEqual(completionServiceSource.indexOf('nextMissionId'), -1, 'completion must not start the next mission yet');
     assert.strictEqual(completionServiceSource.indexOf('rewards'), -1, 'completion must not grant rewards yet');
