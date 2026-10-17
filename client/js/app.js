@@ -5,6 +5,7 @@ define(['jquery', 'storage'], function($, Storage) {
         init: function() {
             this.currentPage = 1;
             this.blinkInterval = null;
+            this.announcementTimeout = null;
             this.previousState = null;
             this.isParchmentReady = true;
             this.ready = false;
@@ -260,6 +261,25 @@ define(['jquery', 'storage'], function($, Storage) {
         	if($('body').hasClass('about')) {
         	    this.closeInGameAbout();
         	}
+        },
+
+        showAnnouncement: function(message) {
+            var self = this,
+                $announcement = $('#admin-announcement'),
+                $message = $announcement.find('.announcement-message');
+
+            if(!$announcement.length) {
+                return;
+            }
+            if(this.announcementTimeout) {
+                clearTimeout(this.announcementTimeout);
+            }
+            $message.text(String(message || ''));
+            $announcement.addClass('active');
+            this.announcementTimeout = setTimeout(function() {
+                $announcement.removeClass('active');
+                self.announcementTimeout = null;
+            }, 6500);
         },
 
         showAchievementNotification: function(id, name) {
