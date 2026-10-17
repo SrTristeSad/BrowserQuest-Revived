@@ -1,8 +1,23 @@
 'use strict';
 
+var MAX_FLAGS = 200,
+    RESERVED_IDS = Object.freeze({
+        '__proto__': true,
+        'constructor': true,
+        'prototype': true
+    });
+
 function cleanId(value, max) {
     var text = String(value == null ? '' : value).trim().replace(/[^a-zA-Z0-9_-]/g, '');
     return text.slice(0, max || 120);
+}
+
+function strictId(value, max) {
+    var limit = max || 120,
+        text = String(value == null ? '' : value).trim();
+    if(!text || text.length > limit || !/^[a-zA-Z0-9_-]+$/.test(text)) { return ''; }
+    if(RESERVED_IDS[text.toLowerCase()]) { return ''; }
+    return text;
 }
 
 function clampProgress(value) {
@@ -28,9 +43,9 @@ function normalizeFlags(value) {
     var result = {}, count = 0;
     if(!value || typeof value !== 'object' || Array.isArray(value)) { return result; }
     Object.keys(value).forEach(function(key) {
-        if(count >= 200) { return; }
+        if(count >= MAX_FLAGS) { return; }
         var cleanKey = cleanId(key, 120);
-        if(!cleanKey) { return; }
+        if(!cleanKey || RESERVED_IDS[cleanKey.toLowerCase()]) { return; }
         var raw = value[key];
         if(typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
             result[cleanKey] = typeof raw === 'string' ? raw.slice(0, 250) : raw;
@@ -115,4 +130,8 @@ StoryProgressStore.prototype.save = async function(characterId, storyId, incomin
 };
 
 exports.StoryProgressStore = StoryProgressStore;
+exports.MAX_FLAGS = MAX_FLAGS;
+exports.cleanId = cleanId;
+exports.strictId = strictId;
+exports.normalizeFlags = normalizeFlags;
 exports.normalizeStoryProgress = normalizeStoryProgress;

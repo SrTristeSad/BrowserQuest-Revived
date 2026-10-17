@@ -1,6 +1,7 @@
 'use strict';
 
 var MissionService = require('./mission-service'),
+    StateRewardService = require('./state-reward-service'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress;
 
 function completionError(code, message) {
@@ -56,6 +57,7 @@ async function completeMission(options) {
         currentProgress,
         completedMissionIds,
         state,
+        stateRewardResult,
         rewardResult = null;
 
     if(!runtime || typeof runtime.getMission !== 'function') {
@@ -105,6 +107,9 @@ async function completeMission(options) {
         startedAt: current.startedAt,
         updatedAt: new Date().toISOString()
     });
+
+    stateRewardResult = StateRewardService.applyStateRewards(state, mission.rewards || []);
+    state = stateRewardResult.state;
 
     if(progressStore) {
         if(!characterId) {
