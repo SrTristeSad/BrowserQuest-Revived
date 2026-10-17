@@ -5,6 +5,10 @@ var assert = require('assert'),
     Migrations = require('../server/storage/migrations'),
     PlayerAuth = require('../server/auth/player-auth').PlayerAuth;
 
+function sleep(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
 async function main() {
     var postgres = {
         host: process.env.TEST_PG_HOST || '127.0.0.1',
@@ -25,10 +29,11 @@ async function main() {
     await Migrations.runMigrations(postgres);
     var services = Infrastructure.createServices({postgres: postgres, redis: redis});
     await services.connect();
-    var auth = new PlayerAuth({services: services, accessMode: 'mixed'}), registered, logged, session, context;
+    var auth = new PlayerAuth({services: services, accessMode: 'mixed'}),
+        registered, logged, session, context, rate;
 
     try {
-        await services.postgres.query("DELETE FROM users WHERE username='alice_auth_test'");
+        await services.postgres.query("DELETE FROM users WHERE username IN ('alice_auth_test','blocked_auth_test')");
         await services.redis.flushDb();
         await services.postgres.query("INSERT INTO settings(key,value) VALUES('access_mode','\"mixed\"'::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value");
         await services.postgres.query("INSERT INTO settings(key,value) VALUES('registration_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value");
@@ -53,10 +58,31 @@ async function main() {
         assert.strictEqual(context.type, 'account');
         assert.strictEqual(context.character.name, 'Hero Alice');
 
+        rate = await auth.consumeRateLimit('unit-login', '203.0.113.50', 2, 60);
+        assert.strictEqual(rate.allowed, true);
+        rate = await auth.consumeRateLimit('unit-login', '203.0.113.50', 2, 60);
+        assert.strictEqual(rate.allowed, true);
+        rate = await auth.consumeRateLimit('unit-login', '203.0.113.50', 2, 60);
+        assert.strictEqual(rate.allowed, false);
+        assert.ok(rate.retryAfter > 0);
+
+        await services.postgres.query("UPDATE settings SET value='false'::jsonb WHERE key='registration_enabled'");
+        var registrationBlocked = false;
+        try {
+            await auth.register({username: 'blocked_auth_test', password: 'StrongPassword123!', characterName: 'Blocked Hero'});
+        } catch(error) {
+            registrationBlocked = error.code === 'REGISTRATION_DISABLED';
+        }
+        assert.strictEqual(registrationBlocked, true);
+        await services.postgres.query("UPDATE settings SET value='true'::jsonb WHERE key='registration_enabled'");
+
         await services.postgres.query("UPDATE settings SET value='\"account_only\"'::jsonb WHERE key='access_mode'");
         context = await auth.authorizeConnection({headers: {}});
         assert.strictEqual(context.allowed, false);
         assert.strictEqual(context.code, 'ACCOUNT_REQUIRED');
+        context = await auth.authorizeConnection({headers: {cookie: 'bq_player_session=' + logged.token}});
+        assert.strictEqual(context.allowed, true);
+        assert.strictEqual(context.type, 'account');
 
         await services.postgres.query("UPDATE settings SET value='\"name_only\"'::jsonb WHERE key='access_mode'");
         context = await auth.authorizeConnection({headers: {}});
@@ -68,10 +94,18 @@ async function main() {
         catch(error) { badLogin = error.code === 'INVALID_CREDENTIALS'; }
         assert.strictEqual(badLogin, true);
 
+        await services.postgres.query("UPDATE settings SET value='\"mixed\"'::jsonb WHERE key='access_mode'");
+        var shortAuth = new PlayerAuth({services: services, accessMode: 'mixed', sessionTtlSeconds: 1}),
+            shortSession = await shortAuth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
+        assert.ok(await shortAuth.getSessionByToken(shortSession.token, false));
+        await sleep(1500);
+        assert.strictEqual(await shortAuth.getSessionByToken(shortSession.token, false), null, 'Redis TTL must expire player sessions');
+
         console.log('Player authentication live smoke tests passed.');
     } finally {
         await services.postgres.query("UPDATE settings SET value='\"mixed\"'::jsonb WHERE key='access_mode'");
-        await services.postgres.query("DELETE FROM users WHERE username='alice_auth_test'");
+        await services.postgres.query("UPDATE settings SET value='true'::jsonb WHERE key='registration_enabled'");
+        await services.postgres.query("DELETE FROM users WHERE username IN ('alice_auth_test','blocked_auth_test')");
         await services.redis.flushDb();
         await services.close();
     }
