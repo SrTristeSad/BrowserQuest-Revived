@@ -145,7 +145,7 @@ function resolveItemReward(reward, rewardIndex) {
 
 async function readInventory(client, characterId, lock) {
     var result = await client.query(
-        "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='story_inventory' AND key=$2" + (lock ? ' FOR UPDATE' : '') + ' LIMIT 1',
+        "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='story_inventory' AND key=$2" + (lock ? ' FOR UPDATE' : ''),
         [Number(characterId), INVENTORY_KEY]
     );
     return normalizeInventory(result.rowCount ? result.rows[0].value : null);
