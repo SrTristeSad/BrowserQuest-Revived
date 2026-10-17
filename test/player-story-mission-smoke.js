@@ -3,7 +3,9 @@
 var assert = require('assert'),
     fs = require('fs'),
     path = require('path'),
-    MissionService = require('../server/story/mission-service');
+    MissionService = require('../server/story/mission-service'),
+    StoryKillProgress = require('../server/story/kill-progress'),
+    Types = require('../shared/js/gametypes');
 
 async function main() {
     var original = [
@@ -25,6 +27,8 @@ async function main() {
         root = path.join(__dirname, '..'),
         playerSource = fs.readFileSync(path.join(root, 'server', 'js', 'player.js'), 'utf8'),
         serviceSource = fs.readFileSync(path.join(root, 'server', 'story', 'mission-service.js'), 'utf8'),
+        killSource = fs.readFileSync(path.join(root, 'server', 'story', 'kill-progress.js'), 'utf8'),
+        mainSource = fs.readFileSync(path.join(root, 'server', 'js', 'main.js'), 'utf8'),
         saved = [],
         runtime = {
             getMission: function(storyId, missionId) {
@@ -45,6 +49,16 @@ async function main() {
                         mission: {
                             id: missionId,
                             objective: {type: 'kill', target: 'rat', amount: 3}
+                        }
+                    };
+                }
+                if(storyId === 'story-custom-kill' && missionId === 'kill-elite-rat') {
+                    return {
+                        storyId: storyId,
+                        chapterId: 'chapter-three',
+                        mission: {
+                            id: missionId,
+                            objective: {type: 'kill', target: 'mob-elite-rat', amount: 1}
                         }
                     };
                 }
@@ -72,13 +86,27 @@ async function main() {
                 version: 1,
                 storyId: 'story-kill',
                 activeMissionId: 'kill-rats',
+                objectiveProgress: 0,
+                completedMissionIds: [],
+                flags: {huntStarted: true},
+                startedAt: '2026-10-17T00:00:00.000Z',
+                updatedAt: '2026-10-17T00:00:00.000Z'
+            },
+            {
+                version: 1,
+                storyId: 'story-custom-kill',
+                activeMissionId: 'kill-elite-rat',
                 objectiveProgress: 0
             }
         ],
         wrongTarget,
         firstTalk,
         secondTalk,
-        cappedTalk;
+        cappedTalk,
+        wrongKill,
+        firstKill,
+        customKill,
+        fakePlayer;
 
     assert.strictEqual(original[0].activeMissionId, 'old', 'upsert must not mutate the input list');
     assert.strictEqual(replaced.length, 2);
@@ -145,9 +173,74 @@ async function main() {
     assert.strictEqual(cappedTalk.updates.length, 0);
     assert.strictEqual(saved.length, 2, 'capped talk objective must not perform extra writes');
 
-    assert.ok(serviceSource.indexOf("objective.type !== 'talk'") !== -1, 'service must ignore non-talk objectives');
-    assert.ok(serviceSource.indexOf('objectiveTarget !== targetProfileId') !== -1, 'service must match the published target to the stable NPC profile id');
-    assert.ok(serviceSource.indexOf('Math.min(amount, currentProgress + 1)') !== -1, 'talk progress must increment by one and clamp to amount');
+    wrongKill = await MissionService.progressKillObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetId: 'goblin',
+        states: states
+    });
+    assert.strictEqual(wrongKill.changed, false, 'wrong mob target must not advance kill objectives');
+    assert.strictEqual(saved.length, 2, 'wrong mob target must not write story progress');
+
+    firstKill = await MissionService.progressKillObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetId: 'rat',
+        states: states
+    });
+    assert.strictEqual(firstKill.changed, true);
+    assert.strictEqual(firstKill.updates.length, 1, 'classic rat target must advance only the classic rat mission');
+    assert.strictEqual(firstKill.updates[0].state.storyId, 'story-kill');
+    assert.strictEqual(firstKill.updates[0].state.activeMissionId, 'kill-rats', 'kill progress must not complete the mission yet');
+    assert.strictEqual(firstKill.updates[0].state.objectiveProgress, 1);
+    assert.strictEqual(firstKill.updates[0].objectiveAmount, 3);
+    assert.strictEqual(firstKill.updates[0].objectiveComplete, false);
+    assert.strictEqual(firstKill.updates[0].state.flags.huntStarted, true);
+
+    states = MissionService.upsertStoryState(states, firstKill.updates[0].state);
+    customKill = await MissionService.progressKillObjectives({
+        runtime: runtime,
+        progressStore: progressStore,
+        characterId: 77,
+        targetId: 'mob-elite-rat',
+        states: states
+    });
+    assert.strictEqual(customKill.changed, true);
+    assert.strictEqual(customKill.updates.length, 1, 'custom profile id must match only its published mission target');
+    assert.strictEqual(customKill.updates[0].state.storyId, 'story-custom-kill');
+    assert.strictEqual(customKill.updates[0].state.objectiveProgress, 1);
+    assert.strictEqual(customKill.updates[0].objectiveComplete, true);
+    assert.strictEqual(customKill.updates[0].state.activeMissionId, 'kill-elite-rat', 'reaching kill amount must not conclude the mission yet');
+
+    assert.strictEqual(StoryKillProgress.resolveMobTarget({kind: Types.Entities.RAT, editorData: null}), 'rat', 'classic mobs must use canonical kind fallback');
+    assert.strictEqual(StoryKillProgress.resolveMobTarget({kind: Types.Entities.RAT, editorData: {id: 'mob-elite-rat'}}), 'mob-elite-rat', 'custom mobs must prefer stable profile id over base kind');
+
+    fakePlayer = {
+        type: 'player',
+        characterId: 77,
+        storyRuntime: runtime,
+        storyProgress: progressStore,
+        storyState: states,
+        queueStoryOperation: function(operation) { return Promise.resolve().then(operation); }
+    };
+    await StoryKillProgress.progressKill(fakePlayer, {type: 'mob', kind: Types.Entities.RAT, editorData: null});
+    assert.strictEqual(MissionService.findStoryState(fakePlayer.storyState, 'story-kill').objectiveProgress, 2, 'authoritative kill bridge must update the player story state');
+
+    assert.ok(serviceSource.indexOf("objective.type !== 'talk'") !== -1, 'service must ignore non-talk objectives for talk progress');
+    assert.ok(serviceSource.indexOf('objectiveTarget !== targetProfileId') !== -1, 'talk service must match the published target to the stable NPC profile id');
+    assert.ok(serviceSource.indexOf("objective.type !== 'kill'") !== -1, 'kill service must ignore non-kill objectives');
+    assert.ok(serviceSource.indexOf('objectiveTarget !== targetId') !== -1, 'kill service must match only the authoritative mob target');
+    assert.ok(serviceSource.indexOf('Math.min(amount, currentProgress + 1)') !== -1, 'objective progress must increment by one and clamp to amount');
+
+    assert.ok(killSource.indexOf("mob.editorData.id") !== -1, 'kill bridge must prefer the stable World Editor mob profile id');
+    assert.ok(killSource.indexOf('Types.getKindAsString(mob.kind)') !== -1, 'kill bridge must provide a canonical fallback for classic mobs');
+    assert.ok(killSource.indexOf("entity.type === 'mob' && entity.hitPoints <= 0") !== -1, 'kill bridge must run only after the server sees a dead mob');
+    assert.ok(killSource.indexOf("attacker.type === 'player'") !== -1, 'kill bridge must credit only a player attacker');
+    assert.ok(killSource.indexOf('attacker.queueStoryOperation(function()') !== -1, 'kill bridge must reuse serialized Story Runtime mutations');
+    assert.ok(mainSource.indexOf("StoryKillProgress = require('../story/kill-progress')") !== -1, 'game startup must load the authoritative story kill bridge');
+    assert.ok(mainSource.indexOf('StoryKillProgress.attach(WorldServer);') !== -1, 'game startup must attach kill progress before worlds are created');
 
     assert.ok(playerSource.indexOf('MissionService = require("../story/mission-service")') !== -1, 'Player must load MissionService');
     assert.ok(playerSource.indexOf('this.storyOperationChain = Promise.resolve()') !== -1, 'Player must serialize Story Runtime mutations');
@@ -166,7 +259,7 @@ async function main() {
         'talk progress must be queued before the same interaction can enqueue a linked mission start'
     );
 
-    console.log('Player story mission and talk objective smoke test passed.');
+    console.log('Player story mission, talk and kill objective smoke test passed.');
 }
 
 main().catch(function(error) {
