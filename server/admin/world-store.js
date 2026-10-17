@@ -152,6 +152,33 @@ function buildEditableMap(base, baseClient, maxTileId) {
     };
 }
 
+function normalizeCheckpointAreas(list, width, height) {
+    if(!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) { return []; }
+    var seen = new Set(), out = [];
+    if(!Array.isArray(list)) { return out; }
+    list.slice(0, 1000).forEach(function(cp) {
+        if(!cp || typeof cp !== 'object' || Array.isArray(cp)) { return; }
+        var values = [cp.id, cp.x, cp.y, cp.w, cp.h];
+        if(!values.every(Number.isSafeInteger)) { return; }
+        if(cp.id < 1 || seen.has(cp.id) || cp.x < 0 || cp.y < 0 ||
+           cp.w < 1 || cp.h < 1 || cp.x + cp.w > width || cp.y + cp.h > height) { return; }
+        if(cp.s != null && cp.s !== 0 && cp.s !== 1) { return; }
+        seen.add(cp.id);
+        out.push({id:cp.id, x:cp.x, y:cp.y, w:cp.w, h:cp.h, s:cp.s === 1 ? 1 : 0});
+    });
+    return out;
+}
+
+function requireStartingCheckpoint(state, base) {
+    if(Array.isArray(base.checkpoints) && base.checkpoints.some(function(cp){return cp && cp.s === 1;}) &&
+       !state.map.checkpoints.some(function(cp){return cp.s === 1;})) {
+        var error = new Error('O mundo precisa manter pelo menos um checkpoint inicial.');
+        error.code = 'WORLD_START_CHECKPOINT_REQUIRED';
+        error.statusCode = 422;
+        throw error;
+    }
+}
+
 function normalizeDrops(list) {
     if(!Array.isArray(list)) { return []; }
     return list.slice(0, 20).map(function(drop) { return {kind:text(drop.kind,40),chance:int(drop.chance,0,100,0)}; })
@@ -237,7 +264,7 @@ WorldStore.prototype.normalize = function(state) {
     map.data=normalizeTileData(map.data,baseTileData,baseWidth*baseHeight,this.tileCatalog.maxTileId);
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
     map.doors=Array.isArray(map.doors)?map.doors.slice(0,1000):[];
-    map.checkpoints=Array.isArray(map.checkpoints)?map.checkpoints.slice(0,1000):[];
+    map.checkpoints=normalizeCheckpointAreas(map.checkpoints,baseWidth,baseHeight);
     map.chestAreas=Array.isArray(map.chestAreas)?map.chestAreas.slice(0,1000):[];
     map.staticChests=Array.isArray(map.staticChests)?map.staticChests.slice(0,5000):[];
     map.entities=Array.isArray(map.entities)?map.entities.slice(0,10000).map(function(e){return normalizeEntity(e,map,npcIds,mobIds);}):[];
@@ -246,6 +273,7 @@ WorldStore.prototype.normalize = function(state) {
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state=this.normalize(input);
+    requireStartingCheckpoint(state,this.base);
     state.revision=previous.revision+1; state.status='draft'; state.updatedAt=new Date().toISOString(); state.publishedAt=previous.publishedAt||null;
     atomicWrite(this.statePath,state); return state;
 };
@@ -276,6 +304,7 @@ WorldStore.prototype.buildClientMap = function(state) {
 };
 WorldStore.prototype.publish = function() {
     var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
+    requireStartingCheckpoint(state,this.base);
     if(!validation.ok){error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));error.code='WORLD_STORY_REFERENCE_VALIDATION';error.details=validation.errors;throw error;}
     publishedMap=this.buildServerMap(state); publishedClient=this.buildClientMap(state); stamp=new Date().toISOString().replace(/[:.]/g,'-');
     fs.mkdirSync(this.versionsDir,{recursive:true,mode:0o700});
@@ -293,3 +322,4 @@ exports.MOB_KINDS=MOB_KINDS;
 exports.normalizeTileData=normalizeTileData;
 exports.buildTileCatalog=buildTileCatalog;
 exports.readPngDimensions=readPngDimensions;
+exports.normalizeCheckpointAreas=normalizeCheckpointAreas;
