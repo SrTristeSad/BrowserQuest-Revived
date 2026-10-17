@@ -22,6 +22,14 @@ var migrations = [
             "CREATE UNIQUE INDEX IF NOT EXISTS characters_name_ci_unique_v1 ON characters(LOWER(name))",
             "INSERT INTO settings(key, value) VALUES('registration_enabled', 'true'::jsonb) ON CONFLICT(key) DO NOTHING"
         ]
+    },
+    {
+        id: '003_character_persistence',
+        sql: [
+            "ALTER TABLE characters ADD COLUMN IF NOT EXISTS checkpoint_id INTEGER NULL",
+            "CREATE TABLE IF NOT EXISTS character_progress (character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE, namespace VARCHAR(64) NOT NULL, key VARCHAR(128) NOT NULL, value JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(character_id, namespace, key))",
+            "CREATE INDEX IF NOT EXISTS character_progress_namespace_idx ON character_progress(namespace, key)"
+        ]
     }
 ];
 

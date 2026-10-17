@@ -11,7 +11,9 @@ var http = require('http'),
     PlayerAuthHttp = require('./auth/http'),
     SetupPage = require('./setup/page'),
     SetupInfrastructure = require('./setup/infrastructure-setup'),
-    Infrastructure = require('./storage/infrastructure');
+    Infrastructure = require('./storage/infrastructure'),
+    Migrations = require('./storage/migrations'),
+    CharacterStore = require('./persistence/character-store').CharacterStore;
 
 var root = path.join(__dirname, '..'),
     configDir = process.env.BROWSERQUEST_CONFIG_DIR || path.join(root, 'var', 'config'),
@@ -140,13 +142,17 @@ async function startGame(config) {
     var services = null,
         playerAuth = null,
         playerAuthHandler = null,
+        characterStore = null,
         adminHandler,
         combinedHttpHandler;
 
     if(config.infrastructure && config.infrastructure.postgres && config.infrastructure.redis) {
+        // Upgrades run pending migrations automatically before the game accepts players.
+        await Migrations.runMigrations(config.infrastructure.postgres);
         services = Infrastructure.createServices(config.infrastructure);
         await services.connect();
         playerAuth = new PlayerAuthModule.PlayerAuth({services: services, accessMode: config.access_mode || 'mixed'});
+        characterStore = new CharacterStore({postgres: services.postgres});
         playerAuthHandler = PlayerAuthHttp.createPlayerAuthHandler({auth: playerAuth});
         console.log('[BrowserQuest] PostgreSQL conectado.');
         console.log('[BrowserQuest] Redis conectado.');
@@ -171,7 +177,8 @@ async function startGame(config) {
             }
             return playerAuth.authorizeConnection(connection);
         } : null,
-        player_auth_service: playerAuth
+        player_auth_service: playerAuth,
+        player_persistence: characterStore
     });
 
     console.log('[BrowserQuest] Instalação encontrada. Iniciando jogo...');
@@ -183,7 +190,12 @@ async function startGame(config) {
 
     if(services) {
         var closeServices = async function() {
-            try { await services.close(); } catch(error) { console.error('[BrowserQuest] Falha ao fechar infraestrutura:', error.message); }
+            try {
+                if(characterStore) { await characterStore.flushAll(); }
+                await services.close();
+            } catch(error) {
+                console.error('[BrowserQuest] Falha ao fechar infraestrutura:', error.message);
+            }
         };
         process.once('SIGTERM', closeServices);
         process.once('SIGINT', closeServices);
