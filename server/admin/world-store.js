@@ -7,6 +7,7 @@ var fs = require('fs'),
 
 var NPC_KINDS = ['guard','king','octocat','villagegirl','villager','priest','scientist','agent','rick','nyan','sorcerer','beachnpc','forestnpc','desertnpc','lavanpc','coder'];
 var MOB_KINDS = ['rat','skeleton','goblin','ogre','spectre','crab','bat','wizard','eye','snake','skeleton2','boss','deathknight'];
+var MAX_TILE_ID = 1000000;
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function readJson(filepath) { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
@@ -32,6 +33,26 @@ function int(value, min, max, fallback) {
 }
 function text(value, max) { return String(value == null ? '' : value).trim().slice(0, max); }
 function bool(value) { return value !== false; }
+
+function normalizeTileValue(value, fallback) {
+    var n = Number(value),
+        safeFallback = Number(fallback);
+    if(Number.isInteger(n) && n >= -1 && n <= MAX_TILE_ID) { return n; }
+    if(Number.isInteger(safeFallback) && safeFallback >= -1 && safeFallback <= MAX_TILE_ID) { return safeFallback; }
+    return -1;
+}
+
+function normalizeTileData(input, fallback, expectedLength) {
+    var source = Array.isArray(input) ? input : [],
+        base = Array.isArray(fallback) ? fallback : [],
+        length = int(expectedLength, 0, 10000000, 0),
+        data = new Array(length),
+        i;
+    for(i = 0; i < length; i += 1) {
+        data[i] = normalizeTileValue(source[i], base[i]);
+    }
+    return data;
+}
 
 function normalizeBrain(brain, fallbackPreset) {
     brain = brain || {};
@@ -63,8 +84,10 @@ function tileToPosition(tile, width) {
 
 function positionToTile(x, y, width) { return (y * width) + x; }
 
-function buildEditableMap(base) {
-    var entities = [];
+function buildEditableMap(base, baseClient) {
+    var entities = [],
+        tileCount = base.width * base.height,
+        baseTileData = baseClient && Array.isArray(baseClient.data) ? baseClient.data : [];
     Object.keys(base.staticEntities || {}).forEach(function(tile) {
         var pos = tileToPosition(tile, base.width);
         entities.push({id:'base_' + tile,x:pos.x,y:pos.y,kind:String(base.staticEntities[tile]),profileType:'',profileId:'',source:'base'});
@@ -72,6 +95,7 @@ function buildEditableMap(base) {
     return {
         width: base.width,
         height: base.height,
+        data: normalizeTileData(baseTileData, baseTileData, tileCount),
         collisions: Array.isArray(base.collisions) ? base.collisions.slice() : [],
         doors: clone(base.doors || []),
         checkpoints: clone(base.checkpoints || []),
@@ -172,7 +196,7 @@ function WorldStore(options) {
 }
 
 WorldStore.prototype.createInitialState = function() {
-    return {schemaVersion:1,revision:1,status:'draft',updatedAt:new Date().toISOString(),publishedAt:null,map:buildEditableMap(this.base),npcs:[],mobs:[]};
+    return {schemaVersion:1,revision:1,status:'draft',updatedAt:new Date().toISOString(),publishedAt:null,map:buildEditableMap(this.base,this.baseClient),npcs:[],mobs:[]};
 };
 
 WorldStore.prototype.load = function() {
@@ -196,12 +220,14 @@ WorldStore.prototype.normalize = function(state) {
     var map=state.map||{},
         npcs=Array.isArray(state.npcs)?state.npcs.slice(0,500).map(normalizeNpc):[],
         mobs=Array.isArray(state.mobs)?state.mobs.slice(0,500).map(normalizeMob):[],
-        npcIds={},mobIds={},baseWidth=this.base.width,baseHeight=this.base.height;
+        npcIds={},mobIds={},baseWidth=this.base.width,baseHeight=this.base.height,
+        baseTileData=this.baseClient&&Array.isArray(this.baseClient.data)?this.baseClient.data:[];
     npcs.forEach(function(p){npcIds[p.id]=true;});
     mobs.forEach(function(p){mobIds[p.id]=true;});
 
     map.width=baseWidth;
     map.height=baseHeight;
+    map.data=normalizeTileData(map.data,baseTileData,baseWidth*baseHeight);
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
     map.doors=Array.isArray(map.doors)?map.doors.slice(0,1000):[];
     map.checkpoints=Array.isArray(map.checkpoints)?map.checkpoints.slice(0,1000):[];
@@ -266,8 +292,9 @@ WorldStore.prototype.buildClientMap = function(state) {
     if(!this.baseClient) { return null; }
     state=this.normalize(state||this.load());
     var client=clone(this.baseClient);
-    client.width=this.baseClient.width;
-    client.height=this.baseClient.height;
+    client.width=state.map.width;
+    client.height=state.map.height;
+    client.data=state.map.data.slice();
     client.collisions=state.map.collisions.slice();
     client.doors=clone(state.map.doors);
     client.checkpoints=clone(state.map.checkpoints);
@@ -309,3 +336,4 @@ WorldStore.prototype.getPublishedPath=function(){return fs.existsSync(this.publi
 exports.WorldStore=WorldStore;
 exports.NPC_KINDS=NPC_KINDS;
 exports.MOB_KINDS=MOB_KINDS;
+exports.normalizeTileData=normalizeTileData;
