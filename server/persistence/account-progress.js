@@ -100,18 +100,24 @@ AccountProgress.prototype.ensureAchievements = async function(characterId) {
 };
 
 AccountProgress.prototype.mergeAchievements = async function(characterId, incoming) {
-    var client = await this.postgres.connect(), current, merged;
+    var id = Number(characterId),
+        client = await this.postgres.connect(),
+        current,
+        merged;
     try {
         await client.query('BEGIN');
+        // An absent row cannot be protected by SELECT ... FOR UPDATE. The transaction-scoped
+        // advisory lock serializes the first write and later merges for this character too.
+        await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [id]);
         var result = await client.query(
             "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='legacy' AND key='achievements' FOR UPDATE",
-            [Number(characterId)]
+            [id]
         );
         current = result.rowCount ? result.rows[0].value : DEFAULT_ACHIEVEMENTS;
         merged = mergeAchievements(current, incoming);
         await client.query(
             "INSERT INTO character_progress(character_id, namespace, key, value) VALUES($1,'legacy','achievements',$2::jsonb) ON CONFLICT(character_id, namespace, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()",
-            [Number(characterId), JSON.stringify(merged)]
+            [id, JSON.stringify(merged)]
         );
         await client.query('COMMIT');
         return merged;
