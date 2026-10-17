@@ -7,6 +7,7 @@ var assert = require('assert'),
     PlayerAuth = require('../server/auth/player-auth').PlayerAuth,
     AdminAuth = require('../server/admin/auth'),
     CharacterStore = require('../server/persistence/character-store').CharacterStore,
+    AccountProgress = require('../server/persistence/account-progress').AccountProgress,
     Types = require('../shared/js/gametypes');
 
 function sleep(ms) {
@@ -63,8 +64,17 @@ async function main() {
     assert.strictEqual(health.postgres, true);
     assert.strictEqual(health.redis, true);
 
+    // The application routinely has one query active while another request needs a connection.
+    // Prove that the shared pool can create/use a second PostgreSQL client concurrently.
+    await Promise.all([
+        services.postgres.query('SELECT pg_sleep(0.2), 1 AS slow'),
+        services.postgres.query('SELECT 2 AS fast')
+    ]);
+    assert.ok(services.postgres.totalCount >= 2, 'pool must be able to create a second concurrent connection');
+
     var auth = new PlayerAuth({services: services, accessMode: 'mixed'}),
         characterStore = new CharacterStore({postgres: services.postgres, debounceMs: 50}),
+        accountProgress = new AccountProgress({postgres: services.postgres}),
         registered, logged, session, context;
     try {
         await services.postgres.query("DELETE FROM users WHERE username='alice_auth_test'");
@@ -77,12 +87,22 @@ async function main() {
         assert.strictEqual(registered.character.name, 'Hero Alice');
         assert.strictEqual(await auth.isCharacterNameReserved('hero alice'), true);
 
+        var achievementDefaults = await accountProgress.ensureAchievements(registered.character.id);
+        assert.deepStrictEqual(achievementDefaults, {
+            unlocked: [], ratCount: 0, skeletonCount: 0, totalKills: 0, totalDmg: 0, totalRevives: 0
+        });
+        var mergedAchievements = await accountProgress.mergeAchievements(registered.character.id, {
+            unlocked: [1, 2], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
+        });
+        assert.deepStrictEqual(mergedAchievements, {
+            unlocked: [1, 2], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
+        });
+
         session = await auth.getSessionByToken(registered.token, false);
         assert.strictEqual(session.character.name, 'Hero Alice');
         await auth.destroySessionByToken(registered.token);
         assert.strictEqual(await auth.getSessionByToken(registered.token, false), null);
 
-        // Character state is permanent PostgreSQL data and writes are coalesced/debounced.
         var initialCharacter = await characterStore.load(registered.character.id);
         assert.strictEqual(initialCharacter.weaponKind, Types.Entities.SWORD1);
         assert.strictEqual(initialCharacter.armorKind, Types.Entities.CLOTHARMOR);
@@ -127,7 +147,6 @@ async function main() {
         assert.strictEqual(context.allowed, true);
         assert.strictEqual(context.type, 'guest');
 
-        // Sessions are disposable: clearing Redis removes the login but never the account/character state.
         await services.postgres.query("UPDATE settings SET value='\"mixed\"'::jsonb WHERE key='access_mode'");
         logged = await auth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
         await services.redis.flushDb();
@@ -141,13 +160,11 @@ async function main() {
         logged = await auth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
         assert.ok(logged.token);
 
-        // Explicit short TTL test for player sessions.
         var shortAuth = new PlayerAuth({services: services, accessMode: 'mixed', sessionTtlSeconds: 1});
         var shortSession = await shortAuth.login({username: 'alice_auth_test', password: 'StrongPassword123!'});
         await sleep(1200);
         assert.strictEqual(await shortAuth.getSessionByToken(shortSession.token, false), null);
 
-        // Admin sessions use Redis too and honor TTL.
         var adminSessions = AdminAuth.createRedisSessionManager(services.redis, {ttlSeconds: 1});
         var adminToken = await adminSessions.create('owner_test', 'owner', owner.id);
         assert.strictEqual((await adminSessions.get(adminToken)).username, 'owner_test');
@@ -161,7 +178,7 @@ async function main() {
     }
 
     await services.close();
-    console.log('Live PostgreSQL/Redis/auth/character-persistence smoke tests passed.');
+    console.log('Live PostgreSQL/Redis/auth/character-persistence/achievement-progress smoke tests passed.');
 }
 
 main().catch(function(error) {

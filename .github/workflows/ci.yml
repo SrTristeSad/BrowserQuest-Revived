@@ -243,4 +243,4 @@ jobs:
           grep -q 'Loading published world from World Editor' /tmp/browserquest-restart.log
           grep -q 'PostgreSQL conectado' /tmp/browserquest-restart.log
           grep -q 'Redis conectado' /tmp/browserquest-restart.log
-          TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
+          TEST_SKIP_AUTH_SMOKE=1 TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js

@@ -1,6 +1,7 @@
 'use strict';
 
-var PlayerAuthModule = require('./player-auth');
+var PlayerAuthModule = require('./player-auth'),
+    AccountProgress = require('../persistence/account-progress').AccountProgress;
 
 function sendJson(response, statusCode, payload, extraHeaders) {
     var headers = Object.assign({
@@ -57,13 +58,20 @@ function sessionCookie(token, maxAge, secure) {
     return PlayerAuthModule.SESSION_COOKIE + '=' + encodeURIComponent(token || '') + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' + String(maxAge || 0) + (secure ? '; Secure' : '');
 }
 
-function publicSession(session, policy) {
+async function publicSession(session, policy, progress, initializeProgress) {
+    var achievements = null;
+    if(session && session.character && progress) {
+        achievements = initializeProgress ?
+            await progress.ensureAchievements(session.character.id) :
+            await progress.getAchievements(session.character.id);
+    }
     return {
         loggedIn: Boolean(session),
         accessMode: policy.accessMode,
         registrationEnabled: policy.registrationEnabled,
         user: session ? session.user : null,
-        character: session ? session.character : null
+        character: session ? session.character : null,
+        progress: session ? {achievements: achievements} : null
     };
 }
 
@@ -76,11 +84,31 @@ function accountsDisabledError(response) {
 
 function createPlayerAuthHandler(options) {
     options = options || {};
-    var auth = options.auth;
+    var auth = options.auth,
+        progress;
     if(!auth) { throw new Error('Player auth HTTP requer PlayerAuth.'); }
+    progress = options.progress || new AccountProgress({postgres: auth.services.postgres});
+
+    async function requireAccountSession(request) {
+        var policy = await auth.getPolicy(), session;
+        if(!policy.accountsEnabled) {
+            var disabled = new Error('Contas estão desativadas.');
+            disabled.statusCode = 403;
+            disabled.code = 'ACCOUNTS_DISABLED';
+            throw disabled;
+        }
+        session = await auth.getSessionFromCookieHeader(request.headers.cookie, true);
+        if(!session || !session.character) {
+            var error = new Error('Faça login para sincronizar o progresso.');
+            error.statusCode = 401;
+            error.code = 'ACCOUNT_REQUIRED';
+            throw error;
+        }
+        return {policy: policy, session: session};
+    }
 
     async function handle(request, response, pathname) {
-        var body, policy, session, rate, result;
+        var body, policy, session, rate, result, state, achievements;
         try {
             if(request.method !== 'GET' && request.method !== 'HEAD' && !originAllowed(request)) {
                 sendJson(response, 403, {error: 'Origem da requisição não permitida.', code: 'ORIGIN_NOT_ALLOWED'});
@@ -95,10 +123,8 @@ function createPlayerAuthHandler(options) {
 
             if(request.method === 'GET' && pathname === '/api/auth/session') {
                 policy = await auth.getPolicy();
-                // In name_only mode accounts are deliberately invisible to the client.
-                // Keep the Redis token intact so it can work again if accounts are re-enabled.
                 session = policy.accountsEnabled ? await auth.getSessionFromCookieHeader(request.headers.cookie, true) : null;
-                sendJson(response, 200, publicSession(session, policy));
+                sendJson(response, 200, await publicSession(session, policy, progress, false));
                 return;
             }
 
@@ -111,7 +137,7 @@ function createPlayerAuthHandler(options) {
                 body = await readJson(request);
                 result = await auth.register(body);
                 policy = await auth.getPolicy();
-                sendJson(response, 201, publicSession(result, policy), {
+                sendJson(response, 201, await publicSession(result, policy, progress, true), {
                     'Set-Cookie': sessionCookie(result.token, result.expiresIn, secureRequest(request))
                 });
                 return;
@@ -130,16 +156,36 @@ function createPlayerAuthHandler(options) {
                 }
                 body = await readJson(request);
                 result = await auth.login(body);
-                sendJson(response, 200, publicSession(result, policy), {
+                sendJson(response, 200, await publicSession(result, policy, progress, false), {
                     'Set-Cookie': sessionCookie(result.token, result.expiresIn, secureRequest(request))
                 });
+                return;
+            }
+
+            if(request.method === 'POST' && pathname === '/api/auth/progress/achievements') {
+                state = await requireAccountSession(request);
+                rate = await auth.consumeRateLimit('achievement-sync', String(state.session.user.id), 120, 60);
+                if(!rate.allowed) {
+                    sendJson(response, 429, {error: 'Muitas atualizações de progresso. Tente novamente em instantes.', retryAfter: rate.retryAfter});
+                    return;
+                }
+                body = await readJson(request);
+                achievements = await progress.mergeAchievements(state.session.character.id, body.achievements || body);
+                sendJson(response, 200, {achievements: achievements});
+                return;
+            }
+
+            if(request.method === 'GET' && pathname === '/api/auth/progress/achievements') {
+                state = await requireAccountSession(request);
+                achievements = await progress.getAchievements(state.session.character.id);
+                sendJson(response, 200, {achievements: achievements});
                 return;
             }
 
             if(request.method === 'POST' && pathname === '/api/auth/logout') {
                 await auth.destroySessionFromCookieHeader(request.headers.cookie);
                 policy = await auth.getPolicy();
-                sendJson(response, 200, publicSession(null, policy), {
+                sendJson(response, 200, await publicSession(null, policy, progress, false), {
                     'Set-Cookie': sessionCookie('', 0, secureRequest(request))
                 });
                 return;
@@ -147,6 +193,9 @@ function createPlayerAuthHandler(options) {
 
             sendJson(response, 404, {error: 'Rota de autenticação não encontrada.'});
         } catch(error) {
+            if(!error.statusCode) {
+                console.error('[BrowserQuest] Player auth request failed:', error && error.stack ? error.stack : error);
+            }
             sendJson(response, error.statusCode || 400, {
                 error: error.message || 'Falha na autenticação.',
                 code: error.code || undefined
