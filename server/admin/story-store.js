@@ -58,6 +58,14 @@ StoryStore.prototype.get = function(id) {
     }) || null;
 };
 
+StoryStore.prototype.getPublishedStories = function() {
+    return this._read().stories.filter(function(story) {
+        return story && story.status === 'published';
+    }).map(function(story) {
+        return JSON.parse(JSON.stringify(story));
+    });
+};
+
 StoryStore.prototype.save = function(input) {
     var data = this._read(),
         now = new Date().toISOString(),
