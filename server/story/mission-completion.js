@@ -27,6 +27,19 @@ function appendCompletedMission(completedMissionIds, missionId) {
     return result;
 }
 
+function unchangedResult(missionEntry, state, alreadyCompleted) {
+    return {
+        changed: false,
+        alreadyCompleted: !!alreadyCompleted,
+        mission: missionEntry,
+        state: state,
+        itemRewards: [],
+        inventory: null,
+        achievementRewards: [],
+        achievements: null
+    };
+}
+
 async function completeMission(options) {
     options = options || {};
 
@@ -61,26 +74,26 @@ async function completeMission(options) {
 
     mission = missionEntry.mission;
     if(String(mission.giverNpc || '').trim() !== giverProfileId) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current ? normalizeStoryProgress(current) : null, itemRewards: [], inventory: null};
+        return unchangedResult(missionEntry, current ? normalizeStoryProgress(current) : null, false);
     }
 
     if(!current) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: null, itemRewards: [], inventory: null};
+        return unchangedResult(missionEntry, null, false);
     }
 
     current = normalizeStoryProgress(current);
     if(current.completedMissionIds.indexOf(missionId) >= 0 && !current.activeMissionId) {
-        return {changed: false, alreadyCompleted: true, mission: missionEntry, state: current, itemRewards: [], inventory: null};
+        return unchangedResult(missionEntry, current, true);
     }
     if(current.activeMissionId !== missionId) {
-        return {changed: false, alreadyCompleted: current.completedMissionIds.indexOf(missionId) >= 0, mission: missionEntry, state: current, itemRewards: [], inventory: null};
+        return unchangedResult(missionEntry, current, current.completedMissionIds.indexOf(missionId) >= 0);
     }
 
     objective = mission.objective || {};
     amount = normalizeObjectiveAmount(objective);
     currentProgress = Math.max(0, Math.floor(Number(current.objectiveProgress) || 0));
     if(currentProgress < amount) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current, itemRewards: [], inventory: null};
+        return unchangedResult(missionEntry, current, false);
     }
 
     completedMissionIds = appendCompletedMission(current.completedMissionIds, missionId);
@@ -103,7 +116,16 @@ async function completeMission(options) {
             throw completionError('STORY_PROGRESS_UNAVAILABLE', 'Persistência de Story Runtime indisponível.');
         }
 
-        if(itemRewardStore && typeof itemRewardStore.saveCompletionWithItemRewards === 'function') {
+        if(itemRewardStore && typeof itemRewardStore.saveCompletionWithRewards === 'function') {
+            rewardResult = await itemRewardStore.saveCompletionWithRewards(
+                characterId,
+                storyId,
+                missionId,
+                state,
+                mission.rewards || []
+            );
+            state = rewardResult.state;
+        } else if(itemRewardStore && typeof itemRewardStore.saveCompletionWithItemRewards === 'function') {
             rewardResult = await itemRewardStore.saveCompletionWithItemRewards(
                 characterId,
                 storyId,
@@ -124,7 +146,9 @@ async function completeMission(options) {
         state: state,
         completedMissionId: missionId,
         itemRewards: rewardResult ? rewardResult.itemRewards : [],
-        inventory: rewardResult ? rewardResult.inventory : null
+        inventory: rewardResult ? rewardResult.inventory : null,
+        achievementRewards: rewardResult ? rewardResult.achievementRewards : [],
+        achievements: rewardResult ? rewardResult.achievements : null
     };
 }
 
