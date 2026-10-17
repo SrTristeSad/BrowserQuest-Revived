@@ -15,6 +15,18 @@ function normalizeObjectiveAmount(objective) {
     return Math.min(Math.floor(amount), 100000);
 }
 
+function appendCompletedMission(completedMissionIds, missionId) {
+    var result = Array.isArray(completedMissionIds) ? completedMissionIds.filter(function(id) {
+        return id !== missionId;
+    }) : [];
+
+    if(result.length >= 500) {
+        result = result.slice(result.length - 499);
+    }
+    result.push(missionId);
+    return result;
+}
+
 async function completeMission(options) {
     options = options || {};
 
@@ -69,11 +81,7 @@ async function completeMission(options) {
         return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current};
     }
 
-    completedMissionIds = current.completedMissionIds.slice();
-    if(completedMissionIds.indexOf(missionId) < 0) {
-        completedMissionIds.push(missionId);
-    }
-
+    completedMissionIds = appendCompletedMission(current.completedMissionIds, missionId);
     state = normalizeStoryProgress({
         version: current.version,
         storyId: current.storyId,
@@ -105,4 +113,5 @@ async function completeMission(options) {
 }
 
 exports.normalizeObjectiveAmount = normalizeObjectiveAmount;
+exports.appendCompletedMission = appendCompletedMission;
 exports.completeMission = completeMission;
