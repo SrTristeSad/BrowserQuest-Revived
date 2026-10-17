@@ -475,6 +475,53 @@ function createAdminHandler(options) {
             return;
         }
 
+        match = pathname.match(/^\/admin\/api\/accounts\/([0-9]+)\/suspend$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            if(!playerAuth || typeof playerAuth.destroySessionsByUserId !== 'function') {
+                json(response, 503, {error: 'Gerenciamento de sessões de jogadores indisponível.'});
+                return;
+            }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+
+            var suspendAccountId = Number(match[1]),
+                suspendResult = await services.postgres.query("SELECT id, username, status FROM users WHERE id=$1 AND role='player' LIMIT 1", [suspendAccountId]);
+            if(suspendResult.rowCount !== 1) {
+                json(response, 404, {error: 'Conta de jogador não encontrada.'});
+                return;
+            }
+
+            var suspendAccount = suspendResult.rows[0];
+            if(suspendAccount.status === 'banned') {
+                json(response, 409, {error: 'A conta está banida. Remova o ban antes de aplicar suspensão.'});
+                return;
+            }
+
+            var suspendReason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Conta suspensa pelo administrador.',
+                previousStatus = suspendAccount.status,
+                suspended = (await services.postgres.query("UPDATE users SET status='suspended', updated_at=NOW() WHERE id=$1 AND role='player' RETURNING id, username, status", [suspendAccount.id])).rows[0],
+                suspendedSessions = await playerAuth.destroySessionsByUserId(suspendAccount.id),
+                suspendControls = controlRuntime(),
+                suspendedConnections = suspendControls && typeof suspendControls.kickByUserId === 'function' ? suspendControls.kickByUserId(suspendAccount.id, suspendReason) : 0;
+
+            await audit(session, 'account.suspend', suspendAccount.username, {
+                userId: Number(suspendAccount.id),
+                previousStatus: previousStatus,
+                reason: suspendReason,
+                sessionsRevoked: suspendedSessions,
+                connectionsClosed: suspendedConnections
+            }, request);
+            json(response, 200, {
+                ok: true,
+                account: {id: Number(suspended.id), username: suspended.username, status: suspended.status},
+                sessionsRevoked: suspendedSessions,
+                connectionsClosed: suspendedConnections
+            });
+            return;
+        }
+
         if(pathname === '/admin/api/settings/access' && request.method === 'GET') {
             if(!await requireAdmin(request, response, true)) { return; }
             json(response, 200, await getAccessSettings());
