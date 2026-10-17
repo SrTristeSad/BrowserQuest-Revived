@@ -92,6 +92,24 @@ module.exports = World = cls.Class.extend({
 
             player.onMove(move_callback);
             player.onLootMove(move_callback);
+
+            player.onNpcInteract(function(npc) {
+                var story = npc && npc.editorData ? String(npc.editorData.storyId || '').trim() : '',
+                    mission = npc && npc.editorData ? String(npc.editorData.missionId || '').trim() : '';
+                if(!story || !mission) { return; }
+
+                player.startStoryMission(story, mission).then(function(result) {
+                    if(result && result.changed) {
+                        log.info(player.name + ' started story mission ' + story + '/' + mission + ' via NPC ' + npc.id);
+                    }
+                }).catch(function(error) {
+                    if(error && (error.code === 'MISSION_ALREADY_ACTIVE' || error.code === 'MISSION_NOT_FOUND')) {
+                        log.debug('NPC mission start ignored for ' + player.name + ': ' + error.code);
+                        return;
+                    }
+                    log.error('NPC mission start failed for ' + player.name + ': ' + (error && error.message ? error.message : error));
+                });
+            });
             
             player.onZone(function() {
                 var hasChangedGroups = self.handleEntityGroupMembership(player);
