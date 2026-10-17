@@ -53,7 +53,7 @@ async function main() {
             password: 'StrongPassword123!',
             characterName: 'Prog' + suffix.slice(-7)
         }),
-        setCookie = registration.headers['set-cookie'], cookie, first, second, fetched, session;
+        setCookie = registration.headers['set-cookie'], cookie, first, second, fetched, session, concurrent;
 
     assert.strictEqual(registration.data.loggedIn, true);
     assert.ok(registration.data.progress && registration.data.progress.achievements, 'new account must receive server achievement defaults');
@@ -93,6 +93,20 @@ async function main() {
         unlocked: [1, 2, 3], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
     });
 
+    // Two tabs/devices can update the same character concurrently without losing either unlock.
+    await Promise.all([
+        requestJson('/api/auth/progress/achievements', 'POST', {
+            achievements: {unlocked: [4], ratCount: 8, skeletonCount: 3, totalKills: 23, totalDmg: 1300, totalRevives: 2}
+        }, cookie),
+        requestJson('/api/auth/progress/achievements', 'POST', {
+            achievements: {unlocked: [5], ratCount: 7, skeletonCount: 4, totalKills: 24, totalDmg: 1250, totalRevives: 3}
+        }, cookie)
+    ]);
+    concurrent = await requestJson('/api/auth/progress/achievements', 'GET', undefined, cookie);
+    assert.deepStrictEqual(concurrent.data.achievements, {
+        unlocked: [1, 2, 3, 4, 5], ratCount: 8, skeletonCount: 4, totalKills: 24, totalDmg: 1300, totalRevives: 3
+    });
+
     // Server clamps legacy counters to the original game thresholds.
     await requestJson('/api/auth/progress/achievements', 'POST', {
         achievements: {unlocked: [20], ratCount: 500, skeletonCount: 500, totalKills: 500, totalDmg: 50000, totalRevives: 500}
@@ -100,7 +114,7 @@ async function main() {
 
     fetched = await requestJson('/api/auth/progress/achievements', 'GET', undefined, cookie);
     assert.deepStrictEqual(fetched.data.achievements, {
-        unlocked: [1, 2, 3, 20], ratCount: 10, skeletonCount: 10, totalKills: 50, totalDmg: 5000, totalRevives: 5
+        unlocked: [1, 2, 3, 4, 5, 20], ratCount: 10, skeletonCount: 10, totalKills: 50, totalDmg: 5000, totalRevives: 5
     });
 
     session = await requestJson('/api/auth/session', 'GET', undefined, cookie);
