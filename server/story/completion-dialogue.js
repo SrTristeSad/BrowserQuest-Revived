@@ -2,7 +2,8 @@
 
 var MissionCompletion = require('./mission-completion'),
     MissionService = require('./mission-service'),
-    StoryItemRewardStore = require('./item-reward-store').StoryItemRewardStore,
+    ItemRewardModule = require('./item-reward-store'),
+    StoryItemRewardStore = ItemRewardModule.StoryItemRewardStore,
     Utils = require('../js/utils'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress,
     Types = require('../../shared/js/gametypes');
@@ -97,6 +98,30 @@ function createItemRewardStore(player) {
     return postgres ? new StoryItemRewardStore({postgres: postgres}) : null;
 }
 
+function loadStoryInventory(player) {
+    var store;
+    if(!player) { return Promise.resolve({inventory: ItemRewardModule.normalizeInventory(null), materialized: [], invalid: []}); }
+    if(!player.storyInventory) {
+        player.storyInventory = ItemRewardModule.normalizeInventory(null);
+    }
+    if(!player.characterId || typeof player.queueStoryOperation !== 'function') {
+        return Promise.resolve({inventory: player.storyInventory, materialized: [], invalid: []});
+    }
+
+    store = createItemRewardStore(player);
+    if(!store) {
+        return Promise.resolve({inventory: player.storyInventory, materialized: [], invalid: []});
+    }
+
+    player.storyInventoryReady = player.queueStoryOperation(function() {
+        return store.materializePending(player.characterId).then(function(result) {
+            player.storyInventory = result.inventory;
+            return result;
+        });
+    });
+    return player.storyInventoryReady;
+}
+
 function applyGrantedItemRewards(player, itemRewards) {
     var applied = [];
     if(!player || !Array.isArray(itemRewards)) { return applied; }
@@ -106,7 +131,7 @@ function applyGrantedItemRewards(player, itemRewards) {
             kindName = Number.isInteger(kind) ? Types.getKindAsString(kind) : '',
             equipMessage;
 
-        if(!reward || !reward.changed || reward.status !== 'granted' || reward.category !== 'equipment') { return; }
+        if(!reward || !reward.changed || reward.status !== 'granted' || reward.category !== 'equipment' || reward.delivery !== 'equipment') { return; }
         if(!kindName || (reward.slot !== 'weapon' && reward.slot !== 'armor')) { return; }
         if(typeof player.equipItem !== 'function' || typeof player.equip !== 'function') { return; }
 
@@ -191,6 +216,9 @@ function queueMissionCompletion(player, npc) {
         }
 
         player.storyState = MissionService.upsertStoryState(player.storyState, completion.state);
+        if(completion.inventory) {
+            player.storyInventory = completion.inventory;
+        }
         appliedItems = applyGrantedItemRewards(player, completion.itemRewards || []);
         lines = sanitizeDialogue(candidate.dialogue);
         if(lines.length) {
@@ -270,6 +298,9 @@ function attach(WorldServer) {
     prototype.onPlayerEnter = function(callback) {
         return originalOnPlayerEnter.call(this, function(player) {
             callback(player);
+            loadStoryInventory(player).catch(function(error) {
+                logProgressError(player, error);
+            });
             wrapNpcInteraction(player);
         });
     };
@@ -283,6 +314,7 @@ exports.findCompletableMission = findCompletableMission;
 exports.findCompletionDialogue = findCompletionDialogue;
 exports.sanitizeDialogue = sanitizeDialogue;
 exports.createItemRewardStore = createItemRewardStore;
+exports.loadStoryInventory = loadStoryInventory;
 exports.applyGrantedItemRewards = applyGrantedItemRewards;
 exports.queueCompletionDialogue = queueCompletionDialogue;
 exports.queueMissionCompletion = queueMissionCompletion;

@@ -61,26 +61,26 @@ async function completeMission(options) {
 
     mission = missionEntry.mission;
     if(String(mission.giverNpc || '').trim() !== giverProfileId) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current ? normalizeStoryProgress(current) : null, itemRewards: []};
+        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current ? normalizeStoryProgress(current) : null, itemRewards: [], inventory: null};
     }
 
     if(!current) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: null, itemRewards: []};
+        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: null, itemRewards: [], inventory: null};
     }
 
     current = normalizeStoryProgress(current);
     if(current.completedMissionIds.indexOf(missionId) >= 0 && !current.activeMissionId) {
-        return {changed: false, alreadyCompleted: true, mission: missionEntry, state: current, itemRewards: []};
+        return {changed: false, alreadyCompleted: true, mission: missionEntry, state: current, itemRewards: [], inventory: null};
     }
     if(current.activeMissionId !== missionId) {
-        return {changed: false, alreadyCompleted: current.completedMissionIds.indexOf(missionId) >= 0, mission: missionEntry, state: current, itemRewards: []};
+        return {changed: false, alreadyCompleted: current.completedMissionIds.indexOf(missionId) >= 0, mission: missionEntry, state: current, itemRewards: [], inventory: null};
     }
 
     objective = mission.objective || {};
     amount = normalizeObjectiveAmount(objective);
     currentProgress = Math.max(0, Math.floor(Number(current.objectiveProgress) || 0));
     if(currentProgress < amount) {
-        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current, itemRewards: []};
+        return {changed: false, alreadyCompleted: false, mission: missionEntry, state: current, itemRewards: [], inventory: null};
     }
 
     completedMissionIds = appendCompletedMission(current.completedMissionIds, missionId);
@@ -123,7 +123,8 @@ async function completeMission(options) {
         mission: missionEntry,
         state: state,
         completedMissionId: missionId,
-        itemRewards: rewardResult ? rewardResult.itemRewards : []
+        itemRewards: rewardResult ? rewardResult.itemRewards : [],
+        inventory: rewardResult ? rewardResult.inventory : null
     };
 }
 

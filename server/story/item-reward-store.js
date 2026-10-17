@@ -4,6 +4,10 @@ var crypto = require('crypto'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress,
     Types = require('../../shared/js/gametypes');
 
+var INVENTORY_KEY = 'items',
+    INVENTORY_MAX_KINDS = 200,
+    INVENTORY_MAX_AMOUNT = 1000000000;
+
 function cleanText(value, max) {
     return String(value == null ? '' : value).trim().slice(0, max || 160);
 }
@@ -14,12 +18,64 @@ function normalizeAmount(value) {
     return Math.min(Math.floor(amount), 100000);
 }
 
+function normalizeStoredAmount(value) {
+    var amount = Number(value);
+    if(!Number.isFinite(amount) || amount < 1 || Math.floor(amount) !== amount || amount > 100000) { return 0; }
+    return amount;
+}
+
 function rewardKey(storyId, missionId, rewardIndex) {
     var digest = crypto.createHash('sha256')
         .update(String(storyId || '') + '\u0000' + String(missionId || '') + '\u0000' + String(rewardIndex))
         .digest('hex')
         .slice(0, 48);
     return 'item-' + digest;
+}
+
+function canonicalItem(itemName) {
+    var name = cleanText(itemName, 160).toLowerCase(),
+        kind = name ? Types.getKindFromString(name) : undefined;
+    if(kind === undefined || kind === null || !Types.isItem(kind)) { return null; }
+    return {name: name, kind: kind};
+}
+
+function normalizeInventory(value) {
+    value = value || {};
+    var rawItems = value.items && typeof value.items === 'object' && !Array.isArray(value.items) ? value.items : {},
+        items = {},
+        count = 0;
+
+    Object.keys(rawItems).sort().forEach(function(rawName) {
+        var canonical,
+            amount;
+        if(count >= INVENTORY_MAX_KINDS) { return; }
+        canonical = canonicalItem(rawName);
+        amount = Number(rawItems[rawName]);
+        if(!canonical || !Number.isFinite(amount) || amount <= 0) { return; }
+        amount = Math.min(Math.floor(amount), INVENTORY_MAX_AMOUNT);
+        if(amount < 1) { return; }
+        items[canonical.name] = amount;
+        count += 1;
+    });
+
+    return {
+        version: 1,
+        items: items,
+        updatedAt: value.updatedAt ? String(value.updatedAt).slice(0, 40) : null
+    };
+}
+
+function addInventoryItem(inventory, itemName, amount) {
+    var normalized = normalizeInventory(inventory),
+        canonical = canonicalItem(itemName),
+        quantity = normalizeStoredAmount(amount),
+        current;
+
+    if(!canonical || !quantity) { return null; }
+    current = Number(normalized.items[canonical.name] || 0);
+    normalized.items[canonical.name] = Math.min(INVENTORY_MAX_AMOUNT, current + quantity);
+    normalized.updatedAt = new Date().toISOString();
+    return normalized;
 }
 
 function resolveItemReward(reward, rewardIndex) {
@@ -87,6 +143,24 @@ function resolveItemReward(reward, rewardIndex) {
     };
 }
 
+async function readInventory(client, characterId, lock) {
+    var result = await client.query(
+        "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='story_inventory' AND key=$2" + (lock ? ' FOR UPDATE' : ''),
+        [Number(characterId), INVENTORY_KEY]
+    );
+    return normalizeInventory(result.rowCount ? result.rows[0].value : null);
+}
+
+async function writeInventory(client, characterId, inventory) {
+    var normalized = normalizeInventory(inventory);
+    normalized.updatedAt = new Date().toISOString();
+    await client.query(
+        "INSERT INTO character_progress(character_id, namespace, key, value) VALUES($1,'story_inventory',$2,$3::jsonb) ON CONFLICT(character_id, namespace, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()",
+        [Number(characterId), INVENTORY_KEY, JSON.stringify(normalized)]
+    );
+    return normalized;
+}
+
 function StoryItemRewardStore(options) {
     options = options || {};
     this.postgres = options.postgres;
@@ -94,6 +168,90 @@ function StoryItemRewardStore(options) {
         throw new Error('StoryItemRewardStore requer PostgreSQL.');
     }
 }
+
+StoryItemRewardStore.prototype.getInventory = async function(characterId) {
+    var id = Number(characterId), result;
+    if(!Number.isInteger(id) || id <= 0) { return normalizeInventory(null); }
+    result = await this.postgres.query(
+        "SELECT value FROM character_progress WHERE character_id=$1 AND namespace='story_inventory' AND key=$2 LIMIT 1",
+        [id, INVENTORY_KEY]
+    );
+    return normalizeInventory(result.rowCount ? result.rows[0].value : null);
+};
+
+StoryItemRewardStore.prototype.materializePending = async function(characterId) {
+    var id = Number(characterId),
+        client,
+        inventory,
+        pending,
+        materialized = [],
+        invalid = [],
+        dirty = false,
+        now = new Date().toISOString();
+
+    if(!Number.isInteger(id) || id <= 0) { throw new Error('Personagem inválido para materializar recompensas.'); }
+
+    client = await this.postgres.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [id]);
+        pending = await client.query(
+            "SELECT key, value FROM character_progress WHERE character_id=$1 AND namespace='story_reward' AND value->>'status'='pending' ORDER BY key ASC FOR UPDATE",
+            [id]
+        );
+        inventory = await readInventory(client, id, true);
+
+        for(var i = 0; i < pending.rows.length; i += 1) {
+            var row = pending.rows[i],
+                receipt = row.value || {},
+                canonical = canonicalItem(receipt.itemName),
+                quantity = normalizeStoredAmount(receipt.amount),
+                nextInventory,
+                claimed;
+
+            if(!canonical || Number(receipt.itemKind) !== canonical.kind || !quantity) {
+                claimed = Object.assign({}, receipt, {
+                    status: 'invalid',
+                    reason: 'invalid_pending_receipt',
+                    invalidAt: now
+                });
+                await client.query(
+                    "UPDATE character_progress SET value=$1::jsonb, updated_at=NOW() WHERE character_id=$2 AND namespace='story_reward' AND key=$3",
+                    [JSON.stringify(claimed), id, row.key]
+                );
+                invalid.push(Object.assign({key: row.key}, claimed));
+                continue;
+            }
+
+            nextInventory = addInventoryItem(inventory, canonical.name, quantity);
+            if(!nextInventory) { continue; }
+            inventory = nextInventory;
+            dirty = true;
+            claimed = Object.assign({}, receipt, {
+                status: 'granted',
+                reason: null,
+                delivery: 'inventory',
+                claimedAt: now
+            });
+            await client.query(
+                "UPDATE character_progress SET value=$1::jsonb, updated_at=NOW() WHERE character_id=$2 AND namespace='story_reward' AND key=$3",
+                [JSON.stringify(claimed), id, row.key]
+            );
+            materialized.push(Object.assign({key: row.key}, claimed));
+        }
+
+        if(dirty) {
+            inventory = await writeInventory(client, id, inventory);
+        }
+        await client.query('COMMIT');
+        return {inventory: inventory, materialized: materialized, invalid: invalid};
+    } catch(error) {
+        try { await client.query('ROLLBACK'); } catch(ignore) {}
+        throw error;
+    } finally {
+        client.release();
+    }
+};
 
 StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(characterId, storyId, missionId, storyState, rewards) {
     var id = Number(characterId),
@@ -107,6 +265,9 @@ StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(ch
         }),
         client,
         results = [],
+        inventory = null,
+        inventoryLoaded = false,
+        inventoryDirty = false,
         now = new Date().toISOString();
 
     if(!Number.isInteger(id) || id <= 0) { throw new Error('Personagem inválido para recompensa de missão.'); }
@@ -126,7 +287,8 @@ StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(ch
                 key,
                 receipt,
                 inserted,
-                existing;
+                existing,
+                nextInventory;
 
             if(!descriptor.valid) {
                 results.push(Object.assign({changed: false, alreadyClaimed: false}, descriptor));
@@ -169,11 +331,36 @@ StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(ch
             }
 
             if(descriptor.status === 'granted') {
+                receipt.delivery = 'equipment';
+                receipt.claimedAt = now;
+                await client.query(
+                    "UPDATE character_progress SET value=$1::jsonb, updated_at=NOW() WHERE character_id=$2 AND namespace='story_reward' AND key=$3",
+                    [JSON.stringify(receipt), id, key]
+                );
                 if(descriptor.slot === 'weapon') {
                     await client.query('UPDATE characters SET weapon_kind=$1, updated_at=NOW() WHERE id=$2', [descriptor.itemKind, id]);
                 } else if(descriptor.slot === 'armor') {
                     await client.query('UPDATE characters SET armor_kind=$1, updated_at=NOW() WHERE id=$2', [descriptor.itemKind, id]);
                 }
+            } else {
+                if(!inventoryLoaded) {
+                    inventory = await readInventory(client, id, true);
+                    inventoryLoaded = true;
+                }
+                nextInventory = addInventoryItem(inventory, descriptor.itemName, descriptor.amount);
+                if(!nextInventory) {
+                    throw new Error('Falha ao materializar recompensa de item no inventário persistente.');
+                }
+                inventory = nextInventory;
+                inventoryDirty = true;
+                receipt.status = 'granted';
+                receipt.reason = null;
+                receipt.delivery = 'inventory';
+                receipt.claimedAt = now;
+                await client.query(
+                    "UPDATE character_progress SET value=$1::jsonb, updated_at=NOW() WHERE character_id=$2 AND namespace='story_reward' AND key=$3",
+                    [JSON.stringify(receipt), id, key]
+                );
             }
 
             results.push(Object.assign({
@@ -183,13 +370,19 @@ StoryItemRewardStore.prototype.saveCompletionWithItemRewards = async function(ch
             }, receipt));
         }
 
+        if(inventoryDirty) {
+            inventory = await writeInventory(client, id, inventory);
+        } else if(!inventoryLoaded) {
+            inventory = await readInventory(client, id, false);
+        }
+
         await client.query(
             "INSERT INTO character_progress(character_id, namespace, key, value) VALUES($1,'story',$2,$3::jsonb) ON CONFLICT(character_id, namespace, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()",
             [id, cleanStoryId, JSON.stringify(normalizedState)]
         );
 
         await client.query('COMMIT');
-        return {state: normalizedState, itemRewards: results};
+        return {state: normalizedState, itemRewards: results, inventory: inventory};
     } catch(error) {
         try { await client.query('ROLLBACK'); } catch(ignore) {}
         throw error;
@@ -211,6 +404,10 @@ StoryItemRewardStore.prototype.listPending = async function(characterId) {
 };
 
 exports.StoryItemRewardStore = StoryItemRewardStore;
+exports.INVENTORY_KEY = INVENTORY_KEY;
 exports.normalizeAmount = normalizeAmount;
+exports.normalizeStoredAmount = normalizeStoredAmount;
+exports.normalizeInventory = normalizeInventory;
+exports.addInventoryItem = addInventoryItem;
 exports.rewardKey = rewardKey;
 exports.resolveItemReward = resolveItemReward;
