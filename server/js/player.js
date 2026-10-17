@@ -32,6 +32,7 @@ module.exports = Player = Character.extend({
         this.characterId = null;
         this.storyState = [];
         this.storyInteractionNpcId = null;
+        this.storyOperationChain = Promise.resolve();
         this.mutedUntil = 0;
         this.muteReason = '';
         
@@ -222,6 +223,9 @@ module.exports = Player = Character.extend({
                 if(npc && npc.type === 'npc') {
                     var npcDistance = Math.abs(self.x - npc.x) + Math.abs(self.y - npc.y);
                     if(npcDistance === 1 && self.npcinteract_callback) {
+                        self.progressStoryTalk(npc).catch(function(error) {
+                            log.error('Story talk progress failed for ' + self.name + ': ' + (error && error.message ? error.message : error));
+                        });
                         self.storyInteractionNpcId = npc.id;
                         try {
                             self.npcinteract_callback(npc);
@@ -472,34 +476,72 @@ module.exports = Player = Character.extend({
         }
     },
 
+    queueStoryOperation: function(operation) {
+        var previous = this.storyOperationChain || Promise.resolve(),
+            run = previous.catch(function() {
+                return null;
+            }).then(operation);
+
+        this.storyOperationChain = run.catch(function() {
+            return null;
+        });
+        return run;
+    },
+
+    progressStoryTalk: function(npc) {
+        var self = this,
+            targetProfileId = npc && npc.editorData ? String(npc.editorData.id || '').trim() : '';
+
+        if(!targetProfileId) {
+            return Promise.resolve({changed: false, updates: []});
+        }
+
+        return this.queueStoryOperation(function() {
+            return MissionService.progressTalkObjectives({
+                runtime: self.storyRuntime,
+                progressStore: self.storyProgress,
+                characterId: self.characterId,
+                targetProfileId: targetProfileId,
+                states: self.storyState
+            }).then(function(result) {
+                (result.updates || []).forEach(function(update) {
+                    self.storyState = MissionService.upsertStoryState(self.storyState, update.state);
+                });
+                return result;
+            });
+        });
+    },
+
     startStoryMission: function(storyId, missionId) {
         var self = this,
             sourceNpcId = this.storyInteractionNpcId;
 
-        return MissionService.startMission({
-            runtime: this.storyRuntime,
-            progressStore: this.storyProgress,
-            characterId: this.characterId,
-            storyId: storyId,
-            missionId: missionId,
-            states: this.storyState
-        }).then(function(result) {
-            self.storyState = MissionService.upsertStoryState(self.storyState, result.state);
+        return this.queueStoryOperation(function() {
+            return MissionService.startMission({
+                runtime: self.storyRuntime,
+                progressStore: self.storyProgress,
+                characterId: self.characterId,
+                storyId: storyId,
+                missionId: missionId,
+                states: self.storyState
+            }).then(function(result) {
+                self.storyState = MissionService.upsertStoryState(self.storyState, result.state);
 
-            if(result && result.changed && sourceNpcId && result.mission && result.mission.mission) {
-                var dialogue = Array.isArray(result.mission.mission.introDialogue) ? result.mission.mission.introDialogue : [],
-                    lines = dialogue.map(function(line) {
-                        return Utils.sanitize(line && line.text || '');
-                    }).filter(function(text) {
-                        return text;
-                    });
+                if(result && result.changed && sourceNpcId && result.mission && result.mission.mission) {
+                    var dialogue = Array.isArray(result.mission.mission.introDialogue) ? result.mission.mission.introDialogue : [],
+                        lines = dialogue.map(function(line) {
+                            return Utils.sanitize(line && line.text || '');
+                        }).filter(function(text) {
+                            return text;
+                        });
 
-                if(lines.length) {
-                    self.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, lines]);
+                    if(lines.length) {
+                        self.send([Types.Messages.STORY_DIALOGUE, sourceNpcId, lines]);
+                    }
                 }
-            }
 
-            return result;
+                return result;
+            });
         });
     },
 
