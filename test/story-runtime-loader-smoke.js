@@ -5,9 +5,10 @@ var assert = require('assert'),
     os = require('os'),
     path = require('path'),
     StoryStore = require('../server/admin/story-store').StoryStore,
-    StoryRuntime = require('../server/story/runtime').StoryRuntime;
+    StoryRuntime = require('../server/story/runtime').StoryRuntime,
+    startMission = require('../server/story/mission-service').startMission;
 
-function main() {
+async function main() {
     var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bq-story-runtime-')),
         store = new StoryStore(path.join(dir, 'stories.json'));
 
@@ -87,6 +88,59 @@ function main() {
         published[0].title = 'Mutado';
         assert.notStrictEqual(store.getPublishedStories()[0].title, 'Mutado', 'store must return defensive copies');
 
+        var savedCalls = [],
+            progressStore = {
+                save: async function(characterId, storyId, state) {
+                    savedCalls.push({characterId: characterId, storyId: storyId, state: state});
+                    return Object.assign({}, state, {updatedAt: '2026-10-17T09:00:00.000Z'});
+                }
+            },
+            started = await startMission({
+                runtime: runtime,
+                progressStore: progressStore,
+                characterId: 7,
+                storyId: 'main-story',
+                missionId: 'm1',
+                states: [{storyId: 'main-story', activeMissionId: '', completedMissionIds: ['old'], flags: {met_guard: true}}]
+            });
+
+        assert.strictEqual(started.changed, true);
+        assert.strictEqual(started.mission.mission.id, 'm1');
+        assert.strictEqual(started.state.storyId, 'main-story');
+        assert.strictEqual(started.state.activeMissionId, 'm1');
+        assert.strictEqual(started.state.objectiveProgress, 0);
+        assert.deepStrictEqual(started.state.completedMissionIds, ['old']);
+        assert.strictEqual(started.state.flags.met_guard, true);
+        assert.strictEqual(savedCalls.length, 1);
+        assert.strictEqual(savedCalls[0].characterId, 7);
+
+        var sameMission = await startMission({
+            runtime: runtime,
+            progressStore: progressStore,
+            characterId: 7,
+            storyId: 'main-story',
+            missionId: 'm1',
+            states: [started.state]
+        });
+        assert.strictEqual(sameMission.changed, false, 'starting the active mission again must be idempotent');
+        assert.strictEqual(savedCalls.length, 1, 'idempotent start must not write again');
+
+        await assert.rejects(function() {
+            return startMission({runtime: runtime, storyId: 'draft-story', missionId: 'draft-mission', states: []});
+        }, function(error) { return error && error.code === 'MISSION_NOT_FOUND'; });
+
+        await assert.rejects(function() {
+            return startMission({runtime: runtime, storyId: 'main-story', missionId: 'm2', states: [started.state]});
+        }, function(error) { return error && error.code === 'MISSION_ALREADY_ACTIVE'; });
+
+        await assert.rejects(function() {
+            return startMission({runtime: runtime, progressStore: progressStore, storyId: 'main-story', missionId: 'm2', states: []});
+        }, function(error) { return error && error.code === 'CHARACTER_REQUIRED'; });
+
+        var guestStart = await startMission({runtime: runtime, storyId: 'main-story', missionId: 'm2', states: []});
+        assert.strictEqual(guestStart.changed, true);
+        assert.strictEqual(guestStart.state.activeMissionId, 'm2');
+
         var root = path.join(__dirname, '..'),
             bootstrap = fs.readFileSync(path.join(root, 'server', 'bootstrap.js'), 'utf8'),
             mainServer = fs.readFileSync(path.join(root, 'server', 'js', 'main.js'), 'utf8'),
@@ -99,14 +153,13 @@ function main() {
         assert.ok(mainServer.indexOf('connection.storyRuntime = config.story_runtime || null;') !== -1, 'game connections must receive Story Runtime');
         assert.ok(player.indexOf('this.storyRuntime = connection.storyRuntime || null;') !== -1, 'Player must retain Story Runtime reference');
 
-        console.log('Story runtime loader smoke test passed.');
+        console.log('Story runtime loader and mission start smoke test passed.');
     } finally {
         fs.rmSync(dir, {recursive: true, force: true});
     }
 }
 
-try { main(); }
-catch(error) {
+main().catch(function(error) {
     console.error(error && error.stack ? error.stack : error);
     process.exitCode = 1;
-}
+});
