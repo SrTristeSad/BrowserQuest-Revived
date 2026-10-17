@@ -16,7 +16,7 @@ function createLogger(level) {
     }
 }
 
-function main(config) {
+function start(config) {
     var ws = require('./ws'),
         WorldServer = require('./worldserver'),
         Player = require('./player'),
@@ -27,10 +27,17 @@ function main(config) {
         lastTotalPlayers = 0,
         checkPopulationInterval;
 
+    config = Object.assign({}, config);
+    config.port = parseInt(process.env.PORT || config.port || 8000, 10);
+    config.host = process.env.HOST || config.host || '127.0.0.1';
+
     global.log = createLogger(config.debug_level);
     log.info('Starting BrowserQuest game server...');
 
-    server = new ws.MultiVersionWebsocketServer(config.port);
+    server = new ws.MultiVersionWebsocketServer(config.port, {
+        host: config.host,
+        serveClient: config.serve_client !== false
+    });
     metrics = config.metrics_enabled ? new Metrics(config) : null;
 
     checkPopulationInterval = setInterval(function() {
@@ -113,19 +120,25 @@ function main(config) {
         });
     }
 
-    process.on('SIGINT', function() {
+    function shutdown() {
         clearInterval(checkPopulationInterval);
+    }
+
+    process.once('SIGINT', function() {
+        shutdown();
         process.exit(0);
     });
 
-    process.on('SIGTERM', function() {
-        clearInterval(checkPopulationInterval);
+    process.once('SIGTERM', function() {
+        shutdown();
         process.exit(0);
     });
 
-    process.on('uncaughtException', function(error) {
+    process.once('uncaughtException', function(error) {
         log.error('uncaughtException: ' + (error && error.stack ? error.stack : error));
     });
+
+    return server;
 }
 
 function getWorldDistribution(worlds) {
@@ -134,11 +147,11 @@ function getWorldDistribution(worlds) {
     });
 }
 
-function getConfigFile(path, callback) {
-    fs.readFile(path, 'utf8', function(error, jsonString) {
+function readConfigFile(filepath, callback) {
+    fs.readFile(filepath, 'utf8', function(error, jsonString) {
         if(error) {
             if(error.code !== 'ENOENT') {
-                console.error('Could not open config file:', error.path || path, error.message);
+                console.error('Could not open config file:', error.path || filepath, error.message);
             }
             callback(null);
             return;
@@ -147,29 +160,35 @@ function getConfigFile(path, callback) {
         try {
             callback(JSON.parse(jsonString));
         } catch(parseError) {
-            console.error('Could not parse config file:', path, parseError.message);
+            console.error('Could not parse config file:', filepath, parseError.message);
             callback(null);
         }
     });
 }
 
-var defaultConfigPath = './server/config.json',
-    customConfigPath = process.argv[2] || './server/config_local.json';
+function startFromFiles(customConfigPath) {
+    var defaultConfigPath = './server/config.json',
+        localPath = customConfigPath || './server/config_local.json';
 
-getConfigFile(defaultConfigPath, function(defaultConfig) {
-    getConfigFile(customConfigPath, function(localConfig) {
-        var config = localConfig || defaultConfig;
+    readConfigFile(defaultConfigPath, function(defaultConfig) {
+        readConfigFile(localPath, function(localConfig) {
+            var config = localConfig || defaultConfig;
 
-        if(!config) {
-            console.error('Server cannot start without a valid configuration file.');
-            process.exit(1);
-            return;
-        }
+            if(!config) {
+                console.error('Server cannot start without a valid configuration file.');
+                process.exitCode = 1;
+                return;
+            }
 
-        if(process.env.PORT) {
-            config.port = parseInt(process.env.PORT, 10);
-        }
-
-        main(config);
+            start(config);
+        });
     });
-});
+}
+
+exports.start = start;
+exports.startFromFiles = startFromFiles;
+exports.readConfigFile = readConfigFile;
+
+if(require.main === module) {
+    startFromFiles(process.argv[2]);
+}
