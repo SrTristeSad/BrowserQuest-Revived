@@ -31,7 +31,7 @@ async function main() {
             {method: 'POST', path: '/admin/api/accounts/77/suspend', body: {reason: 'test'}},
             {method: 'POST', path: '/admin/api/accounts/77/ban', body: {reason: 'test'}},
             {method: 'POST', path: '/admin/api/accounts/77/reactivate', body: {reason: 'test'}},
-            {method: 'POST', path: '/admin/api/announcement', body: {message: 'test'}},
+            {method: 'POST', path: '/admin/api/announcements', body: {message: 'test'}},
             {method: 'POST', path: '/admin/api/settings/server', body: {worlds: 2, playersPerWorld: 50}},
             {method: 'POST', path: '/admin/api/settings/access', body: {accessMode: 'mixed', registrationEnabled: true}},
             {method: 'POST', path: '/admin/api/world', body: {}},
