@@ -191,12 +191,13 @@ function start(config) {
             });
             return players;
         },
-        kickPlayer: function(playerId, reason) {
-            var found = null;
+        kickPlayer: async function(playerId, reason) {
+            var found = null, targetPlayer = null;
             worlds.some(function(world, worldIndex) {
                 var player = world.players && world.players[String(playerId)], auth;
                 if(!player) { return false; }
                 auth = player.connection && player.connection.authContext;
+                targetPlayer = player;
                 found = {
                     id: String(player.id),
                     name: player.name || null,
@@ -205,9 +206,14 @@ function start(config) {
                     username: auth && auth.user ? auth.user.username : null,
                     characterId: auth && auth.character ? Number(auth.character.id) : null
                 };
-                player.connection.close(String(reason || 'Conexão encerrada pelo administrador.').slice(0, 120));
                 return true;
             });
+            if(!targetPlayer) { return null; }
+
+            targetPlayer.connection.close(String(reason || 'Conexão encerrada pelo administrador.').slice(0, 120));
+            if(typeof targetPlayer.flushPersistence === 'function') {
+                await targetPlayer.flushPersistence();
+            }
             return found;
         },
         kickByUserId: function(userId, reason) {

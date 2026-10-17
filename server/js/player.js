@@ -424,10 +424,12 @@ module.exports = Player = Character.extend({
 
     flushPersistence: function() {
         if(this.characterPersistence && this.characterId) {
-            this.characterPersistence.flush(this.characterId).catch(function(error) {
+            return this.characterPersistence.flush(this.characterId).catch(function(error) {
                 log.error('Falha no flush do personagem: ' + error.message);
+                return false;
             });
         }
+        return Promise.resolve(false);
     },
     
     updateHitPoints: function() {
