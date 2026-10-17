@@ -2,7 +2,7 @@ name: BrowserQuest CI
 
 on:
   push:
-    branches: [main, modernize-node]
+    branches: [main, modernize-node, aapanel-visual-installer]
   pull_request:
     branches: [main]
 
@@ -25,10 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Syntax checks
-        run: npm run check
+      - name: Syntax and aaPanel checks
+        run: |
+          npm run check
+          npm run doctor:aapanel
 
-      - name: Start server and verify HTTP/WebSocket
+      - name: Verify direct game server HTTP/WebSocket
         shell: bash
         run: |
           set -euo pipefail
@@ -39,6 +41,7 @@ jobs:
           for attempt in $(seq 1 20); do
             if curl --fail --silent http://127.0.0.1:8000/status > /tmp/browserquest-status.json; then
               cat /tmp/browserquest-status.json
+              curl --fail --silent http://127.0.0.1:8000/ | grep -qi BrowserQuest
               node test/websocket-smoke.js
               exit 0
             fi
@@ -46,4 +49,44 @@ jobs:
           done
 
           cat /tmp/browserquest-server.log
+          exit 1
+
+      - name: Verify visual first-run installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETUP_DIR="$(mktemp -d)"
+          PORT=8010 BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config" node app.js > /tmp/browserquest-setup.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; rm -rf "$SETUP_DIR"' EXIT
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8010/setup > /tmp/setup.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep -qi 'BrowserQuest Revived' /tmp/setup.html
+          CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-setup.log | tail -1 | grep -oE '[0-9]{6}')"
+          test -n "$CODE"
+
+          curl --fail --silent \
+            -H 'content-type: application/json' \
+            -d "{\"code\":\"$CODE\",\"worlds\":2,\"players\":10}" \
+            http://127.0.0.1:8010/setup/install | grep -q '"ok":true'
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8010/status > /tmp/installed-status.json; then
+              cat /tmp/installed-status.json
+              curl --fail --silent http://127.0.0.1:8010/ | grep -qi BrowserQuest
+              TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
+              test -f "$SETUP_DIR/config/browserquest.json"
+              test ! -f "$SETUP_DIR/config/setup-token.txt"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat /tmp/browserquest-setup.log
           exit 1
