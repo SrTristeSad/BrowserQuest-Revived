@@ -1,6 +1,8 @@
 'use strict';
 
 var assert = require('assert'),
+    fs = require('fs'),
+    path = require('path'),
     StoryProgressStore = require('../server/story/progress-store').StoryProgressStore,
     normalizeStoryProgress = require('../server/story/progress-store').normalizeStoryProgress;
 
@@ -86,6 +88,18 @@ async function main() {
 
     await assert.rejects(function() { return store.save(0, 'story', {}); }, /Personagem inválido/);
     await assert.rejects(function() { return store.save(7, '!!!', {}); }, /História inválida/);
+
+    var root = path.join(__dirname, '..'),
+        bootstrap = fs.readFileSync(path.join(root, 'server', 'bootstrap.js'), 'utf8'),
+        mainServer = fs.readFileSync(path.join(root, 'server', 'js', 'main.js'), 'utf8'),
+        player = fs.readFileSync(path.join(root, 'server', 'js', 'player.js'), 'utf8');
+
+    assert.ok(bootstrap.indexOf("StoryProgressStore = require('./story/progress-store').StoryProgressStore") !== -1, 'bootstrap must require StoryProgressStore');
+    assert.ok(bootstrap.indexOf('storyProgressStore = new StoryProgressStore({postgres: services.postgres})') !== -1, 'bootstrap must instantiate StoryProgressStore');
+    assert.ok(bootstrap.indexOf('story_progress: storyProgressStore') !== -1, 'bootstrap must inject story progress into game config');
+    assert.ok(mainServer.indexOf("connection.storyProgress = context.type === 'account' ? (config.story_progress || null) : null") !== -1, 'authenticated account connection must receive story progress store');
+    assert.ok(mainServer.indexOf('connection.storyProgress = null;') !== -1, 'guest connection must not receive persistent story progress');
+    assert.ok(player.indexOf('this.storyProgress = connection.storyProgress || null;') !== -1, 'Player must retain story progress store reference');
 
     console.log('Story progress store smoke test passed.');
 }

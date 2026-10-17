@@ -14,6 +14,7 @@ var http = require('http'),
     Infrastructure = require('./storage/infrastructure'),
     Migrations = require('./storage/migrations'),
     CharacterStore = require('./persistence/character-store').CharacterStore,
+    StoryProgressStore = require('./story/progress-store').StoryProgressStore,
     GracefulShutdown = require('./lifecycle/graceful-shutdown');
 
 var root = path.join(__dirname, '..'),
@@ -144,6 +145,7 @@ async function startGame(config) {
         playerAuth = null,
         playerAuthHandler = null,
         characterStore = null,
+        storyProgressStore = null,
         adminRuntime = {startedAt: Date.now(), server: null, config: null},
         adminHandler,
         combinedHttpHandler;
@@ -155,6 +157,7 @@ async function startGame(config) {
         await services.connect();
         playerAuth = new PlayerAuthModule.PlayerAuth({services: services, accessMode: config.access_mode || 'mixed'});
         characterStore = new CharacterStore({postgres: services.postgres});
+        storyProgressStore = new StoryProgressStore({postgres: services.postgres});
         playerAuthHandler = PlayerAuthHttp.createPlayerAuthHandler({auth: playerAuth});
         console.log('[BrowserQuest] PostgreSQL conectado.');
         console.log('[BrowserQuest] Redis conectado.');
@@ -181,6 +184,7 @@ async function startGame(config) {
         } : null,
         player_auth_service: playerAuth,
         player_persistence: characterStore,
+        story_progress: storyProgressStore,
         // When PostgreSQL persistence is active the bootstrap owns SIGTERM/SIGINT
         // so pending state can be flushed before the aaPanel process exits.
         manage_process_signals: services ? false : true
