@@ -522,6 +522,48 @@ function createAdminHandler(options) {
             return;
         }
 
+        match = pathname.match(/^\/admin\/api\/accounts\/([0-9]+)\/ban$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            if(!playerAuth || typeof playerAuth.destroySessionsByUserId !== 'function') {
+                json(response, 503, {error: 'Gerenciamento de sessões de jogadores indisponível.'});
+                return;
+            }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+
+            var banAccountId = Number(match[1]),
+                banResult = await services.postgres.query("SELECT id, username, status FROM users WHERE id=$1 AND role='player' LIMIT 1", [banAccountId]);
+            if(banResult.rowCount !== 1) {
+                json(response, 404, {error: 'Conta de jogador não encontrada.'});
+                return;
+            }
+
+            var banAccount = banResult.rows[0],
+                banReason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Conta banida pelo administrador.',
+                banPreviousStatus = banAccount.status,
+                banned = (await services.postgres.query("UPDATE users SET status='banned', updated_at=NOW() WHERE id=$1 AND role='player' RETURNING id, username, status", [banAccount.id])).rows[0],
+                bannedSessions = await playerAuth.destroySessionsByUserId(banAccount.id),
+                banControls = controlRuntime(),
+                bannedConnections = banControls && typeof banControls.kickByUserId === 'function' ? banControls.kickByUserId(banAccount.id, banReason) : 0;
+
+            await audit(session, 'account.ban', banAccount.username, {
+                userId: Number(banAccount.id),
+                previousStatus: banPreviousStatus,
+                reason: banReason,
+                sessionsRevoked: bannedSessions,
+                connectionsClosed: bannedConnections
+            }, request);
+            json(response, 200, {
+                ok: true,
+                account: {id: Number(banned.id), username: banned.username, status: banned.status},
+                sessionsRevoked: bannedSessions,
+                connectionsClosed: bannedConnections
+            });
+            return;
+        }
+
         if(pathname === '/admin/api/settings/access' && request.method === 'GET') {
             if(!await requireAdmin(request, response, true)) { return; }
             json(response, 200, await getAccessSettings());
