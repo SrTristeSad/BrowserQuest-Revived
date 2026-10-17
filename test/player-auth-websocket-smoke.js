@@ -72,6 +72,23 @@ function checkpointContaining(x, y) {
     }) || null;
 }
 
+async function waitForCheckpointPersisted(cookie, checkpointId) {
+    var deadline = Date.now() + 4000,
+        expected = Number(checkpointId),
+        lastValue = null;
+
+    while(Date.now() < deadline) {
+        var session = await requestJson('/api/auth/session', 'GET', undefined, cookie);
+        lastValue = session.data && session.data.character ? session.data.character.lastCheckpointId : null;
+        if(Number(lastValue) === expected) {
+            return true;
+        }
+        await new Promise(function(resolve) { setTimeout(resolve, 100); });
+    }
+
+    throw new Error('Checkpoint ' + expected + ' was not persisted. Last session value: ' + String(lastValue));
+}
+
 function authenticatedPersistenceHandshake(cookie, expectedName) {
     return new Promise(function(resolve, reject) {
         var socket = new WebSocket(wsUrl, {headers: {Cookie: cookie}}),
@@ -84,7 +101,23 @@ function authenticatedPersistenceHandshake(cookie, expectedName) {
                 done = true;
                 socket.terminate();
                 reject(new Error('Timed out waiting for authenticated persistence handshake'));
-            }, 8000);
+            }, 9000);
+
+        function finishWithCheckpoint() {
+            waitForCheckpointPersisted(cookie, checkpoint.id).then(function() {
+                if(done) { return; }
+                done = true;
+                clearTimeout(timeout);
+                socket.close();
+                resolve(checkpoint);
+            }).catch(function(error) {
+                if(done) { return; }
+                done = true;
+                clearTimeout(timeout);
+                socket.terminate();
+                reject(error);
+            });
+        }
 
         function maybeCheckpoint() {
             if(!welcome || !equipment.has(21) || !equipment.has(60) || checkpoint) { return; }
@@ -97,19 +130,12 @@ function authenticatedPersistenceHandshake(cookie, expectedName) {
                 return;
             }
             socket.send(JSON.stringify([26, checkpoint.id]));
-            setTimeout(function() {
-                if(done) { return; }
-                done = true;
-                clearTimeout(timeout);
-                socket.close();
-                resolve(checkpoint);
-            }, 250);
+            finishWithCheckpoint();
         }
 
         socket.on('message', function(data) {
             var text = data.toString('utf8');
             if(text === 'go') {
-                // Send valid but forged high-level equipment. The server must ignore it for accounts.
                 socket.send(JSON.stringify([0, 'SpoofedName', 26, 63]));
                 return;
             }
