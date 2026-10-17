@@ -3,6 +3,8 @@
 Revival and modernization of the original **Mozilla BrowserQuest** while preserving the original game, pixel art, maps, audio and visual identity.
 
 > Development plan: see [`ROADMAP.md`](ROADMAP.md) and the master tracking issue.
+>
+> **Data architecture:** the current v0.4.0 still runs without an external database. The next account/persistence phase adopts **PostgreSQL as the permanent source of truth** and **Redis for sessions, rate limiting, presence and cache**. Docker is not required.
 
 ## Current status
 
@@ -44,7 +46,7 @@ CÓDIGO DE INSTALAÇÃO: 123456
 
 The setup configures the world count, player limit and first owner/admin account. After setup, the same Node.js process serves the game and the administration area.
 
-No Docker, Redis or external database is required for the current version.
+No Docker, Redis or external database is required for the current **v0.4.0** runtime. PostgreSQL + Redis are planned for the next account/persistence phase described in the roadmap.
 
 ## Story Editor
 
