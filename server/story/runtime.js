@@ -1,5 +1,9 @@
 'use strict';
 
+var CustomHandlers = require('./custom-handler-registry'),
+    CustomHandlerRegistry = CustomHandlers.CustomHandlerRegistry,
+    parseHandlerId = CustomHandlers.parseHandlerId;
+
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
@@ -8,11 +12,16 @@ function byOrder(a, b) {
     return Number(a && a.order || 0) - Number(b && b.order || 0);
 }
 
-function StoryRuntime(store) {
+function StoryRuntime(store, options) {
     if(!store || typeof store.getPublishedStories !== 'function') {
         throw new Error('StoryRuntime requires a story store with getPublishedStories().');
     }
+    options = options || {};
+    if(options.customHandlers != null && !(options.customHandlers instanceof CustomHandlerRegistry)) {
+        throw new Error('StoryRuntime customHandlers must be a CustomHandlerRegistry.');
+    }
     this.store = store;
+    this.customHandlers = options.customHandlers || new CustomHandlerRegistry();
     this.stories = new Map();
     this.diagnostics = [];
     this.reload();
@@ -77,6 +86,15 @@ StoryRuntime.prototype.reload = function() {
                     self._warn(storyId, 'missing_choice_mission', choice.nextMissionId, 'Destino de escolha não existe nesta história.', mission.id);
                 }
             });
+
+            if(mission.objective && mission.objective.type === 'custom') {
+                self._checkCustomHandler(storyId, mission.id, 'objective', mission.objective.target);
+            }
+            (Array.isArray(mission.rewards) ? mission.rewards : []).forEach(function(reward) {
+                if(reward && reward.type === 'custom') {
+                    self._checkCustomHandler(storyId, mission.id, 'reward', reward.value);
+                }
+            });
         });
     });
 
@@ -92,6 +110,30 @@ StoryRuntime.prototype._warn = function(storyId, code, target, message, missionI
         target: target || null,
         message: message
     });
+};
+
+StoryRuntime.prototype._checkCustomHandler = function(storyId, missionId, kind, rawId) {
+    var id = parseHandlerId(rawId),
+        label = kind === 'objective' ? 'objetivo' : 'recompensa';
+    if(!id) {
+        this._warn(storyId, 'invalid_custom_' + kind + '_handler', rawId, 'ID de handler custom inválido para ' + label + '.', missionId);
+        return;
+    }
+    if(!this.customHandlers.has(kind, id)) {
+        this._warn(storyId, 'missing_custom_' + kind + '_handler', id, 'Handler custom não registrado no servidor para ' + label + '.', missionId);
+    }
+};
+
+StoryRuntime.prototype.resolveCustomHandler = function(kind, id) {
+    return this.customHandlers.resolve(kind, id);
+};
+
+StoryRuntime.prototype.hasCustomHandler = function(kind, id) {
+    return this.customHandlers.has(kind, id);
+};
+
+StoryRuntime.prototype.listCustomHandlers = function(kind) {
+    return this.customHandlers.list(kind);
 };
 
 StoryRuntime.prototype.getStory = function(storyId) {
