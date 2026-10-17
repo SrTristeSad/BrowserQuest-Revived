@@ -1,6 +1,6 @@
 {
   "name": "browserquest-revived",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "A modernized revival of Mozilla BrowserQuest that preserves the original game and visual design.",
   "license": "MPL-2.0",
@@ -13,10 +13,13 @@
     "start:server": "node server/js/main.js",
     "doctor:aapanel": "node scripts/doctor-aapanel.mjs",
     "test:brain": "node test/brain-smoke.js && node test/world-brain-store-smoke.js",
-    "check": "node --check app.js && node --check server/js/main.js && node --check server/js/ws.js && node --check client/js/character.js && node --check server/js/map.js && node --check server/js/brain.js && node --check server/js/mob.js && node --check server/js/mobarea.js && node --check server/js/npc.js && node --check server/js/worldserver.js && node --check server/admin/auth.js && node --check server/admin/http.js && node --check server/admin/story-store.js && node --check server/admin/world-store.js && npm run test:brain"
+    "test:infra": "node test/infrastructure-config-smoke.js",
+    "check": "node --check app.js && node --check server/bootstrap.js && node --check server/setup/page.js && node --check server/setup/infrastructure-setup.js && node --check server/storage/infrastructure.js && node --check server/storage/migrations.js && node --check server/js/main.js && node --check server/js/ws.js && node --check client/js/character.js && node --check server/js/map.js && node --check server/js/brain.js && node --check server/js/mob.js && node --check server/js/mobarea.js && node --check server/js/npc.js && node --check server/js/worldserver.js && node --check server/admin/auth.js && node --check server/admin/http.js && node --check server/admin/story-store.js && node --check server/admin/world-store.js && npm run test:brain && npm run test:infra"
   },
   "dependencies": {
     "log": "1.4.0",
+    "pg": "8.23.1",
+    "redis": "6.3.0",
     "sanitizer": "0.1.3",
     "underscore": "1.13.8",
     "ws": "8.22.0"
