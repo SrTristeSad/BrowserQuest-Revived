@@ -1,0 +1,37 @@
+name: Phase 3 Announcement UI Patch
+
+on:
+  push:
+    branches: [phase3-announcement-ui]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-announcement-ui:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply announcement Dashboard patch
+        run: node scripts/phase3-announcement-ui-patch.mjs
+      - name: Verify Dashboard announcement controls
+        run: |
+          grep -q 'id="announcementMessage"' server/admin/public/dashboard.html
+          grep -q 'id="sendAnnouncement"' server/admin/public/dashboard.html
+          grep -q "async function sendAnnouncement" server/admin/public/dashboard.html
+          grep -q "/admin/api/announcements" server/admin/public/dashboard.html
+      - name: Commit Dashboard patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+SrTristeSad@users.noreply.github.com"
+          git add server/admin/public/dashboard.html
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "feat: add announcement composer to dashboard"
+            git push
+          fi
