@@ -10,6 +10,7 @@ var http = require('http'),
     PlayerAuthModule = require('./auth/player-auth'),
     PlayerAuthHttp = require('./auth/http'),
     PlayerProgress = require('./storage/player-progress').PlayerProgress,
+    Migrations = require('./storage/migrations'),
     SetupPage = require('./setup/page'),
     SetupInfrastructure = require('./setup/infrastructure-setup'),
     Infrastructure = require('./storage/infrastructure');
@@ -146,12 +147,13 @@ async function startGame(config) {
         combinedHttpHandler;
 
     if(config.infrastructure && config.infrastructure.postgres && config.infrastructure.redis) {
+        await Migrations.runMigrations(config.infrastructure.postgres);
         services = Infrastructure.createServices(config.infrastructure);
         await services.connect();
         playerAuth = new PlayerAuthModule.PlayerAuth({services: services, accessMode: config.access_mode || 'mixed'});
         playerProgress = new PlayerProgress({postgres: services.postgres});
         playerAuthHandler = PlayerAuthHttp.createPlayerAuthHandler({auth: playerAuth});
-        console.log('[BrowserQuest] PostgreSQL conectado.');
+        console.log('[BrowserQuest] PostgreSQL conectado e migrations atualizadas.');
         console.log('[BrowserQuest] Redis conectado.');
     } else {
         console.warn('[BrowserQuest] Instalação legada sem PostgreSQL/Redis. O jogo continuará iniciando até a migração ser concluída.');
