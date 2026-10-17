@@ -33,7 +33,7 @@ async function main() {
                     }
                     if(sql.indexOf('SELECT l.id, l.actor_user_id') === 0) {
                         auditQueryParams.push(params.slice());
-                        return {rowCount: 2, rows: [
+                        var rows = [
                             {
                                 id: 42,
                                 actor_user_id: 1,
@@ -59,7 +59,8 @@ async function main() {
                                 metadata: {},
                                 created_at: '2026-10-17T06:59:00.000Z'
                             }
-                        ]};
+                        ].slice(0, Number(params[1]) || 0);
+                        return {rowCount: rows.length, rows: rows};
                     }
                     throw new Error('Unexpected SQL in admin audit history smoke test: ' + sql);
                 }
@@ -127,7 +128,7 @@ async function main() {
         });
         assert.strictEqual(invalidBefore.response.status, 200);
         assert.deepStrictEqual(auditQueryParams[1], [null, 1]);
-        assert.strictEqual(invalidBefore.data.nextBefore, 41, 'full page must expose the last id as nextBefore');
+        assert.strictEqual(invalidBefore.data.nextBefore, 42, 'full page must expose the last id returned as nextBefore');
 
         console.log('Admin audit history smoke test passed.');
     } finally {
