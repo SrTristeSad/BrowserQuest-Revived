@@ -15,11 +15,18 @@ var migrations = [
             "CREATE TABLE IF NOT EXISTS admin_audit_log (id BIGSERIAL PRIMARY KEY, actor_user_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL, target TEXT NULL, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, ip INET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
             "CREATE INDEX IF NOT EXISTS admin_audit_log_created_at_idx ON admin_audit_log(created_at DESC)"
         ]
+    },
+    {
+        id: '002_player_auth',
+        sql: [
+            "CREATE UNIQUE INDEX IF NOT EXISTS characters_name_ci_unique_v1 ON characters(LOWER(name))",
+            "INSERT INTO settings(key, value) VALUES('registration_enabled', 'true'::jsonb) ON CONFLICT(key) DO NOTHING"
+        ]
     }
 ];
 
 async function runMigrations(postgresConfig) {
-    var pool = new pg.Pool(Infrastructure.postgresPoolOptions(postgresConfig)), client;
+    var pool = new pg.Pool(Infrastructure.postgresPoolOptions(postgresConfig)), client, applied = [];
     try {
         client = await pool.connect();
         await client.query('BEGIN');
@@ -32,9 +39,10 @@ async function runMigrations(postgresConfig) {
                 await client.query(migration.sql[j]);
             }
             await client.query('INSERT INTO schema_migrations(id) VALUES($1)', [migration.id]);
+            applied.push(migration.id);
         }
         await client.query('COMMIT');
-        return {ok: true, applied: migrations.map(function(item) { return item.id; })};
+        return {ok: true, applied: applied};
     } catch(error) {
         if(client) {
             try { await client.query('ROLLBACK'); } catch(ignore) {}

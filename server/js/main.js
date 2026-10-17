@@ -69,7 +69,7 @@ function start(config) {
         }
     }, 1000);
 
-    server.onConnect(function(connection) {
+    function selectWorldAndConnect(connection) {
         var world,
             connect = function() {
                 if(world) {
@@ -95,6 +95,29 @@ function start(config) {
             }
             connect();
         }
+    }
+
+    server.onConnect(function(connection) {
+        var authorize = config.player_authenticator;
+
+        if(!authorize) {
+            connection.authContext = {allowed: true, type: 'guest', accessMode: 'name_only'};
+            selectWorldAndConnect(connection);
+            return;
+        }
+
+        Promise.resolve(authorize(connection)).then(function(context) {
+            if(!context || context.allowed === false) {
+                connection.close((context && context.reason) || 'Acesso não autorizado.');
+                return;
+            }
+            connection.authContext = context;
+            connection.playerAuthService = config.player_auth_service || null;
+            selectWorldAndConnect(connection);
+        }).catch(function(error) {
+            log.error('Player authorization failed: ' + (error && error.stack ? error.stack : error));
+            connection.close('Falha ao validar sua sessão.');
+        });
     });
 
     server.onError(function(error) {

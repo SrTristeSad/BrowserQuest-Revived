@@ -18,11 +18,14 @@ module.exports = Player = Character.extend({
         this._super(this.connection.id, "player", Types.Entities.WARRIOR, 0, 0, "");
 
         this.hasEnteredGame = false;
+        this.handshakePending = false;
         this.isDead = false;
         this.haters = {};
         this.lastCheckpoint = null;
         this.formatChecker = new FormatChecker();
         this.disconnectTimeout = null;
+        this.accountUserId = null;
+        this.characterId = null;
         
         this.connection.listen(function(message) {
             var action = parseInt(message[0]);
@@ -33,11 +36,11 @@ module.exports = Player = Character.extend({
                 return;
             }
             
-            if(!self.hasEnteredGame && action !== Types.Messages.HELLO) { // HELLO must be the first message
+            if(!self.hasEnteredGame && action !== Types.Messages.HELLO) {
                 self.connection.close("Invalid handshake message: "+message);
                 return;
             }
-            if(self.hasEnteredGame && !self.isDead && action === Types.Messages.HELLO) { // HELLO can be sent only once
+            if((self.hasEnteredGame || self.handshakePending) && !self.isDead && action === Types.Messages.HELLO) {
                 self.connection.close("Cannot initiate handshake twice: "+message);
                 return;
             }
@@ -45,26 +48,12 @@ module.exports = Player = Character.extend({
             self.resetTimeout();
             
             if(action === Types.Messages.HELLO) {
-                var name = Utils.sanitize(message[1]);
-                
-                // If name was cleared by the sanitizer, give a default name.
-                // Always ensure that the name is not longer than a maximum length.
-                // (also enforced by the maxlength attribute of the name input element).
-                self.name = (name === "") ? "lorem ipsum" : name.substr(0, 15);
-                
-                self.kind = Types.Entities.WARRIOR;
-                self.equipArmor(message[2]);
-                self.equipWeapon(message[3]);
-                self.orientation = Utils.randomOrientation();
-                self.updateHitPoints();
-                self.updatePosition();
-                
-                self.server.addPlayer(self);
-                self.server.enter_callback(self);
-
-                self.send([Types.Messages.WELCOME, self.id, self.name, self.x, self.y, self.hitPoints]);
-                self.hasEnteredGame = true;
-                self.isDead = false;
+                self.handshakePending = true;
+                self.handleHello(message).catch(function(error) {
+                    log.error('Player HELLO failed: ' + (error && error.stack ? error.stack : error));
+                    self.connection.close('Falha ao validar o personagem.');
+                });
+                return;
             }
             else if(action === Types.Messages.WHO) {
                 message.shift();
@@ -76,9 +65,8 @@ module.exports = Player = Character.extend({
             else if(action === Types.Messages.CHAT) {
                 var msg = Utils.sanitize(message[1]);
                 
-                // Sanitized messages may become empty. No need to broadcast empty chat messages.
                 if(msg && msg !== "") {
-                    msg = msg.substr(0, 60); // Enforce maxlength of chat input
+                    msg = msg.substr(0, 60);
                     self.broadcastToZone(new Messages.Chat(self, msg), false);
                 }
             }
@@ -162,7 +150,7 @@ module.exports = Player = Character.extend({
                             self.updateHitPoints();
                             self.broadcast(self.equip(Types.Entities.FIREFOX));
                             self.firepotionTimeout = setTimeout(function() {
-                                self.broadcast(self.equip(self.armor)); // return to normal after 15 sec
+                                self.broadcast(self.equip(self.armor));
                                 self.firepotionTimeout = null;
                             }, 15000);
                             self.send(new Messages.HitPoints(self.maxHitPoints).serialize());
@@ -232,7 +220,49 @@ module.exports = Player = Character.extend({
             }
         });
         
-        this.connection.sendUTF8("go"); // Notify client that the HELLO/WELCOME handshake can start
+        this.connection.sendUTF8("go");
+    },
+
+    handleHello: async function(message) {
+        var auth = this.connection.authContext || {type: 'guest'},
+            authService = this.connection.playerAuthService,
+            name,
+            armor,
+            weapon;
+
+        if(auth.type === 'account' && auth.character) {
+            name = String(auth.character.name || '').substr(0, 15);
+            this.accountUserId = auth.user ? auth.user.id : null;
+            this.characterId = auth.character.id || null;
+            armor = Number(auth.character.armorKind);
+            weapon = Number(auth.character.weaponKind);
+            if(!Types.isArmor(armor)) { armor = Types.Entities.CLOTHARMOR; }
+            if(!Types.isWeapon(weapon)) { weapon = Types.Entities.SWORD1; }
+        } else {
+            name = Utils.sanitize(message[1]);
+            name = (name === "") ? "lorem ipsum" : name.substr(0, 15);
+            if(authService && await authService.isCharacterNameReserved(name)) {
+                this.connection.close('Este nome pertence a uma conta registrada.');
+                return;
+            }
+            armor = message[2];
+            weapon = message[3];
+        }
+
+        this.name = name;
+        this.kind = Types.Entities.WARRIOR;
+        this.equipArmor(armor);
+        this.equipWeapon(weapon);
+        this.orientation = Utils.randomOrientation();
+        this.updateHitPoints();
+        this.updatePosition();
+        
+        this.server.addPlayer(this);
+        this.server.enter_callback(this);
+        this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints]);
+        this.hasEnteredGame = true;
+        this.handshakePending = false;
+        this.isDead = false;
     },
     
     destroy: function() {
@@ -373,7 +403,7 @@ module.exports = Player = Character.extend({
     
     resetTimeout: function() {
         clearTimeout(this.disconnectTimeout);
-        this.disconnectTimeout = setTimeout(this.timeout.bind(this), 1000 * 60 * 15); // 15 min.
+        this.disconnectTimeout = setTimeout(this.timeout.bind(this), 1000 * 60 * 15);
     },
     
     timeout: function() {

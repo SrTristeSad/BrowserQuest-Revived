@@ -1,15 +1,53 @@
 'use strict';
 
-var WebSocket = require('ws');
+var WebSocket = require('ws'),
+    http = require('http'),
+    https = require('https'),
+    childProcess = require('child_process'),
+    URL = require('url').URL;
 
 var target = process.env.TEST_WS_URL || 'ws://127.0.0.1:8000/',
     socket = new WebSocket(target),
     receivedGo = false,
+    completed = false,
     timeout = setTimeout(function() {
         console.error('Timed out waiting for BrowserQuest WebSocket handshake at ' + target);
         socket.terminate();
         process.exit(1);
     }, 5000);
+
+function derivedHttpBase() {
+    return target.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/$/, '');
+}
+
+function authApiAvailable(callback) {
+    var url = new URL('/api/auth/policy', derivedHttpBase()),
+        transport = url.protocol === 'https:' ? https : http,
+        request = transport.get(url, function(response) {
+            response.resume();
+            callback(response.statusCode === 200);
+        });
+    request.on('error', function() { callback(false); });
+    request.setTimeout(1500, function() { request.destroy(); callback(false); });
+}
+
+function runOptionalAuthSmoke() {
+    authApiAvailable(function(available) {
+        if(!available) {
+            process.exit(0);
+            return;
+        }
+        var result = childProcess.spawnSync(process.execPath, ['test/player-auth-websocket-smoke.js'], {
+            cwd: process.cwd(),
+            env: Object.assign({}, process.env, {
+                TEST_HTTP_URL: derivedHttpBase(),
+                TEST_WS_URL: target
+            }),
+            stdio: 'inherit'
+        });
+        process.exit(result.status || 0);
+    });
+}
 
 socket.on('message', function(data, isBinary) {
     var text = isBinary ? null : data.toString('utf8');
@@ -29,6 +67,7 @@ socket.on('message', function(data, isBinary) {
         var message = JSON.parse(text);
         if(Array.isArray(message) && message[0] === 1 && message[2] === 'SmokeTest') {
             clearTimeout(timeout);
+            completed = true;
             console.log('WebSocket HELLO/WELCOME handshake succeeded at ' + target);
             socket.close();
             return;
@@ -46,9 +85,9 @@ socket.on('error', function(error) {
 });
 
 socket.on('close', function() {
-    if(receivedGo) {
-        setTimeout(function() {
-            process.exit(0);
-        }, 10);
+    if(completed) {
+        runOptionalAuthSmoke();
+    } else if(receivedGo) {
+        process.exit(1);
     }
 });
