@@ -210,42 +210,34 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
         
             if(Types.isItem(kind)) {
                 var item = EntityFactory.createEntity(kind, id);
-            
-                if(this.spawn_item_callback) {
-                    this.spawn_item_callback(item, x, y);
-                }
+                if(this.spawn_item_callback) { this.spawn_item_callback(item, x, y); }
             } else if(Types.isChest(kind)) {
-                var item = EntityFactory.createEntity(kind, id);
-            
-                if(this.spawn_chest_callback) {
-                    this.spawn_chest_callback(item, x, y);
-                }
+                var chest = EntityFactory.createEntity(kind, id);
+                if(this.spawn_chest_callback) { this.spawn_chest_callback(chest, x, y); }
             } else {
-                var name, orientation, target, weapon, armor;
+                var name, orientation, target, weapon, armor, editorData = null;
             
                 if(Types.isPlayer(kind)) {
-                    name = data[5];
-                    orientation = data[6];
-                    armor = data[7];
-                    weapon = data[8];
-                    if(data.length > 9) {
-                        target = data[9];
-                    }
-                }
-                else if(Types.isMob(kind)) {
+                    name = data[5]; orientation = data[6]; armor = data[7]; weapon = data[8];
+                    if(data.length > 9) { target = data[9]; }
+                } else if(Types.isMob(kind)) {
                     orientation = data[5];
-                    if(data.length > 6) {
-                        target = data[6];
-                    }
+                    if(typeof data[6] === 'number') { target = data[6]; }
+                    editorData = data[7] || (data[6] && typeof data[6] === 'object' ? data[6] : null);
+                } else if(Types.isNpc(kind)) {
+                    editorData = data[5] && typeof data[5] === 'object' ? data[5] : null;
                 }
 
                 var character = EntityFactory.createEntity(kind, id, name);
-            
                 if(character instanceof Player) {
                     character.weaponName = Types.getKindAsString(weapon);
                     character.spriteName = Types.getKindAsString(armor);
                 }
-            
+                if(editorData) {
+                    character.editorData = editorData;
+                    character.name = editorData.name || character.name;
+                    if(character.setEditorData) { character.setEditorData(editorData); }
+                }
                 if(this.spawn_character_callback) {
                     this.spawn_character_callback(character, x, y, orientation, target);
                 }

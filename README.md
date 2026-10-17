@@ -17,7 +17,9 @@ The project runs on **Node.js 24 LTS** and now includes:
 - owner/admin account created during setup with password stored as a `scrypt` hash;
 - authenticated administration area at `/admin`;
 - visual Story Editor at `/admin/story-editor`;
-- automated HTTP, WebSocket, installer, admin login and story CRUD smoke tests.
+- visual World Editor at `/admin/world-editor`;
+- synchronized publication of server/client world data;
+- automated HTTP, WebSocket, installer, admin, Story Editor and World Editor smoke tests.
 
 ## aaPanel installation
 
@@ -66,6 +68,34 @@ Story definitions are stored privately under `var/` and are not committed to Git
 
 **Important:** the visual editor and storage/API are functional. The gameplay runtime that consumes published stories and advances player mission progress is a separate layer still to be implemented.
 
+## World Editor
+
+Open:
+
+```text
+/admin/world-editor
+```
+
+The first World Editor version includes:
+
+- visual logical map canvas with zoom and optional grid;
+- collision painting/removal;
+- placement and removal of NPCs and mobs;
+- creation and editing of rectangular mob spawn areas;
+- reusable custom NPC profiles with name, existing base sprite, custom dialogue and Story Editor hooks;
+- reusable custom mob profiles with existing base sprite, HP, armor, attack, respawn time, chase distance and configurable drops;
+- draft workflow before publication;
+- preservation of the original map as the protected base;
+- previous published server-map snapshots under the private `var/` configuration directory;
+- synchronized generation of server and browser client map data;
+- automatic loading of the published server world after the Node.js project is restarted.
+
+A custom NPC can therefore reuse an original sprite such as `guard`, receive a unique name/dialogue and be linked to story/mission IDs. A custom mob can reuse a sprite such as `rat` while having independent combat statistics, respawn configuration and loot table.
+
+Publishing generates private runtime map files rather than modifying the original repository map files. The browser receives the corresponding published client map automatically, keeping collision, doors and checkpoints synchronized with the server.
+
+**Current scope:** this version edits logical world data and preserves the original terrain/tile artwork. Full terrain tile painting using the BrowserQuest tilesheet is a future expansion of the World Editor.
+
 ## Native development
 
 ```bash
@@ -92,7 +122,7 @@ npm run start:server
 - `app.js` - aaPanel/first-run application bootstrap
 - `client/` - original HTML5 game client, UI, audio, images, sprites and maps
 - `server/` - multiplayer game server and world logic
-- `server/admin/` - admin authentication, Story Editor routes and campaign storage
+- `server/admin/` - admin authentication, Story Editor, World Editor and private content storage
 - `shared/` - protocol/entity definitions shared by client and server
 - `tools/` - original map conversion tools
 - `test/` - modernization smoke tests

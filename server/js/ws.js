@@ -15,7 +15,8 @@ module.exports = WS;
 
 var projectRoot = path.resolve(__dirname, '../..'),
     clientRoot = path.join(projectRoot, 'client'),
-    sharedRoot = path.join(projectRoot, 'shared');
+    sharedRoot = path.join(projectRoot, 'shared'),
+    publishedClientRoot = process.env.BROWSERQUEST_CONFIG_DIR || path.join(projectRoot, 'var', 'config');
 
 function logger() {
     return global.log || console;
@@ -59,7 +60,21 @@ function sendText(response, statusCode, text, contentType) {
 function resolveStaticFile(requestPath) {
     var root,
         relative,
-        resolved;
+        resolved,
+        published;
+
+    if(requestPath === '/maps/world_client.json') {
+        published = path.join(publishedClientRoot, 'world_client_published.json');
+        if(fs.existsSync(published)) {
+            return published;
+        }
+    }
+    if(requestPath === '/maps/world_client.js') {
+        published = path.join(publishedClientRoot, 'world_client_published.js');
+        if(fs.existsSync(published)) {
+            return published;
+        }
+    }
 
     if(requestPath.indexOf('/shared/') === 0) {
         root = sharedRoot;

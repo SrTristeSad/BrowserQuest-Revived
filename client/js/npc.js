@@ -165,21 +165,25 @@ define(['character'], function(Character) {
         init: function(id, kind) {
             this._super(id, kind, 1);
             this.itemKind = Types.getKindAsString(this.kind);
-            this.talkCount = NpcTalk[this.itemKind].length;
+            this.editorData = null;
+            this.customDialogue = null;
+            this.talkCount = (NpcTalk[this.itemKind] || []).length;
+            this.talkIndex = 0;
+        },
+
+        setEditorData: function(data) {
+            this.editorData = data || null;
+            this.customDialogue = data && data.dialogue && data.dialogue.length ? data.dialogue.slice() : null;
+            this.talkCount = this.customDialogue ? this.customDialogue.length : (NpcTalk[this.itemKind] || []).length;
             this.talkIndex = 0;
         },
     
         talk: function() {
-            var msg = null;
-        
-            if(this.talkIndex > this.talkCount) {
-                this.talkIndex = 0;
-            }
-            if(this.talkIndex < this.talkCount) {
-                msg = NpcTalk[this.itemKind][this.talkIndex];
-            }
+            var msg = null,
+                lines = this.customDialogue || NpcTalk[this.itemKind] || [];
+            if(this.talkIndex >= lines.length) { this.talkIndex = 0; }
+            if(this.talkIndex < lines.length) { msg = lines[this.talkIndex]; }
             this.talkIndex += 1;
-            
             return msg;
         }
     });

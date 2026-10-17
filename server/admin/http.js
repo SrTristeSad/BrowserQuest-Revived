@@ -2,19 +2,15 @@
 
 var fs = require('fs'),
     path = require('path'),
-    crypto = require('crypto'),
     Auth = require('./auth'),
-    StoryStore = require('./story-store').StoryStore;
+    StoryStore = require('./story-store').StoryStore,
+    WorldStore = require('./world-store').WorldStore;
 
 function parseCookies(header) {
     var out = {};
     String(header || '').split(';').forEach(function(part) {
-        var index = part.indexOf('='),
-            key,
-            value;
-        if(index <= 0) {
-            return;
-        }
+        var index = part.indexOf('='), key, value;
+        if(index <= 0) { return; }
         key = part.slice(0, index).trim();
         value = part.slice(index + 1).trim();
         out[key] = decodeURIComponent(value);
@@ -42,20 +38,21 @@ function redirect(response, location) {
 }
 
 function readJson(request, callback) {
-    var chunks = [],
-        size = 0;
-
+    var chunks = [], size = 0, finished = false;
     request.on('data', function(chunk) {
+        if(finished) { return; }
         size += chunk.length;
-        if(size > 1024 * 1024) {
+        if(size > 4 * 1024 * 1024) {
+            finished = true;
             callback(new Error('Payload too large'));
             request.destroy();
             return;
         }
         chunks.push(chunk);
     });
-
     request.on('end', function() {
+        if(finished) { return; }
+        finished = true;
         try {
             callback(null, JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
         } catch(error) {
@@ -65,11 +62,8 @@ function readJson(request, callback) {
 }
 
 function safeRead(filepath) {
-    try {
-        return JSON.parse(fs.readFileSync(filepath, 'utf8'));
-    } catch(error) {
-        return null;
-    }
+    try { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
+    catch(error) { return null; }
 }
 
 function createAdminHandler(options) {
@@ -81,6 +75,15 @@ function createAdminHandler(options) {
         storiesPath = path.join(configDir, 'stories.json'),
         sessions = Auth.createSessionManager({ttl: 8 * 60 * 60 * 1000}),
         stories = new StoryStore(storiesPath),
+        world = new WorldStore({
+            baseMapPath: path.join(__dirname, '..', 'maps', 'world_server.json'),
+            baseClientMapPath: path.join(__dirname, '..', '..', 'client', 'maps', 'world_client.json'),
+            statePath: path.join(configDir, 'world-editor.json'),
+            publishedMapPath: path.join(configDir, 'world_server_published.json'),
+            publishedClientJsonPath: path.join(configDir, 'world_client_published.json'),
+            publishedClientJsPath: path.join(configDir, 'world_client_published.js'),
+            versionsDir: path.join(configDir, 'world-versions')
+        }),
         attempts = new Map();
 
     function currentAdmin(request) {
@@ -91,14 +94,9 @@ function createAdminHandler(options) {
 
     function requireAdmin(request, response, apiMode) {
         var session = currentAdmin(request);
-        if(session) {
-            return session;
-        }
-        if(apiMode) {
-            json(response, 401, {error: 'Sessão administrativa expirada.'});
-        } else {
-            redirect(response, '/admin/login');
-        }
+        if(session) { return session; }
+        if(apiMode) { json(response, 401, {error: 'Sessão administrativa expirada.'}); }
+        else { redirect(response, '/admin/login'); }
         return null;
     }
 
@@ -107,9 +105,7 @@ function createAdminHandler(options) {
     }
 
     function canTryLogin(ip) {
-        var now = Date.now(),
-            state = attempts.get(ip);
-
+        var now = Date.now(), state = attempts.get(ip);
         if(!state || state.resetAt <= now) {
             attempts.set(ip, {count: 0, resetAt: now + 10 * 60 * 1000});
             state = attempts.get(ip);
@@ -128,40 +124,42 @@ function createAdminHandler(options) {
 
     function serveFile(response, filename) {
         fs.readFile(path.join(publicDir, filename), 'utf8', function(error, content) {
-            if(error) {
-                send(response, 500, 'Admin page unavailable.');
-                return;
-            }
+            if(error) { send(response, 500, 'Admin page unavailable.'); return; }
             send(response, 200, content, 'text/html; charset=utf-8');
         });
     }
 
+    function withAdmin(request, response, callback) {
+        if(!requireAdmin(request, response, true)) { return true; }
+        try { callback(); }
+        catch(error) { json(response, 500, {error: error.message}); }
+        return true;
+    }
+
     return function adminHandler(request, response) {
-        var pathname = String(request.url || '/').split('?')[0],
-            match;
+        var pathname = String(request.url || '/').split('?')[0], match;
 
         if(pathname === '/admin') {
-            if(!requireAdmin(request, response, false)) {
-                return true;
-            }
+            if(!requireAdmin(request, response, false)) { return true; }
             redirect(response, '/admin/story-editor');
             return true;
         }
 
         if(pathname === '/admin/login' && request.method === 'GET') {
-            if(currentAdmin(request)) {
-                redirect(response, '/admin/story-editor');
-            } else {
-                serveFile(response, 'login.html');
-            }
+            if(currentAdmin(request)) { redirect(response, '/admin/story-editor'); }
+            else { serveFile(response, 'login.html'); }
             return true;
         }
 
         if(pathname === '/admin/story-editor' && request.method === 'GET') {
-            if(!requireAdmin(request, response, false)) {
-                return true;
-            }
+            if(!requireAdmin(request, response, false)) { return true; }
             serveFile(response, 'story-editor.html');
+            return true;
+        }
+
+        if(pathname === '/admin/world-editor' && request.method === 'GET') {
+            if(!requireAdmin(request, response, false)) { return true; }
+            serveFile(response, 'world-editor.html');
             return true;
         }
 
@@ -171,18 +169,13 @@ function createAdminHandler(options) {
                 json(response, 429, {error: 'Muitas tentativas. Tente novamente mais tarde.'});
                 return true;
             }
-
             readJson(request, function(error, body) {
-                var admin = safeRead(adminPath),
-                    secure,
-                    token;
-
+                var admin = safeRead(adminPath), secure, token;
                 if(error || !admin || String(body.username || '') !== String(admin.username || '') || !Auth.verifyPassword(body.password, admin.passwordHash)) {
                     failLogin(ip);
                     json(response, 401, {error: 'Usuário ou senha inválidos.'});
                     return;
                 }
-
                 attempts.delete(ip);
                 token = sessions.create(admin.username);
                 secure = request.headers['x-forwarded-proto'] === 'https' || request.socket.encrypted;
@@ -202,59 +195,55 @@ function createAdminHandler(options) {
             return true;
         }
 
+        if(pathname === '/admin/api/world' && request.method === 'GET') {
+            return withAdmin(request, response, function() { json(response, 200, world.load()); });
+        }
+        if(pathname === '/admin/api/world' && request.method === 'POST') {
+            if(!requireAdmin(request, response, true)) { return true; }
+            readJson(request, function(error, body) {
+                if(error) { json(response, 400, {error: 'JSON inválido ou grande demais.'}); return; }
+                try { json(response, 200, world.save(body)); }
+                catch(saveError) { json(response, 400, {error: saveError.message}); }
+            });
+            return true;
+        }
+        if(pathname === '/admin/api/world/publish' && request.method === 'POST') {
+            return withAdmin(request, response, function() { json(response, 200, world.publish()); });
+        }
+        if(pathname === '/admin/api/world/reset' && request.method === 'POST') {
+            return withAdmin(request, response, function() { json(response, 200, world.reset()); });
+        }
+
         if(pathname === '/admin/api/stories' && request.method === 'GET') {
-            if(!requireAdmin(request, response, true)) {
-                return true;
-            }
-            try {
-                json(response, 200, stories.list());
-            } catch(error) {
-                json(response, 500, {error: error.message});
-            }
+            if(!requireAdmin(request, response, true)) { return true; }
+            try { json(response, 200, stories.list()); }
+            catch(error) { json(response, 500, {error: error.message}); }
             return true;
         }
 
         if(pathname === '/admin/api/stories' && request.method === 'POST') {
-            if(!requireAdmin(request, response, true)) {
-                return true;
-            }
+            if(!requireAdmin(request, response, true)) { return true; }
             readJson(request, function(error, body) {
-                if(error) {
-                    json(response, 400, {error: 'JSON inválido.'});
-                    return;
-                }
-                try {
-                    json(response, 200, stories.save(body));
-                } catch(saveError) {
-                    json(response, 400, {error: saveError.message});
-                }
+                if(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+                try { json(response, 200, stories.save(body)); }
+                catch(saveError) { json(response, 400, {error: saveError.message}); }
             });
             return true;
         }
 
         match = pathname.match(/^\/admin\/api\/stories\/([a-zA-Z0-9_-]+)$/);
         if(match && request.method === 'GET') {
-            if(!requireAdmin(request, response, true)) {
-                return true;
-            }
+            if(!requireAdmin(request, response, true)) { return true; }
             var story = stories.get(match[1]);
-            if(!story) {
-                json(response, 404, {error: 'História não encontrada.'});
-            } else {
-                json(response, 200, story);
-            }
+            if(!story) { json(response, 404, {error: 'História não encontrada.'}); }
+            else { json(response, 200, story); }
             return true;
         }
 
         if(match && request.method === 'DELETE') {
-            if(!requireAdmin(request, response, true)) {
-                return true;
-            }
-            if(stories.remove(match[1])) {
-                json(response, 200, {ok: true});
-            } else {
-                json(response, 404, {error: 'História não encontrada.'});
-            }
+            if(!requireAdmin(request, response, true)) { return true; }
+            if(stories.remove(match[1])) { json(response, 200, {ok: true}); }
+            else { json(response, 404, {error: 'História não encontrada.'}); }
             return true;
         }
 
@@ -262,7 +251,6 @@ function createAdminHandler(options) {
             json(response, 404, {error: 'Rota administrativa não encontrada.'});
             return true;
         }
-
         return false;
     };
 }

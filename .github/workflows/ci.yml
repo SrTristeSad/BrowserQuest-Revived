@@ -2,7 +2,7 @@ name: BrowserQuest CI
 
 on:
   push:
-    branches: [main, modernize-node, aapanel-visual-installer]
+    branches: [main, modernize-node, aapanel-visual-installer, world-editor]
   pull_request:
     branches: [main]
 
@@ -51,12 +51,14 @@ jobs:
           cat /tmp/browserquest-server.log
           exit 1
 
-      - name: Verify installer, admin login and story editor
+      - name: Verify installer, admin, Story Editor and World Editor
         shell: bash
         run: |
           set -euo pipefail
           SETUP_DIR="$(mktemp -d)"
-          PORT=8010 BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config" node app.js > /tmp/browserquest-setup.log 2>&1 &
+          export BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config"
+          export PORT=8010
+          node app.js > /tmp/browserquest-setup.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true; rm -rf "$SETUP_DIR"' EXIT
 
@@ -95,49 +97,38 @@ jobs:
           ! grep -q 'StrongPassword123!' "$SETUP_DIR/config/admin.json"
 
           curl --fail --silent http://127.0.0.1:8010/admin/login | grep -qi 'PAINEL ADMINISTRATIVO'
-
           curl --fail --silent -c /tmp/bq-cookies.txt \
             -H 'content-type: application/json' \
             -d '{"username":"owner","password":"StrongPassword123!"}' \
             http://127.0.0.1:8010/admin/api/login | grep -q '"ok":true'
 
-          curl --fail --silent -b /tmp/bq-cookies.txt \
-            http://127.0.0.1:8010/admin/story-editor | grep -qi 'Editor de História'
+          curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/story-editor | grep -qi 'Editor de História'
+          curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/world-editor | grep -qi 'Editor de Mundo'
 
           cat > /tmp/story.json <<'JSON'
           {
             "title": "A Ponte dos Ratos",
             "description": "Campanha de teste do editor.",
             "status": "draft",
-            "chapters": [
-              {
-                "title": "Primeiro capítulo",
-                "missions": [
-                  {
-                    "title": "Limpe a ponte",
-                    "giverNpc": "Guarda",
-                    "introDialogue": [{"speaker":"Guarda","text":"A ponte está tomada."}],
-                    "objective": {"type":"kill","target":"rat","amount":5,"text":"Derrote 5 ratos"},
-                    "rewards": [{"type":"item","value":"sword2","amount":1}],
-                    "choices": []
-                  }
-                ]
-              }
-            ]
+            "chapters": [{
+              "title": "Primeiro capítulo",
+              "missions": [{
+                "title": "Limpe a ponte",
+                "giverNpc": "Guarda",
+                "introDialogue": [{"speaker":"Guarda","text":"A ponte está tomada."}],
+                "objective": {"type":"kill","target":"rat","amount":5,"text":"Derrote 5 ratos"},
+                "rewards": [{"type":"item","value":"sword2","amount":1}],
+                "choices": []
+              }]
+            }]
           }
           JSON
 
-          curl --fail --silent -b /tmp/bq-cookies.txt \
-            -H 'content-type: application/json' \
-            --data-binary @/tmp/story.json \
-            http://127.0.0.1:8010/admin/api/stories > /tmp/saved-story.json
-
+          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/story.json http://127.0.0.1:8010/admin/api/stories > /tmp/saved-story.json
           grep -q 'A Ponte dos Ratos' /tmp/saved-story.json
           STORY_ID="$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/saved-story.json','utf8')).id)")"
           test -n "$STORY_ID"
-
-          curl --fail --silent -b /tmp/bq-cookies.txt \
-            http://127.0.0.1:8010/admin/api/stories | grep -q "$STORY_ID"
+          curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/api/stories | grep -q "$STORY_ID"
 
           node - <<'NODE'
           const fs = require('fs');
@@ -145,11 +136,66 @@ jobs:
           story.status = 'published';
           fs.writeFileSync('/tmp/published-story.json', JSON.stringify(story));
           NODE
+          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/published-story.json http://127.0.0.1:8010/admin/api/stories | grep -q '"status":"published"'
+          curl --fail --silent -b /tmp/bq-cookies.txt -X DELETE http://127.0.0.1:8010/admin/api/stories/$STORY_ID | grep -q '"ok":true'
 
-          curl --fail --silent -b /tmp/bq-cookies.txt \
-            -H 'content-type: application/json' \
-            --data-binary @/tmp/published-story.json \
-            http://127.0.0.1:8010/admin/api/stories | grep -q '"status":"published"'
+          curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/api/world > /tmp/world.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const world = JSON.parse(fs.readFileSync('/tmp/world.json', 'utf8'));
+          world.npcs.push({
+            id: 'npc_test_guard', name: 'Guarda do Teste', baseKind: 'guard', enabled: true,
+            dialogue: ['Pare aí, aventureiro.', 'Este diálogo veio do Editor de Mundo.'],
+            storyId: 'story-test', missionId: 'mission-test', completionMissionId: ''
+          });
+          world.mobs.push({
+            id: 'mob_test_rat', name: 'Rato Alfa', baseKind: 'rat', enabled: true,
+            hitPoints: 321, armorLevel: 4, weaponLevel: 7, respawnMs: 4321, aggroDistance: 33,
+            drops: [{kind: 'flask', chance: 50}]
+          });
+          world.map.entities.push({id:'editor_npc_test',x:10,y:10,kind:'guard',profileType:'npc',profileId:'npc_test_guard',source:'editor'});
+          world.map.entities.push({id:'editor_mob_test',x:12,y:10,kind:'rat',profileType:'mob',profileId:'mob_test_rat',source:'editor'});
+          world.map.roamingAreas.push({id:987654,x:20,y:20,width:4,height:4,nb:2,type:'rat',profileId:'mob_test_rat'});
+          const collision = 21 * world.map.width + 21;
+          if (!world.map.collisions.includes(collision)) world.map.collisions.push(collision);
+          fs.writeFileSync('/tmp/world-edited.json', JSON.stringify(world));
+          NODE
 
-          curl --fail --silent -b /tmp/bq-cookies.txt \
-            -X DELETE http://127.0.0.1:8010/admin/api/stories/$STORY_ID | grep -q '"ok":true'
+          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/world-edited.json http://127.0.0.1:8010/admin/api/world > /tmp/world-saved.json
+          grep -q 'Guarda do Teste' /tmp/world-saved.json
+          grep -q 'Rato Alfa' /tmp/world-saved.json
+
+          curl --fail --silent -b /tmp/bq-cookies.txt -X POST -H 'content-type: application/json' -d '{}' http://127.0.0.1:8010/admin/api/world/publish > /tmp/world-publish.json
+          grep -q '"ok":true' /tmp/world-publish.json
+          grep -q '"clientMapSynchronized":true' /tmp/world-publish.json
+          test -f "$SETUP_DIR/config/world_server_published.json"
+          test -f "$SETUP_DIR/config/world_client_published.json"
+          test -f "$SETUP_DIR/config/world_client_published.js"
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const dir = process.env.BROWSERQUEST_CONFIG_DIR;
+          const server = JSON.parse(fs.readFileSync(dir + '/world_server_published.json', 'utf8'));
+          const client = JSON.parse(fs.readFileSync(dir + '/world_client_published.json', 'utf8'));
+          if (server.editorProfiles.npcs.npc_test_guard.name !== 'Guarda do Teste') throw new Error('custom NPC missing');
+          if (server.editorProfiles.mobs.mob_test_rat.hitPoints !== 321) throw new Error('custom mob stats missing');
+          if (!server.roamingAreas.some(a => a.profileId === 'mob_test_rat')) throw new Error('custom roaming area missing');
+          if (server.editorRevision !== client.editorRevision) throw new Error('client/server revision mismatch');
+          if (!client.collisions.includes(21 * client.width + 21)) throw new Error('published client collision missing');
+          NODE
+
+          curl --fail --silent http://127.0.0.1:8010/maps/world_client.json | grep -q '"editorRevision"'
+          curl --fail --silent http://127.0.0.1:8010/maps/world_client.js | grep -q 'var mapData ='
+
+          kill "$APP_PID"
+          wait "$APP_PID" 2>/dev/null || true
+          node app.js > /tmp/browserquest-restart.log 2>&1 &
+          APP_PID=$!
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8010/status | grep -q '^\['; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'Loading published world from World Editor' /tmp/browserquest-restart.log
+          TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
