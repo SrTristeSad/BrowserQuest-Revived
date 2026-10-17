@@ -24,11 +24,10 @@ source = replaceOnce(
 );
 source = replaceOnce(
   source,
-  '@media(max-width:760px){.layout{grid-template-columns:1fr}',
-  '@media(max-width:760px){.layout{grid-template-columns:1fr}',
-  'media anchor no-op'
+  '.grid,.status{grid-template-columns:1fr}',
+  '.grid,.status,.capacity-state{grid-template-columns:1fr}',
+  'responsive capacity layout'
 );
-source = source.replace('.grid,.status{grid-template-columns:1fr}', '.grid,.status,.capacity-state{grid-template-columns:1fr}');
 
 const cardsAnchor = `    <section class="card">\n      <h2>Infraestrutura</h2>\n      <div class="status">\n        <div class="pill" id="pg"><span class="dot"></span><strong>PostgreSQL</strong><div class="muted small">Verificando...</div></div>\n        <div class="pill" id="redis"><span class="dot"></span><strong>Redis</strong><div class="muted small">Verificando...</div></div>\n      </div>\n      <p class="muted small" id="sessionStorage"></p>\n      <div class="actions"><button class="secondary" id="refresh">Atualizar status</button></div>\n    </section>\n  </div>\n`;
 const cardsReplacement = `    <section class="card">\n      <h2>Infraestrutura</h2>\n      <div class="status">\n        <div class="pill" id="pg"><span class="dot"></span><strong>PostgreSQL</strong><div class="muted small">Verificando...</div></div>\n        <div class="pill" id="redis"><span class="dot"></span><strong>Redis</strong><div class="muted small">Verificando...</div></div>\n      </div>\n      <p class="muted small" id="sessionStorage"></p>\n      <div class="actions"><button class="secondary" id="refresh">Atualizar status</button></div>\n    </section>\n    <section class="card">\n      <h2>Capacidade do servidor</h2>\n      <div class="field"><label for="worlds">Mundos</label><input id="worlds" type="number" min="1" max="20" step="1"></div>\n      <div class="field"><label for="playersPerWorld">Jogadores por mundo</label><input id="playersPerWorld" type="number" min="1" max="1000" step="1"></div>\n      <div class="capacity-state"><div class="pill"><strong>Configurado</strong><div class="muted small" id="configuredCapacity">—</div></div><div class="pill"><strong>Ativo agora</strong><div class="muted small" id="activeCapacity">—</div></div></div>\n      <div id="restartNotice" class="notice ok">Nenhum reinício pendente.</div>\n      <div class="actions"><button id="saveCapacity">Salvar capacidade</button></div>\n      <div id="capacityMessage" role="status"></div>\n      <p class="muted small">Alterar estes valores não derruba o processo atual. Quando necessário, reinicie o Projeto Node.js no aaPanel para aplicar.</p>\n    </section>\n  </div>\n`;
