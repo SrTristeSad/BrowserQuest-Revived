@@ -216,6 +216,15 @@ module.exports = Player = Character.extend({
                     self.schedulePersistence({checkpointId: checkpoint.id});
                 }
             }
+            else if(action === Types.Messages.NPC_INTERACT) {
+                var npc = self.server.getEntityById(message[1]);
+                if(npc && npc.type === 'npc') {
+                    var npcDistance = Math.abs(self.x - npc.x) + Math.abs(self.y - npc.y);
+                    if(npcDistance === 1 && self.npcinteract_callback) {
+                        self.npcinteract_callback(npc);
+                    }
+                }
+            }
             else {
                 if(self.message_callback) {
                     self.message_callback(message);
@@ -393,6 +402,10 @@ module.exports = Player = Character.extend({
     
     onMessage: function(callback) {
         this.message_callback = callback;
+    },
+
+    onNpcInteract: function(callback) {
+        this.npcinteract_callback = callback;
     },
     
     onBroadcast: function(callback) {

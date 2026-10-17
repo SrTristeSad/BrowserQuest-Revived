@@ -542,6 +542,12 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
         sendCheck: function(id) {
             this.sendMessage([Types.Messages.CHECK,
                               id]);
+        },
+
+        sendNpcInteract: function(npc) {
+            if(npc) {
+                this.sendMessage([Types.Messages.NPC_INTERACT, npc.id]);
+            }
         }
     });
     
