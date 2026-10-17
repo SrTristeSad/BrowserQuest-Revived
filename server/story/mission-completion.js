@@ -2,6 +2,7 @@
 
 var MissionService = require('./mission-service'),
     StateRewardService = require('./state-reward-service'),
+    CustomRewardService = require('./custom-reward-service'),
     normalizeStoryProgress = require('./progress-store').normalizeStoryProgress;
 
 function completionError(code, message) {
@@ -57,6 +58,8 @@ async function completeMission(options) {
         currentProgress,
         completedMissionIds,
         state,
+        expandedRewardResult,
+        expandedRewards,
         stateRewardResult,
         rewardResult = null;
 
@@ -108,7 +111,15 @@ async function completeMission(options) {
         updatedAt: new Date().toISOString()
     });
 
-    stateRewardResult = StateRewardService.applyStateRewards(state, mission.rewards || []);
+    expandedRewardResult = CustomRewardService.expandCustomRewards({
+        runtime: runtime,
+        missionEntry: missionEntry,
+        state: state,
+        rewards: mission.rewards || []
+    });
+    expandedRewards = expandedRewardResult.rewards;
+
+    stateRewardResult = StateRewardService.applyStateRewards(state, expandedRewards);
     state = stateRewardResult.state;
 
     if(progressStore) {
@@ -125,7 +136,7 @@ async function completeMission(options) {
                 storyId,
                 missionId,
                 state,
-                mission.rewards || []
+                expandedRewards
             );
             state = rewardResult.state;
         } else if(itemRewardStore && typeof itemRewardStore.saveCompletionWithItemRewards === 'function') {
@@ -134,7 +145,7 @@ async function completeMission(options) {
                 storyId,
                 missionId,
                 state,
-                mission.rewards || []
+                expandedRewards
             );
             state = rewardResult.state;
         } else {
