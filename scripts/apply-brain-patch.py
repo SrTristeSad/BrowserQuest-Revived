@@ -1,0 +1,195 @@
+from pathlib import Path
+import re
+
+
+def replace_once(text, old, new, label):
+    if old not in text:
+        raise SystemExit(f'Patch anchor not found: {label}')
+    return text.replace(old, new, 1)
+
+
+def regex_once(text, pattern, replacement, label):
+    out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    if count != 1:
+        raise SystemExit(f'Regex patch anchor not found: {label}')
+    return out
+
+
+# World runtime
+p = Path('server/js/worldserver.js')
+s = p.read_text()
+s = replace_once(
+    s,
+    '    Utils = require("./utils"),\n    Types = require("../../shared/js/gametypes");',
+    '    Utils = require("./utils"),\n    Types = require("../../shared/js/gametypes"),\n    Brain = require("./brain").Brain;',
+    'require Brain'
+)
+s = replace_once(
+    s,
+    '        this.npcs = {};\n        this.mobAreas = [];',
+    '        this.npcs = {};\n        this.brains = {};\n        this.mobAreas = [];',
+    'brains collection'
+)
+s = replace_once(
+    s,
+    '        entity.destroy();\n        this.removeFromGroups(entity);',
+    '        if(this.brains[entity.id]) {\n            this.brains[entity.id].destroy();\n            delete this.brains[entity.id];\n        }\n\n        entity.destroy();\n        this.removeFromGroups(entity);',
+    'brain cleanup'
+)
+s = replace_once(
+    s,
+    '    addMob: function(mob) {\n        this.addEntity(mob);\n        this.mobs[mob.id] = mob;\n    },',
+    '    addMob: function(mob) {\n        this.addEntity(mob);\n        this.mobs[mob.id] = mob;\n        this.attachBrain(mob);\n    },',
+    'addMob brain'
+)
+old = """    addNpc: function(kind, x, y, editorData) {
+        var npc = new Npc('8'+x+''+y, kind, x, y, editorData);
+        this.addEntity(npc);
+        this.npcs[npc.id] = npc;
+        
+        return npc;
+    },"""
+new = """    addNpc: function(kind, x, y, editorData) {
+        var npc = new Npc('8'+x+''+y, kind, x, y, editorData);
+        this.addEntity(npc);
+        this.npcs[npc.id] = npc;
+        this.attachBrain(npc);
+        
+        return npc;
+    },
+
+    attachBrain: function(entity) {
+        var config;
+        if(!entity || (entity.type !== 'npc' && entity.type !== 'mob')) { return null; }
+        if(this.brains[entity.id]) { return this.brains[entity.id]; }
+        config = entity.editorData && entity.editorData.brain ? entity.editorData.brain : null;
+        this.brains[entity.id] = new Brain(entity, this, config);
+        this.brains[entity.id].start();
+        return this.brains[entity.id];
+    },
+
+    moveBrainEntity: function(entity, x, y) {
+        if(!entity || !this.isValidPosition(x, y)) { return false; }
+        if(entity.type === 'mob' && typeof entity.move === 'function') {
+            entity.move(x, y);
+        } else {
+            entity.setPosition(x, y);
+            this.pushToAdjacentGroups(entity.group, new Messages.Move(entity));
+            this.handleEntityGroupMembership(entity);
+        }
+        return true;
+    },
+
+    isPositionOccupied: function(x, y, ignoredId) {
+        var occupied = false;
+        this.forEachEntity(function(entity) {
+            if(!occupied && entity.id !== ignoredId && !entity.isDead && entity.x === x && entity.y === y && (entity.type === 'player' || entity.type === 'mob' || entity.type === 'npc')) { occupied = true; }
+        });
+        return occupied;
+    },"""
+s = replace_once(s, old, new, 'addNpc brain methods')
+p.write_text(s)
+
+
+# Persist Brain config in World Editor data
+p = Path('server/admin/world-store.js')
+s = p.read_text()
+brain_helper = """function bool(value) { return value !== false; }
+
+function normalizeBrain(brain, fallbackPreset) {
+    brain = brain || {};
+    var presets = ['villager','merchant','guard','passive','aggressive','coward','territorial','companion'],
+        modes = ['wander','patrol','follow'],
+        preset = presets.indexOf(brain.preset) >= 0 ? brain.preset : fallbackPreset,
+        mode = modes.indexOf(brain.mode) >= 0 ? brain.mode : (preset === 'guard' ? 'patrol' : (preset === 'companion' ? 'follow' : 'wander')),
+        moveChance = Number(brain.moveChance),
+        fleeBelowHp = Number(brain.fleeBelowHp),
+        patrol = Array.isArray(brain.patrol) ? brain.patrol.slice(0,32).map(function(point) {
+            return {x:int(point && point.x,1,1000,1),y:int(point && point.y,1,1000,1)};
+        }) : [];
+    if(!Number.isFinite(moveChance)) { moveChance = 0.6; }
+    if(!Number.isFinite(fleeBelowHp)) { fleeBelowHp = preset === 'coward' ? 0.4 : 0; }
+    return {
+        enabled: brain.enabled !== false, preset:preset, mode:mode,
+        thinkMs:int(brain.thinkMs,400,10000,1200), vision:int(brain.vision,1,50,7),
+        wanderRadius:int(brain.wanderRadius,1,50,6), moveChance:Math.max(0,Math.min(1,moveChance)),
+        fleeFromMobs:brain.fleeFromMobs === true, fleeBelowHp:Math.max(0,Math.min(0.95,fleeBelowHp)),
+        aggressive:brain.aggressive === true, leash:int(brain.leash,2,100,10),
+        followDistance:int(brain.followDistance,1,10,2), patrol:patrol
+    };
+}
+"""
+s = replace_once(s, 'function bool(value) { return value !== false; }\n', brain_helper, 'normalizeBrain helper')
+s = replace_once(
+    s,
+    '        completionMissionId: text(profile.completionMissionId,80)\n    };',
+    "        completionMissionId: text(profile.completionMissionId,80),\n        brain: normalizeBrain(profile.brain, (profile.baseKind === 'guard' || profile.baseKind === 'king') ? 'guard' : 'villager')\n    };",
+    'NPC brain persistence'
+)
+s = replace_once(
+    s,
+    '        drops: normalizeDrops(profile.drops)\n    };',
+    "        drops: normalizeDrops(profile.drops),\n        brain: normalizeBrain(profile.brain, 'aggressive')\n    };",
+    'mob brain persistence'
+)
+p.write_text(s)
+
+
+# World Editor controls
+p = Path('server/admin/public/world-editor.html')
+s = p.read_text()
+s = replace_once(
+    s,
+    '<div class="field"><label>Missão que conclui</label><input id="npcCompletion" maxlength="80"></div>\n<input id="npcId" type="hidden">',
+    '''<div class="field"><label>Missão que conclui</label><input id="npcCompletion" maxlength="80"></div>
+<hr class="hr"><div class="subhead">Cérebro 🧠</div><div class="notice">NPCs não ficam parados por padrão. Escolha um preset e ajuste se precisar.</div>
+<div class="field"><label>Preset</label><select id="npcBrainPreset"><option value="villager">Aldeão</option><option value="merchant">Comerciante</option><option value="guard">Guarda</option><option value="companion">Companheiro</option></select></div>
+<div class="field"><label>Comportamento</label><select id="npcBrainMode"><option value="wander">Andar pela área</option><option value="patrol">Patrulhar rota</option><option value="follow">Seguir jogador</option></select></div>
+<div class="row"><div class="field"><label>Visão (tiles)</label><input id="npcBrainVision" type="number" min="1" max="50" value="6"></div><div class="field"><label>Raio de movimento</label><input id="npcBrainRadius" type="number" min="1" max="50" value="5"></div></div>
+<div class="field"><label>Tempo para pensar (ms)</label><input id="npcBrainThink" type="number" min="400" max="10000" value="1800"></div>
+<div class="field"><label>Rota de patrulha</label><textarea id="npcBrainPatrol" placeholder="x,y por linha. Ex.:&#10;20,15&#10;28,15&#10;28,22"></textarea></div>
+<label class="toggle"><input id="npcBrainFlee" type="checkbox" checked> Fugir de mobs próximos</label>
+<input id="npcId" type="hidden">''',
+    'NPC Brain UI'
+)
+s = replace_once(
+    s,
+    '<div class="field"><label>Drops</label><textarea id="mobDrops" placeholder="flask:50&#10;sword1:5"></textarea><div class="small">Formato: item:chance%, uma linha por item.</div></div>\n<input id="mobId" type="hidden">',
+    '''<div class="field"><label>Drops</label><textarea id="mobDrops" placeholder="flask:50&#10;sword1:5"></textarea><div class="small">Formato: item:chance%, uma linha por item.</div></div>
+<hr class="hr"><div class="subhead">Cérebro 🧠</div>
+<div class="field"><label>Preset</label><select id="mobBrainPreset"><option value="aggressive">Agressivo</option><option value="coward">Covarde</option><option value="territorial">Territorial</option><option value="passive">Passivo</option></select></div>
+<div class="row"><div class="field"><label>Visão</label><input id="mobBrainVision" type="number" min="1" max="50" value="8"></div><div class="field"><label>Território / leash</label><input id="mobBrainLeash" type="number" min="2" max="100" value="12"></div></div>
+<div class="row"><div class="field"><label>Raio ao vagar</label><input id="mobBrainRadius" type="number" min="1" max="50" value="7"></div><div class="field"><label>Tempo para pensar (ms)</label><input id="mobBrainThink" type="number" min="400" max="10000" value="900"></div></div>
+<div class="field"><label>Fugir abaixo de HP (%)</label><input id="mobBrainFleeHp" type="number" min="0" max="95" value="0"></div>
+<input id="mobId" type="hidden">''',
+    'mob Brain UI'
+)
+
+npc_js = r'''function parsePatrol(v){return v.split('\n').map(l=>l.split(',')).filter(p=>p.length>=2&&Number.isFinite(+p[0])&&Number.isFinite(+p[1])).map(p=>({x:+p[0],y:+p[1]}))}
+function brainNpc(){return{enabled:true,preset:$('npcBrainPreset').value,mode:$('npcBrainMode').value,vision:+$('npcBrainVision').value,wanderRadius:+$('npcBrainRadius').value,thinkMs:+$('npcBrainThink').value,fleeFromMobs:$('npcBrainFlee').checked,patrol:parsePatrol($('npcBrainPatrol').value)}}
+function newNpc(){['npcId','npcName','npcDialogue','npcStory','npcMission','npcCompletion','npcBrainPatrol'].forEach(i=>$(i).value='');$('npcBase').selectedIndex=0;$('npcBrainPreset').value='villager';$('npcBrainMode').value='wander';$('npcBrainVision').value=6;$('npcBrainRadius').value=5;$('npcBrainThink').value=1800;$('npcBrainFlee').checked=true}
+function editNpc(id){const n=state.npcs.find(x=>x.id===id);if(!n)return;const b=n.brain||{};$('npcId').value=n.id;$('npcName').value=n.name;$('npcBase').value=n.baseKind;$('npcDialogue').value=n.dialogue.join('\n');$('npcStory').value=n.storyId||'';$('npcMission').value=n.missionId||'';$('npcCompletion').value=n.completionMissionId||'';$('npcBrainPreset').value=b.preset||'villager';$('npcBrainMode').value=b.mode||'wander';$('npcBrainVision').value=b.vision||6;$('npcBrainRadius').value=b.wanderRadius||5;$('npcBrainThink').value=b.thinkMs||1800;$('npcBrainFlee').checked=b.fleeFromMobs!==false;$('npcBrainPatrol').value=(b.patrol||[]).map(p=>p.x+','+p.y).join('\n');document.querySelector('[data-tab="npc"]').click()}
+function saveNpc(){const id=$('npcId').value||'npc_'+Math.random().toString(16).slice(2),n={id,name:$('npcName').value||'Novo NPC',baseKind:$('npcBase').value,dialogue:$('npcDialogue').value.split('\n').map(x=>x.trim()).filter(Boolean),storyId:$('npcStory').value,missionId:$('npcMission').value,completionMissionId:$('npcCompletion').value,brain:brainNpc(),enabled:true};const i=state.npcs.findIndex(x=>x.id===id);if(i>=0)state.npcs[i]=n;else state.npcs.push(n);$('npcId').value=id;markDirty();renderLists()}
+'''
+s = regex_once(s, r"function newNpc\(\).*?\nfunction parseDrops", lambda m: npc_js + 'function parseDrops', 'NPC editor JS')
+
+mob_js = r'''function parseDrops(){return $('mobDrops').value.split('\n').map(line=>{const p=line.split(':');return{kind:(p[0]||'').trim(),chance:+(p[1]||0)}}).filter(x=>x.kind&&x.chance>0)}
+function brainMob(){const preset=$('mobBrainPreset').value;return{enabled:true,preset:preset,mode:'wander',vision:+$('mobBrainVision').value,wanderRadius:+$('mobBrainRadius').value,thinkMs:+$('mobBrainThink').value,leash:+$('mobBrainLeash').value,fleeBelowHp:(+$('mobBrainFleeHp').value||0)/100,aggressive:preset!=='passive'}}
+function newMob(){['mobId','mobName','mobDrops'].forEach(i=>$(i).value='');$('mobHp').value=50;$('mobRespawn').value=30000;$('mobArmor').value=1;$('mobWeapon').value=1;$('mobAggro').value=50;$('mobBase').selectedIndex=0;$('mobBrainPreset').value='aggressive';$('mobBrainVision').value=8;$('mobBrainLeash').value=12;$('mobBrainRadius').value=7;$('mobBrainThink').value=900;$('mobBrainFleeHp').value=0}
+function editMob(id){const m=state.mobs.find(x=>x.id===id);if(!m)return;const b=m.brain||{};$('mobId').value=m.id;$('mobName').value=m.name;$('mobBase').value=m.baseKind;$('mobHp').value=m.hitPoints;$('mobRespawn').value=m.respawnMs;$('mobArmor').value=m.armorLevel;$('mobWeapon').value=m.weaponLevel;$('mobAggro').value=m.aggroDistance;$('mobDrops').value=(m.drops||[]).map(d=>d.kind+':'+d.chance).join('\n');$('mobBrainPreset').value=b.preset||'aggressive';$('mobBrainVision').value=b.vision||8;$('mobBrainLeash').value=b.leash||12;$('mobBrainRadius').value=b.wanderRadius||7;$('mobBrainThink').value=b.thinkMs||900;$('mobBrainFleeHp').value=Math.round((b.fleeBelowHp||0)*100);document.querySelector('[data-tab="mob"]').click()}
+function saveMob(){const id=$('mobId').value||'mob_'+Math.random().toString(16).slice(2),m={id,name:$('mobName').value||'Novo Mob',baseKind:$('mobBase').value,hitPoints:+$('mobHp').value,respawnMs:+$('mobRespawn').value,armorLevel:+$('mobArmor').value,weaponLevel:+$('mobWeapon').value,aggroDistance:+$('mobAggro').value,drops:parseDrops(),brain:brainMob(),enabled:true};const i=state.mobs.findIndex(x=>x.id===id);if(i>=0)state.mobs[i]=m;else state.mobs.push(m);$('mobId').value=id;markDirty();renderLists()}
+'''
+s = regex_once(s, r"function parseDrops\(\).*?\nfunction save\(\)", lambda m: mob_js + 'function save()', 'mob editor JS')
+p.write_text(s)
+
+
+# Syntax check includes brain.js
+p = Path('package.json')
+s = p.read_text()
+s = replace_once(
+    s,
+    'node --check server/js/map.js && node --check server/js/mob.js',
+    'node --check server/js/map.js && node --check server/js/brain.js && node --check server/js/mob.js',
+    'package check'
+)
+p.write_text(s)
