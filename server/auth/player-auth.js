@@ -215,10 +215,33 @@ PlayerAuth.prototype.getSessionByToken = async function(token, refresh) {
     try { session = JSON.parse(raw); }
     catch(error) { await this.services.redis.del(key); return null; }
 
-    result = await this.services.postgres.query(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.role, u.status, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.image FROM users u JOIN characters c ON c.user_id=u.id WHERE u.id=$1 AND c.id=$2 LIMIT 1",
-        [session.userId, session.characterId]
-    );
+    try {
+        result = await this.services.postgres.query(
+            "SELECT u.id AS user_id, u.username, u.display_name, u.role, u.status, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.image FROM users u JOIN characters c ON c.user_id=u.id WHERE u.id=$1 AND c.id=$2 LIMIT 1",
+            [session.userId, session.characterId]
+        );
+    } catch(error) {
+        var poolOptions = this.services.postgres.options || {};
+        console.error('[BrowserQuest] PostgreSQL session query diagnostics:', JSON.stringify({
+            host: poolOptions.host,
+            port: poolOptions.port,
+            database: poolOptions.database,
+            user: poolOptions.user,
+            passwordType: typeof poolOptions.password,
+            passwordIsArray: Array.isArray(poolOptions.password),
+            sslType: typeof poolOptions.ssl,
+            sslIsArray: Array.isArray(poolOptions.ssl),
+            optionsType: typeof poolOptions.options,
+            optionsIsArray: Array.isArray(poolOptions.options),
+            max: poolOptions.max,
+            totalCount: this.services.postgres.totalCount,
+            idleCount: this.services.postgres.idleCount,
+            waitingCount: this.services.postgres.waitingCount,
+            errorCode: error.code,
+            errorMessage: error.message
+        }));
+        throw error;
+    }
     row = result.rows[0];
     if(!row) { await this.services.redis.del(key); return null; }
     if(row.status === 'banned') { throw authError('Esta conta está banida.', 403, 'ACCOUNT_BANNED'); }
