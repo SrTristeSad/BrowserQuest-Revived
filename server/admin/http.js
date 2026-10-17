@@ -595,6 +595,31 @@ function createAdminHandler(options) {
             return;
         }
 
+        if(pathname === '/admin/api/announcements' && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+
+            var announcementMessage = String(body.message || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+            if(!announcementMessage) {
+                json(response, 400, {error: 'A mensagem do anúncio é obrigatória.'});
+                return;
+            }
+            var announcementControls = controlRuntime();
+            if(!announcementControls || typeof announcementControls.broadcastAnnouncement !== 'function') {
+                json(response, 503, {error: 'Envio de anúncios indisponível.'});
+                return;
+            }
+            var announcementDelivered = announcementControls.broadcastAnnouncement(announcementMessage);
+            await audit(session, 'announcement.broadcast', 'all', {
+                message: announcementMessage,
+                delivered: announcementDelivered
+            }, request);
+            json(response, 200, {ok: true, message: announcementMessage, delivered: announcementDelivered});
+            return;
+        }
+
         if(pathname === '/admin/api/settings/access' && request.method === 'GET') {
             if(!await requireAdmin(request, response, true)) { return; }
             json(response, 200, await getAccessSettings());
