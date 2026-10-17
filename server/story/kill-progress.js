@@ -42,7 +42,7 @@ function attach(WorldServer) {
 
     if(!WorldServer || !WorldServer.prototype) { return false; }
     prototype = WorldServer.prototype;
-    if(prototype.__storyKillProgressAttached) { return false; }
+    if(prototype.__storyKillProgressAttached) { return true; }
     if(typeof prototype.handleHurtEntity !== 'function') { return false; }
 
     original = prototype.handleHurtEntity;
