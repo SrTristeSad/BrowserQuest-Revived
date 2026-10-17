@@ -288,12 +288,6 @@ module.exports = Player = Character.extend({
             this.send(this.equip(this.armor).serialize());
             this.send(this.equip(this.weapon).serialize());
         }
-        if(auth.type === 'account') {
-            // WELCOME stays backward-compatible; existing EQUIP messages synchronize
-            // the account's authoritative PostgreSQL equipment to this client.
-            this.send(this.equip(this.armor).serialize());
-            this.send(this.equip(this.weapon).serialize());
-        }
         this.hasEnteredGame = true;
         this.handshakePending = false;
         this.isDead = false;
