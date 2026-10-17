@@ -68,8 +68,7 @@ async function main() {
                                 {speaker: 'Guarda', text: '<script>alert(1)</script>Obrigado, viajante.'},
                                 {speaker: 'Guarda', text: 'A estrada está segura.'}
                             ],
-                            rewards: [{type: 'item', value: 'flask', amount: 1}],
-                            nextMissionId: 'next-step'
+                            rewards: [{type: 'item', value: 'flask', amount: 1}]
                         }
                     };
                 }
@@ -222,7 +221,7 @@ async function main() {
         states: [readyState]
     });
     assert.strictEqual(direct.changed, true);
-    assert.strictEqual(direct.state.activeMissionId, '', 'completion must clear activeMissionId');
+    assert.strictEqual(direct.state.activeMissionId, '', 'terminal completion must clear activeMissionId');
     assert.strictEqual(direct.state.objectiveProgress, 0, 'completion must clear partial objective progress');
     assert.deepStrictEqual(direct.state.completedMissionIds, ['intro', 'return-guard'], 'completion must append mission history exactly once');
     assert.strictEqual(direct.state.flags.bridgeOpen, true, 'completion must preserve story flags');
@@ -337,15 +336,15 @@ async function main() {
     assert.strictEqual(originalNpcId, guard.id, 'deferred original callback must preserve the source NPC id used by intro dialogue');
     assert.strictEqual(wrappedIncomplete.storyInteractionNpcId, null, 'temporary NPC id must be restored after the deferred callback');
 
-    assert.ok(completionServiceSource.indexOf("activeMissionId: ''") !== -1, 'completion service must clear the active mission');
+    assert.ok(completionServiceSource.indexOf('activeMissionId: transition.nextMissionId') !== -1, 'completion service must atomically activate a validated linear next mission when configured');
     assert.ok(completionServiceSource.indexOf('objectiveProgress: 0') !== -1, 'completion service must clear partial progress');
     assert.ok(completionServiceSource.indexOf('appendCompletedMission(current.completedMissionIds, missionId)') !== -1, 'completion service must append the completed mission id through the bounded history helper');
     assert.ok(completionServiceSource.indexOf('progressStore.save') !== -1, 'completion service must retain the normal persistence fallback');
     assert.ok(completionServiceSource.indexOf('saveCompletionWithItemRewards') !== -1, 'authenticated item rewards must use the atomic reward persistence path when available');
     assert.ok(completionServiceSource.indexOf('mission.rewards || []') !== -1, 'only published mission rewards may enter the reward pipeline');
-    assert.strictEqual(completionServiceSource.indexOf('nextMissionId'), -1, 'completion must not start the next mission yet');
-    assert.strictEqual(completionServiceSource.indexOf('achievement'), -1, 'completion service must not implement achievement rewards in the item microtask');
-    assert.strictEqual(completionServiceSource.indexOf('story_flag'), -1, 'completion service must not implement story_flag rewards in the item microtask');
+    assert.ok(completionServiceSource.indexOf('resolveLinearNextMission') !== -1, 'completion must validate linear next mission before persistence');
+    assert.strictEqual(completionServiceSource.indexOf('achievement'), -1, 'completion service must remain agnostic to achievement internals');
+    assert.strictEqual(completionServiceSource.indexOf('story_flag'), -1, 'completion service must remain agnostic to story flag internals');
     assert.ok(completionSource.indexOf('queueMissionCompletion(player, npc)') !== -1, 'NPC interaction hook must use the queued persistent completion operation');
     assert.ok(completionSource.indexOf('isNpcLinkedMissionCompleted(player, npc)') !== -1, 'completed linked missions must not be restarted by the same NPC');
     assert.ok(completionSource.indexOf('player.storyInteractionNpcId = npc') !== -1, 'deferred normal NPC callback must restore the interaction NPC id');
