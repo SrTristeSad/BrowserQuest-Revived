@@ -78,7 +78,9 @@ StoryRuntime.prototype.reload = function() {
 
         entry.missions.forEach(function(missionEntry) {
             var mission = missionEntry.mission;
-            if(mission.nextMissionId && !entry.missions.has(mission.nextMissionId)) {
+            if(mission.nextMissionId === mission.id) {
+                self._warn(storyId, 'self_next_mission', mission.nextMissionId, 'Próxima missão aponta para a própria missão.', mission.id);
+            } else if(mission.nextMissionId && !entry.missions.has(mission.nextMissionId)) {
                 self._warn(storyId, 'missing_next_mission', mission.nextMissionId, 'Próxima missão não existe nesta história.', mission.id);
             }
             (Array.isArray(mission.choices) ? mission.choices : []).forEach(function(choice) {
