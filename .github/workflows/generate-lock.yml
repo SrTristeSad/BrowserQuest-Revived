@@ -1,0 +1,33 @@
+name: Generate npm lockfile
+
+on:
+  push:
+    branches: [modernize-node]
+
+permissions:
+  contents: write
+
+jobs:
+  generate-lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Generate package-lock and remove one-time workflow
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/generate-lock.yml
+          git add package-lock.json .github/workflows/generate-lock.yml
+          git commit -m "chore: add reproducible npm lockfile"
+          git push origin modernize-node
