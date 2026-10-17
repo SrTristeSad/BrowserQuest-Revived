@@ -97,6 +97,9 @@ function normalizeObjectiveAmount(objective) {
 
 function normalizeHandlerResult(value) {
     if(value && typeof value.then === 'function') {
+        try {
+            Promise.resolve(value).catch(function() { return null; });
+        } catch(ignoreAsyncResult) {}
         return {valid: false, reason: 'async_result'};
     }
     if(!isPlainObject(value)) {
