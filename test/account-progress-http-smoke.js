@@ -1,6 +1,7 @@
 'use strict';
 
 var assert = require('assert'),
+    fs = require('fs'),
     http = require('http'),
     https = require('https'),
     URL = require('url').URL;
@@ -86,7 +87,6 @@ async function main() {
         unlocked: [1, 2], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
     });
 
-    // A stale/older client cannot roll progress backwards; a new unlock is merged.
     second = await requestJson('/api/auth/progress/achievements', 'POST', {
         achievements: {
             unlocked: [3],
@@ -101,7 +101,6 @@ async function main() {
         unlocked: [1, 2, 3], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
     });
 
-    // Two tabs/devices can update the same character concurrently without losing either unlock.
     await Promise.all([
         requestJson('/api/auth/progress/achievements', 'POST', {
             achievements: {unlocked: [4], ratCount: 8, skeletonCount: 3, totalKills: 23, totalDmg: 1300, totalRevives: 2}
@@ -115,7 +114,6 @@ async function main() {
         unlocked: [1, 2, 3, 4, 5], ratCount: 8, skeletonCount: 4, totalKills: 24, totalDmg: 1300, totalRevives: 3
     });
 
-    // Server clamps legacy counters to the original game thresholds.
     await requestJson('/api/auth/progress/achievements', 'POST', {
         achievements: {unlocked: [20], ratCount: 500, skeletonCount: 500, totalKills: 500, totalDmg: 50000, totalRevives: 500}
     }, cookie);
@@ -134,5 +132,9 @@ async function main() {
 
 main().catch(function(error) {
     console.error(error);
+    try {
+        console.error('--- browserquest setup log ---');
+        console.error(fs.readFileSync('/tmp/browserquest-setup.log', 'utf8'));
+    } catch(ignore) {}
     process.exit(1);
 });
