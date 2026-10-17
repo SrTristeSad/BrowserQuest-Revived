@@ -124,9 +124,6 @@ function serveStatic(request, response, requestPath) {
     });
 }
 
-/**
- * Abstract server and connection classes.
- */
 var Server = cls.Class.extend({
     init: function(port) {
         this.port = port;
@@ -198,9 +195,6 @@ var Connection = cls.Class.extend({
     }
 });
 
-/**
- * BrowserQuest websocket server.
- */
 WS.MultiVersionWebsocketServer = Server.extend({
     _connections: {},
     _counter: 0,
@@ -214,6 +208,7 @@ WS.MultiVersionWebsocketServer = Server.extend({
         this._counter = 0;
         this.host = options.host || '127.0.0.1';
         this.serveClient = options.serveClient !== false;
+        this.httpHandler = typeof options.httpHandler === 'function' ? options.httpHandler : null;
 
         this._httpServer = http.createServer(function(request, response) {
             var requestPath;
@@ -222,6 +217,10 @@ WS.MultiVersionWebsocketServer = Server.extend({
                 requestPath = decodeURIComponent(url.parse(request.url).pathname || '/');
             } catch(error) {
                 sendText(response, 400, 'Bad request');
+                return;
+            }
+
+            if(self.httpHandler && self.httpHandler(request, response)) {
                 return;
             }
 
