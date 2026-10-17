@@ -21,6 +21,7 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
             this.handlers[Types.Messages.SPAWN_BATCH] = this.receiveSpawnBatch;
             this.handlers[Types.Messages.HEALTH] = this.receiveHealth;
             this.handlers[Types.Messages.CHAT] = this.receiveChat;
+            this.handlers[Types.Messages.ANNOUNCEMENT] = this.receiveAnnouncement;
             this.handlers[Types.Messages.EQUIP] = this.receiveEquipItem;
             this.handlers[Types.Messages.DROP] = this.receiveDrop;
             this.handlers[Types.Messages.TELEPORT] = this.receiveTeleport;
@@ -273,6 +274,13 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
                 this.chat_callback(id, text);
             }
         },
+
+        receiveAnnouncement: function(data) {
+            var text = data[1];
+            if(this.announcement_callback) {
+                this.announcement_callback(text);
+            }
+        },
     
         receiveEquipItem: function(data) {
             var id = data[1],
@@ -423,6 +431,10 @@ define(['player', 'entityfactory', 'lib/bison'], function(Player, EntityFactory,
     
         onChatMessage: function(callback) {
             this.chat_callback = callback;
+        },
+
+        onAnnouncement: function(callback) {
+            this.announcement_callback = callback;
         },
     
         onDropItem: function(callback) {

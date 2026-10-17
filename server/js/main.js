@@ -191,6 +191,19 @@ function start(config) {
             });
             return players;
         },
+        broadcastAnnouncement: function(message) {
+            var delivered = 0, payload = [require('../../shared/js/gametypes').Messages.ANNOUNCEMENT, message];
+            worlds.forEach(function(world) {
+                Object.keys(world.players || {}).forEach(function(playerId) {
+                    var player = world.players[playerId];
+                    if(player && player.connection) {
+                        player.connection.send(payload);
+                        delivered += 1;
+                    }
+                });
+            });
+            return delivered;
+        },
         kickPlayer: async function(playerId, reason) {
             var found = null, targetPlayer = null;
             worlds.some(function(world, worldIndex) {
