@@ -1,6 +1,7 @@
 'use strict';
 
 var MissionService = require('./mission-service'),
+    StorySync = require('./story-sync'),
     StoryVisitProgress = require('./visit-progress'),
     StoryInteractProgress = require('./interact-progress'),
     StoryCompletionDialogue = require('./completion-dialogue'),
@@ -44,6 +45,7 @@ function attach(WorldServer) {
         original;
 
     if(!WorldServer || !WorldServer.prototype) { return false; }
+    StorySync.attach(WorldServer);
     StoryVisitProgress.attach(WorldServer);
     StoryInteractProgress.attach(WorldServer);
     StoryCompletionDialogue.attach(WorldServer);
