@@ -63,24 +63,40 @@ define(['entity', 'transition', 'timer'], function(Entity, Transition, Timer) {
     	hasShadow: function() {
     	    return true;
     	},
-	
-    	animate: function(animation, speed, count, onEndCount) {
-    	    var oriented = ['atk', 'walk', 'idle'];
-    	        o = this.orientation;
-            
-            if(!(this.currentAnimation && this.currentAnimation.name === "death")) { // don't change animation if the character is dying
-            	this.flipSpriteX = false;
-        	    this.flipSpriteY = false;
-	    
-        	    if(_.indexOf(oriented, animation) >= 0) {
-        	        animation += "_" + (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));
-        	        this.flipSpriteX = (this.orientation === Types.Orientations.LEFT) ? true : false;
-        	    }
+        animate: function(animation, speed, count, onEndCount) {
+            var oriented = ['atk', 'walk', 'idle'],
+                o = this.orientation,
+                requested = animation,
+                direction;
 
-        		this.setAnimation(animation, speed, count, onEndCount);
-        	}
-    	},
-    
+            if(!(this.currentAnimation && this.currentAnimation.name === "death")) {
+                this.flipSpriteX = false;
+                this.flipSpriteY = false;
+
+                if(_.indexOf(oriented, animation) >= 0) {
+                    direction = (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));
+                    animation += "_" + direction;
+                    this.flipSpriteX = (this.orientation === Types.Orientations.LEFT);
+                }
+
+                // Many legacy NPCs only provide idle_down. Keep movement functional
+                // using an available frame until a full walking spritesheet is supplied.
+                if(this.animations && !this.animations[animation]) {
+                    if(direction && this.animations["idle_" + direction]) {
+                        animation = "idle_" + direction;
+                    } else if(this.animations.idle_down) {
+                        animation = "idle_down";
+                    } else if(this.animations[requested]) {
+                        animation = requested;
+                    } else {
+                        animation = _.keys(this.animations)[0];
+                    }
+                }
+
+                this.setAnimation(animation, speed, count, onEndCount);
+            }
+        },
+
         turnTo: function(orientation) {
             this.orientation = orientation;
             this.idle();

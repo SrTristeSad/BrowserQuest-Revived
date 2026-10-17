@@ -19,7 +19,8 @@ The project runs on **Node.js 24 LTS** and now includes:
 - visual Story Editor at `/admin/story-editor`;
 - visual World Editor at `/admin/world-editor`;
 - synchronized publication of server/client world data;
-- automated HTTP, WebSocket, installer, admin, Story Editor and World Editor smoke tests.
+- lightweight server-authoritative Brain System for NPCs and mobs;
+- automated HTTP, WebSocket, installer, admin, Story Editor, World Editor and Brain System smoke tests.
 
 ## aaPanel installation
 
@@ -76,7 +77,7 @@ Open:
 /admin/world-editor
 ```
 
-The first World Editor version includes:
+The World Editor includes:
 
 - visual logical map canvas with zoom and optional grid;
 - collision painting/removal;
@@ -84,17 +85,58 @@ The first World Editor version includes:
 - creation and editing of rectangular mob spawn areas;
 - reusable custom NPC profiles with name, existing base sprite, custom dialogue and Story Editor hooks;
 - reusable custom mob profiles with existing base sprite, HP, armor, attack, respawn time, chase distance and configurable drops;
+- Brain System configuration for NPCs and mobs;
 - draft workflow before publication;
 - preservation of the original map as the protected base;
 - previous published server-map snapshots under the private `var/` configuration directory;
 - synchronized generation of server and browser client map data;
 - automatic loading of the published server world after the Node.js project is restarted.
 
-A custom NPC can therefore reuse an original sprite such as `guard`, receive a unique name/dialogue and be linked to story/mission IDs. A custom mob can reuse a sprite such as `rat` while having independent combat statistics, respawn configuration and loot table.
+A custom NPC can therefore reuse an original sprite such as `guard`, receive a unique name/dialogue, be linked to story/mission IDs and receive its own behavior preset. A custom mob can reuse a sprite such as `rat` while having independent combat statistics, respawn configuration, loot table and behavior.
 
 Publishing generates private runtime map files rather than modifying the original repository map files. The browser receives the corresponding published client map automatically, keeping collision, doors and checkpoints synchronized with the server.
 
-**Current scope:** this version edits logical world data and preserves the original terrain/tile artwork. Full terrain tile painting using the BrowserQuest tilesheet is a future expansion of the World Editor.
+**Current scope:** this version edits logical world data and preserves the original terrain/tile artwork. Full terrain tile painting using the BrowserQuest tilesheet remains outside the current release scope.
+
+## Brain System
+
+Version **0.4.0** introduces a lightweight behavior engine shared by NPCs and mobs. It is deliberately **not a neural network**: decisions are deterministic game logic using perception, short memory, priorities and small behavior states, so it remains inexpensive enough for a browser multiplayer game.
+
+The server is authoritative. Clients only receive normal BrowserQuest movement/combat messages, so different players see the same NPC and mob behavior.
+
+NPC behavior currently supports:
+
+- wandering inside a configurable radius;
+- patrol routes;
+- following nearby players;
+- fleeing from nearby mobs;
+- configurable vision range and thinking interval;
+- short memory of recently seen players and threats.
+
+Mob behavior currently supports:
+
+- wandering;
+- proactively detecting and acquiring players;
+- chasing an active target;
+- fleeing below a configurable health percentage;
+- territorial/leash limits;
+- abandoning combat and returning toward the spawn/home position;
+- configurable vision, movement radius and thinking interval.
+
+The World Editor exposes presets so common entities can be configured quickly:
+
+- NPC: **Aldeão**, **Comerciante**, **Guarda** and **Companheiro**;
+- mob: **Agressivo**, **Covarde**, **Territorial** and **Passivo**.
+
+NPCs and mobs receive a brain by default. A legacy NPC sprite that has no walking animation can still move: the client safely falls back to an available idle frame rather than failing. A complete imported walking spritesheet can later provide the full visual animation without changing the server behavior.
+
+The current movement solver intentionally remains small and inexpensive, choosing valid neighboring tiles while respecting map collision and occupied positions. More advanced route planning can be added later without changing the Brain System profile format.
+
+Brain behavior and World Editor persistence have deterministic smoke tests:
+
+```bash
+npm run test:brain
+```
 
 ## Native development
 
@@ -121,11 +163,11 @@ npm run start:server
 
 - `app.js` - aaPanel/first-run application bootstrap
 - `client/` - original HTML5 game client, UI, audio, images, sprites and maps
-- `server/` - multiplayer game server and world logic
+- `server/` - multiplayer game server, world logic and Brain System
 - `server/admin/` - admin authentication, Story Editor, World Editor and private content storage
 - `shared/` - protocol/entity definitions shared by client and server
 - `tools/` - original map conversion tools
-- `test/` - modernization smoke tests
+- `test/` - modernization, WebSocket and Brain System smoke tests
 
 ## Original project
 

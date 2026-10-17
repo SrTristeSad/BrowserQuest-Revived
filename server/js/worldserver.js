@@ -15,7 +15,8 @@ var cls = require("./lib/class"),
     Messages = require('./message'),
     Properties = require("./properties"),
     Utils = require("./utils"),
-    Types = require("../../shared/js/gametypes");
+    Types = require("../../shared/js/gametypes"),
+    Brain = require("./brain").Brain;
 
 // ======= GAME SERVER ========
 
@@ -38,6 +39,7 @@ module.exports = World = cls.Class.extend({
         this.equipping = {};
         this.hurt = {};
         this.npcs = {};
+        this.brains = {};
         this.mobAreas = [];
         this.chestAreas = [];
         this.groups = {};
@@ -343,6 +345,11 @@ module.exports = World = cls.Class.extend({
             this.clearMobHateLinks(entity);
         }
         
+        if(this.brains[entity.id]) {
+            this.brains[entity.id].destroy();
+            delete this.brains[entity.id];
+        }
+
         entity.destroy();
         this.removeFromGroups(entity);
         log.debug("Removed "+ Types.getKindAsString(entity.kind) +" : "+ entity.id);
@@ -366,14 +373,46 @@ module.exports = World = cls.Class.extend({
     addMob: function(mob) {
         this.addEntity(mob);
         this.mobs[mob.id] = mob;
+        this.attachBrain(mob);
     },
     
     addNpc: function(kind, x, y, editorData) {
         var npc = new Npc('8'+x+''+y, kind, x, y, editorData);
         this.addEntity(npc);
         this.npcs[npc.id] = npc;
+        this.attachBrain(npc);
         
         return npc;
+    },
+
+    attachBrain: function(entity) {
+        var config;
+        if(!entity || (entity.type !== 'npc' && entity.type !== 'mob')) { return null; }
+        if(this.brains[entity.id]) { return this.brains[entity.id]; }
+        config = entity.editorData && entity.editorData.brain ? entity.editorData.brain : null;
+        this.brains[entity.id] = new Brain(entity, this, config);
+        this.brains[entity.id].start();
+        return this.brains[entity.id];
+    },
+
+    moveBrainEntity: function(entity, x, y) {
+        if(!entity || !this.isValidPosition(x, y)) { return false; }
+        if(entity.type === 'mob' && typeof entity.move === 'function') {
+            entity.move(x, y);
+        } else {
+            entity.setPosition(x, y);
+            this.pushToAdjacentGroups(entity.group, new Messages.Move(entity));
+            this.handleEntityGroupMembership(entity);
+        }
+        return true;
+    },
+
+    isPositionOccupied: function(x, y, ignoredId) {
+        var occupied = false;
+        this.forEachEntity(function(entity) {
+            if(!occupied && entity.id !== ignoredId && !entity.isDead && entity.x === x && entity.y === y && (entity.type === 'player' || entity.type === 'mob' || entity.type === 'npc')) { occupied = true; }
+        });
+        return occupied;
     },
     
     addItem: function(item) {
