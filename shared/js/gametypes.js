@@ -29,7 +29,8 @@ Types = {
         OPEN: 25,
         CHECK: 26,
         ANNOUNCEMENT: 27,
-        NPC_INTERACT: 28
+        NPC_INTERACT: 28,
+        STORY_DIALOGUE: 29
     },
     
     Entities: {

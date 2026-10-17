@@ -167,6 +167,8 @@ define(['character'], function(Character) {
             this.itemKind = Types.getKindAsString(this.kind);
             this.editorData = null;
             this.customDialogue = null;
+            this.storyDialogue = [];
+            this.storyTalkIndex = 0;
             this.talkCount = (NpcTalk[this.itemKind] || []).length;
             this.talkIndex = 0;
         },
@@ -177,10 +179,27 @@ define(['character'], function(Character) {
             this.talkCount = this.customDialogue ? this.customDialogue.length : (NpcTalk[this.itemKind] || []).length;
             this.talkIndex = 0;
         },
+
+        setStoryDialogue: function(lines) {
+            this.storyDialogue = Array.isArray(lines) ? lines.slice(0, 100) : [];
+            this.storyTalkIndex = 0;
+        },
     
         talk: function() {
             var msg = null,
-                lines = this.customDialogue || NpcTalk[this.itemKind] || [];
+                lines;
+
+            if(this.storyDialogue.length) {
+                msg = this.storyDialogue[this.storyTalkIndex] || null;
+                this.storyTalkIndex += 1;
+                if(this.storyTalkIndex >= this.storyDialogue.length) {
+                    this.storyDialogue = [];
+                    this.storyTalkIndex = 0;
+                }
+                return msg;
+            }
+
+            lines = this.customDialogue || NpcTalk[this.itemKind] || [];
             if(this.talkIndex >= lines.length) { this.talkIndex = 0; }
             if(this.talkIndex < lines.length) { msg = lines[this.talkIndex]; }
             this.talkIndex += 1;
