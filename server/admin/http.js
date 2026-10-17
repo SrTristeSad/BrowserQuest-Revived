@@ -77,8 +77,11 @@ function createAdminHandler(options) {
         stories = new StoryStore(storiesPath),
         world = new WorldStore({
             baseMapPath: path.join(__dirname, '..', 'maps', 'world_server.json'),
+            baseClientMapPath: path.join(__dirname, '..', '..', 'client', 'maps', 'world_client.json'),
             statePath: path.join(configDir, 'world-editor.json'),
             publishedMapPath: path.join(configDir, 'world_server_published.json'),
+            publishedClientJsonPath: path.join(configDir, 'world_client_published.json'),
+            publishedClientJsPath: path.join(configDir, 'world_client_published.js'),
             versionsDir: path.join(configDir, 'world-versions')
         }),
         attempts = new Map();

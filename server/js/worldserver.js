@@ -77,7 +77,7 @@ module.exports = World = cls.Class.extend({
                     var target = self.getEntityById(mob.target);
                     if(target) {
                         var pos = self.findPositionNextTo(mob, target);
-                        if(mob.distanceToSpawningPoint(pos.x, pos.y) > 50) {
+                        if(mob.distanceToSpawningPoint(pos.x, pos.y) > (mob.aggroDistance || 50)) {
                             mob.clearTarget();
                             mob.forgetEveryone();
                             player.removeAttacker(mob);
@@ -157,7 +157,8 @@ module.exports = World = cls.Class.extend({
             
             // Populate all mob "roaming" areas
             _.each(self.map.mobAreas, function(a) {
-                var area = new MobArea(a.id, a.nb, a.type, a.x, a.y, a.width, a.height, self);
+                var profile = a.profileId && self.map.editorProfiles && self.map.editorProfiles.mobs ? self.map.editorProfiles.mobs[a.profileId] : null,
+                    area = new MobArea(a.id, a.nb, a.type, a.x, a.y, a.width, a.height, self, profile);
                 area.spawnMobs();
                 area.onEmpty(self.handleEmptyMobArea.bind(self, area));
                 
@@ -367,8 +368,8 @@ module.exports = World = cls.Class.extend({
         this.mobs[mob.id] = mob;
     },
     
-    addNpc: function(kind, x, y) {
-        var npc = new Npc('8'+x+''+y, kind, x, y);
+    addNpc: function(kind, x, y, editorData) {
+        var npc = new Npc('8'+x+''+y, kind, x, y, editorData);
         this.addEntity(npc);
         this.npcs[npc.id] = npc;
         
@@ -573,13 +574,23 @@ module.exports = World = cls.Class.extend({
         
         _.each(this.map.staticEntities, function(kindName, tid) {
             var kind = Types.getKindFromString(kindName),
-                pos = self.map.tileIndexToGridPosition(tid);
+                pos = self.map.tileIndexToGridPosition(tid),
+                metadata = self.map.editorMetadata ? self.map.editorMetadata[String(tid)] : null,
+                editorData = null;
+
+            if(metadata && self.map.editorProfiles) {
+                if(metadata.type === 'npc' && self.map.editorProfiles.npcs) {
+                    editorData = self.map.editorProfiles.npcs[metadata.profileId] || null;
+                } else if(metadata.type === 'mob' && self.map.editorProfiles.mobs) {
+                    editorData = self.map.editorProfiles.mobs[metadata.profileId] || null;
+                }
+            }
             
             if(Types.isNpc(kind)) {
-                self.addNpc(kind, pos.x + 1, pos.y);
+                self.addNpc(kind, pos.x + 1, pos.y, editorData);
             }
             if(Types.isMob(kind)) {
-                var mob = new Mob('7' + kind + count++, kind, pos.x + 1, pos.y);
+                var mob = new Mob('7' + kind + count++, kind, pos.x + 1, pos.y, editorData);
                 mob.onRespawn(function() {
                     mob.isDead = false;
                     self.addMob(mob);
@@ -639,21 +650,33 @@ module.exports = World = cls.Class.extend({
     
     getDroppedItem: function(mob) {
         var kind = Types.getKindAsString(mob.kind),
+            customDrops = mob.editorData && Array.isArray(mob.editorData.drops) ? mob.editorData.drops : null,
             drops = Properties[kind].drops,
             v = Utils.random(100),
             p = 0,
-            item = null;
+            item = null,
+            itemKind;
+
+        if(customDrops && customDrops.length) {
+            _.each(customDrops, function(drop) {
+                if(item) { return; }
+                p += Number(drop.chance) || 0;
+                itemKind = Types.getKindFromString(drop.kind);
+                if(itemKind && v <= p) {
+                    item = this.addItem(this.createItem(itemKind, mob.x, mob.y));
+                }
+            }, this);
+            return item;
+        }
         
         for(var itemName in drops) {
             var percentage = drops[itemName];
-            
             p += percentage;
             if(v <= p) {
                 item = this.addItem(this.createItem(Types.getKindFromString(itemName), mob.x, mob.y));
                 break;
             }
         }
-        
         return item;
     },
     
