@@ -1,0 +1,98 @@
+name: Admin Actions E2E
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  admin-actions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null || ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql redis-server
+          fi
+          sudo service postgresql start
+          sudo service redis-server start
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='browserquest'" | grep -q 1; then
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE browserquest LOGIN PASSWORD 'browserquest_test'"
+          fi
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='browserquest'" | grep -q 1; then
+            sudo -u postgres createdb -O browserquest browserquest
+          fi
+          redis-cli ping | grep -q PONG
+
+      - name: Install BrowserQuest
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETUP_DIR="$(mktemp -d)"
+          echo "BROWSERQUEST_CONFIG_DIR=$SETUP_DIR/config" >> "$GITHUB_ENV"
+          echo "SETUP_DIR=$SETUP_DIR" >> "$GITHUB_ENV"
+          BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config" PORT=8015 node app.js > /tmp/browserquest-admin-actions.log 2>&1 &
+          echo "$!" > /tmp/browserquest-admin-actions.pid
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8015/setup >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-admin-actions.log | tail -1 | grep -oE '[0-9]{6}')"
+          test -n "$CODE"
+
+          cat > /tmp/admin-actions-setup.json <<JSON
+          {"code":"$CODE","worlds":1,"players":10,"accessMode":"mixed","pgHost":"127.0.0.1","pgPort":5432,"pgDatabase":"browserquest","pgUser":"browserquest","pgPassword":"browserquest_test","pgSsl":false,"redisHost":"127.0.0.1","redisPort":6379,"redisUsername":"","redisPassword":"","redisDatabase":0,"redisTls":false,"adminUsername":"owner_actions","adminPassword":"StrongPassword123!","adminPasswordConfirm":"StrongPassword123!"}
+          JSON
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/admin-actions-setup.json http://127.0.0.1:8015/setup/install | grep -q '"ok":true'
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8015/api/auth/policy | grep -q '"accessMode":"mixed"'; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/browserquest-admin-actions.log
+          exit 1
+
+      - name: Verify kick, account status, session revocation, announcement and audit
+        env:
+          TEST_HTTP_URL: http://127.0.0.1:8015
+          TEST_WS_URL: ws://127.0.0.1:8015/
+          TEST_ADMIN_USERNAME: owner_actions
+          TEST_ADMIN_PASSWORD: StrongPassword123!
+          TEST_PG_HOST: 127.0.0.1
+          TEST_PG_PORT: 5432
+          TEST_PG_DATABASE: browserquest
+          TEST_PG_USER: browserquest
+          TEST_PG_PASSWORD: browserquest_test
+        run: node test/admin-actions-e2e.js
+
+      - name: Server remains healthy
+        run: curl --fail --silent http://127.0.0.1:8015/status | grep -q '^\['
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/browserquest-admin-actions.pid; then
+            kill "$(cat /tmp/browserquest-admin-actions.pid)" 2>/dev/null || true
+          fi
+          rm -rf "${SETUP_DIR:-}" || true
