@@ -2,6 +2,7 @@
 
 var MissionService = require('./mission-service'),
     StoryVisitProgress = require('./visit-progress'),
+    StoryInteractProgress = require('./interact-progress'),
     Types = require('../../shared/js/gametypes');
 
 function resolveMobTarget(mob) {
@@ -43,6 +44,7 @@ function attach(WorldServer) {
 
     if(!WorldServer || !WorldServer.prototype) { return false; }
     StoryVisitProgress.attach(WorldServer);
+    StoryInteractProgress.attach(WorldServer);
     prototype = WorldServer.prototype;
     if(prototype.__storyKillProgressAttached) { return true; }
     if(typeof prototype.handleHurtEntity !== 'function') { return false; }
