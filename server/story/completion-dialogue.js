@@ -106,7 +106,7 @@ function applyGrantedItemRewards(player, itemRewards) {
             kindName = Number.isInteger(kind) ? Types.getKindAsString(kind) : '',
             equipMessage;
 
-        if(!reward || !reward.changed || reward.status !== 'granted' || reward.category !== 'equipment') { return; }
+        if(!reward || !reward.changed || reward.status !== 'granted' || reward.category !== 'equipment' || reward.delivery !== 'equipment') { return; }
         if(!kindName || (reward.slot !== 'weapon' && reward.slot !== 'armor')) { return; }
         if(typeof player.equipItem !== 'function' || typeof player.equip !== 'function') { return; }
 
@@ -191,6 +191,9 @@ function queueMissionCompletion(player, npc) {
         }
 
         player.storyState = MissionService.upsertStoryState(player.storyState, completion.state);
+        if(completion.inventory) {
+            player.storyInventory = completion.inventory;
+        }
         appliedItems = applyGrantedItemRewards(player, completion.itemRewards || []);
         lines = sanitizeDialogue(candidate.dialogue);
         if(lines.length) {
