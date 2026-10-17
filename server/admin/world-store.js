@@ -204,7 +204,7 @@ function WorldStore(options) {
     this.publishedClientJsPath = options.publishedClientJsPath;
     this.versionsDir = options.versionsDir;
     this.storiesPath = options.storiesPath || path.join(path.dirname(this.statePath), 'stories.json');
-    this.tilesetPath = options.tilesetPath || null;
+    this.tilesetPath = options.tilesetPath || (this.baseClientMapPath ? path.join(path.dirname(this.baseClientMapPath), '..', 'img', '1', 'tilesheet.png') : null);
     this.tilesetUrl = options.tilesetUrl || '/img/1/tilesheet.png';
     this.base = readJson(this.baseMapPath);
     this.baseClient = this.baseClientMapPath ? readJson(this.baseClientMapPath) : null;
