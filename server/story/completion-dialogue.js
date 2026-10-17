@@ -103,10 +103,11 @@ function applyGrantedItemRewards(player, itemRewards) {
 
     itemRewards.forEach(function(reward) {
         var kind = Number(reward && reward.itemKind),
+            kindName = Number.isInteger(kind) ? Types.getKindAsString(kind) : '',
             equipMessage;
 
         if(!reward || !reward.changed || reward.status !== 'granted' || reward.category !== 'equipment') { return; }
-        if(!Number.isInteger(kind) || (!Types.isWeapon(kind) && !Types.isArmor(kind))) { return; }
+        if(!kindName || (reward.slot !== 'weapon' && reward.slot !== 'armor')) { return; }
         if(typeof player.equipItem !== 'function' || typeof player.equip !== 'function') { return; }
 
         player.equipItem({kind: kind});
