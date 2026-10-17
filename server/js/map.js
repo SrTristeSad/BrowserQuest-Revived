@@ -160,16 +160,31 @@ module.exports = cls.Class.extend({
     initCheckpoints: function(cpList) {
         var self = this;
         this.checkpoints = {};
+        this.checkpointList = [];
         this.startingAreas = [];
         _.each(cpList, function(cp) {
             var checkpoint = new Checkpoint(cp.id, cp.x, cp.y, cp.w, cp.h);
             self.checkpoints[checkpoint.id] = checkpoint;
+            self.checkpointList.push(checkpoint);
             if(cp.s === 1) { self.startingAreas.push(checkpoint); }
         });
     },
 
     getCheckpoint: function(id) {
         return this.checkpoints[id];
+    },
+
+    getVisitLocationIdsAt: function(x, y) {
+        var locationIds = [];
+        _.each(this.checkpointList || [], function(checkpoint) {
+            var locationId;
+            if(!checkpoint || typeof checkpoint.containsPosition !== 'function' || !checkpoint.containsPosition(x, y)) { return; }
+            locationId = typeof checkpoint.getVisitLocationId === 'function' ? checkpoint.getVisitLocationId() : '';
+            if(locationId && !_.include(locationIds, locationId)) {
+                locationIds.push(locationId);
+            }
+        });
+        return locationIds.sort();
     },
 
     getRandomStartingPosition: function() {
