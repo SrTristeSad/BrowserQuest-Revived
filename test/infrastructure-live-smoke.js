@@ -7,6 +7,7 @@ var assert = require('assert'),
     PlayerAuth = require('../server/auth/player-auth').PlayerAuth,
     AdminAuth = require('../server/admin/auth'),
     CharacterStore = require('../server/persistence/character-store').CharacterStore,
+    AccountProgress = require('../server/persistence/account-progress').AccountProgress,
     Types = require('../shared/js/gametypes');
 
 function sleep(ms) {
@@ -65,6 +66,7 @@ async function main() {
 
     var auth = new PlayerAuth({services: services, accessMode: 'mixed'}),
         characterStore = new CharacterStore({postgres: services.postgres, debounceMs: 50}),
+        accountProgress = new AccountProgress({postgres: services.postgres}),
         registered, logged, session, context;
     try {
         await services.postgres.query("DELETE FROM users WHERE username='alice_auth_test'");
@@ -76,6 +78,18 @@ async function main() {
         assert.strictEqual(registered.user.username, 'alice_auth_test');
         assert.strictEqual(registered.character.name, 'Hero Alice');
         assert.strictEqual(await auth.isCharacterNameReserved('hero alice'), true);
+
+        // Exercise the exact PostgreSQL path used by the achievement HTTP endpoint.
+        var achievementDefaults = await accountProgress.ensureAchievements(registered.character.id);
+        assert.deepStrictEqual(achievementDefaults, {
+            unlocked: [], ratCount: 0, skeletonCount: 0, totalKills: 0, totalDmg: 0, totalRevives: 0
+        });
+        var mergedAchievements = await accountProgress.mergeAchievements(registered.character.id, {
+            unlocked: [1, 2], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
+        });
+        assert.deepStrictEqual(mergedAchievements, {
+            unlocked: [1, 2], ratCount: 7, skeletonCount: 3, totalKills: 22, totalDmg: 1234, totalRevives: 2
+        });
 
         session = await auth.getSessionByToken(registered.token, false);
         assert.strictEqual(session.character.name, 'Hero Alice');
@@ -161,7 +175,7 @@ async function main() {
     }
 
     await services.close();
-    console.log('Live PostgreSQL/Redis/auth/character-persistence smoke tests passed.');
+    console.log('Live PostgreSQL/Redis/auth/character-persistence/achievement-progress smoke tests passed.');
 }
 
 main().catch(function(error) {
