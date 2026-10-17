@@ -3,6 +3,8 @@
 var cls = require('./lib/class'),
     url = require('url'),
     http = require('http'),
+    fs = require('fs'),
+    path = require('path'),
     WebSocket = require('ws'),
     WebSocketServer = WebSocket.WebSocketServer,
     Utils = require('./utils'),
@@ -11,13 +13,117 @@ var cls = require('./lib/class'),
 
 module.exports = WS;
 
+var projectRoot = path.resolve(__dirname, '../..'),
+    clientRoot = path.join(projectRoot, 'client'),
+    sharedRoot = path.join(projectRoot, 'shared');
+
 function logger() {
     return global.log || console;
 }
 
-/**
- * Abstract server and connection classes.
- */
+function mimeType(filepath) {
+    var extension = path.extname(filepath).toLowerCase(),
+        types = {
+            '.html': 'text/html; charset=utf-8',
+            '.css': 'text/css; charset=utf-8',
+            '.js': 'application/javascript; charset=utf-8',
+            '.json': 'application/json; charset=utf-8',
+            '.txt': 'text/plain; charset=utf-8',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.mp3': 'audio/mpeg',
+            '.ogg': 'audio/ogg',
+            '.wav': 'audio/wav',
+            '.m4a': 'audio/mp4',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+            '.ttf': 'font/ttf'
+        };
+
+    return types[extension] || 'application/octet-stream';
+}
+
+function sendText(response, statusCode, text, contentType) {
+    response.writeHead(statusCode, {
+        'Content-Type': contentType || 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff'
+    });
+    response.end(text);
+}
+
+function resolveStaticFile(requestPath) {
+    var root,
+        relative,
+        resolved;
+
+    if(requestPath.indexOf('/shared/') === 0) {
+        root = sharedRoot;
+        relative = requestPath.slice('/shared/'.length);
+    } else {
+        root = clientRoot;
+        relative = requestPath === '/' ? 'index.html' : requestPath.replace(/^\/+/, '');
+    }
+
+    if(relative === '') {
+        relative = 'index.html';
+    }
+
+    resolved = path.resolve(root, relative);
+    if(resolved !== root && resolved.indexOf(root + path.sep) !== 0) {
+        return null;
+    }
+
+    return resolved;
+}
+
+function serveStatic(request, response, requestPath) {
+    var filepath = resolveStaticFile(requestPath);
+
+    if(!filepath) {
+        sendText(response, 403, 'Forbidden');
+        return;
+    }
+
+    fs.stat(filepath, function(statError, stats) {
+        if(statError) {
+            sendText(response, 404, 'Not found');
+            return;
+        }
+
+        if(stats.isDirectory()) {
+            filepath = path.join(filepath, 'index.html');
+        }
+
+        fs.readFile(filepath, function(readError, content) {
+            var cacheControl;
+
+            if(readError) {
+                sendText(response, readError.code === 'ENOENT' ? 404 : 500, 'Not found');
+                return;
+            }
+
+            cacheControl = /\.(?:html|json)$/i.test(filepath) ? 'no-store' : 'public, max-age=300';
+            response.writeHead(200, {
+                'Content-Type': mimeType(filepath),
+                'Content-Length': content.length,
+                'Cache-Control': cacheControl,
+                'X-Content-Type-Options': 'nosniff'
+            });
+
+            if(request.method === 'HEAD') {
+                response.end();
+            } else {
+                response.end(content);
+            }
+        });
+    });
+}
+
 var Server = cls.Class.extend({
     init: function(port) {
         this.port = port;
@@ -89,38 +195,58 @@ var Connection = cls.Class.extend({
     }
 });
 
-/**
- * BrowserQuest websocket server.
- *
- * The original implementation supported obsolete Hixie and early HyBi drafts
- * through two abandoned websocket packages. Modern browsers all use RFC 6455,
- * so one maintained implementation is enough now.
- */
 WS.MultiVersionWebsocketServer = Server.extend({
     _connections: {},
     _counter: 0,
 
-    init: function(port) {
+    init: function(port, options) {
         var self = this;
 
+        options = options || {};
         this._super(port);
         this._connections = {};
         this._counter = 0;
+        this.host = options.host || '127.0.0.1';
+        this.serveClient = options.serveClient !== false;
+        this.httpHandler = typeof options.httpHandler === 'function' ? options.httpHandler : null;
 
         this._httpServer = http.createServer(function(request, response) {
-            var path = url.parse(request.url).pathname;
+            var requestPath;
 
-            if(path === '/status' && self.status_callback) {
-                response.writeHead(200, {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Cache-Control': 'no-store'
-                });
-                response.end(self.status_callback());
+            try {
+                requestPath = decodeURIComponent(url.parse(request.url).pathname || '/');
+            } catch(error) {
+                sendText(response, 400, 'Bad request');
                 return;
             }
 
-            response.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
-            response.end('Not found');
+            if(self.httpHandler && self.httpHandler(request, response)) {
+                return;
+            }
+
+            if(requestPath === '/status' && self.status_callback) {
+                sendText(response, 200, self.status_callback(), 'application/json; charset=utf-8');
+                return;
+            }
+
+            if(requestPath === '/health') {
+                sendText(response, 200, JSON.stringify({status: 'ok'}), 'application/json; charset=utf-8');
+                return;
+            }
+
+            if(requestPath === '/ready') {
+                sendText(response, self.status_callback ? 200 : 503, JSON.stringify({
+                    status: self.status_callback ? 'ready' : 'starting'
+                }), 'application/json; charset=utf-8');
+                return;
+            }
+
+            if(self.serveClient && (request.method === 'GET' || request.method === 'HEAD')) {
+                serveStatic(request, response, requestPath);
+                return;
+            }
+
+            sendText(response, 404, 'Not found');
         });
 
         this._webSocketServer = new WebSocketServer({
@@ -154,8 +280,8 @@ WS.MultiVersionWebsocketServer = Server.extend({
             }
         });
 
-        this._httpServer.listen(port, function() {
-            logger().info('Server is listening on port ' + port);
+        this._httpServer.listen(port, this.host, function() {
+            logger().info('Server is listening on http://' + self.host + ':' + port);
         });
     },
 

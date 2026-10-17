@@ -2,10 +2,11 @@
 
 var WebSocket = require('ws');
 
-var socket = new WebSocket('ws://127.0.0.1:8000/'),
+var target = process.env.TEST_WS_URL || 'ws://127.0.0.1:8000/',
+    socket = new WebSocket(target),
     receivedGo = false,
     timeout = setTimeout(function() {
-        console.error('Timed out waiting for BrowserQuest WebSocket handshake.');
+        console.error('Timed out waiting for BrowserQuest WebSocket handshake at ' + target);
         socket.terminate();
         process.exit(1);
     }, 5000);
@@ -28,7 +29,7 @@ socket.on('message', function(data, isBinary) {
         var message = JSON.parse(text);
         if(Array.isArray(message) && message[0] === 1 && message[2] === 'SmokeTest') {
             clearTimeout(timeout);
-            console.log('WebSocket HELLO/WELCOME handshake succeeded.');
+            console.log('WebSocket HELLO/WELCOME handshake succeeded at ' + target);
             socket.close();
             return;
         }

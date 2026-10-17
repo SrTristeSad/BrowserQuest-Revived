@@ -1,20 +1,14 @@
-
 define(['text!../config/config_build.json'],
 function(build) {
-    var config = {
-        dev: { host: "localhost", port: 8000, dispatcher: false },
-        build: JSON.parse(build)
-    };
-    
-    //>>excludeStart("prodHost", pragmas.prodHost);
-    require(['text!../config/config_local.json'], function(local) {
-        try {
-            config.local = JSON.parse(local);
-        } catch(e) {
-            // Exception triggered when config_local.json does not exist. Nothing to do here.
-        }
-    });
-    //>>excludeEnd("prodHost");
-    
+    var currentPort = window.location.port ? parseInt(window.location.port, 10) : (window.location.protocol === 'https:' ? 443 : 80),
+        config = {
+            dev: {
+                host: window.location.hostname,
+                port: currentPort,
+                dispatcher: false
+            },
+            build: JSON.parse(build)
+        };
+
     return config;
 });

@@ -1,6 +1,6 @@
 {
   "name": "browserquest-revived",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A modernized revival of Mozilla BrowserQuest that preserves the original game and visual design.",
   "license": "MPL-2.0",
@@ -8,8 +8,11 @@
     "node": ">=22 <27"
   },
   "scripts": {
-    "start": "node server/js/main.js",
-    "check": "node --check server/js/main.js && node --check server/js/ws.js"
+    "start": "node app.js",
+    "start:aapanel": "node app.js",
+    "start:server": "node server/js/main.js",
+    "doctor:aapanel": "node scripts/doctor-aapanel.mjs",
+    "check": "node --check app.js && node --check server/js/main.js && node --check server/js/ws.js && node --check server/admin/auth.js && node --check server/admin/http.js && node --check server/admin/story-store.js"
   },
   "dependencies": {
     "log": "1.4.0",

@@ -2,86 +2,100 @@
 
 Revival and modernization of the original **Mozilla BrowserQuest** while preserving the original game, pixel art, maps, audio and visual identity.
 
-The goal of this repository is to make the old BrowserQuest codebase practical to run and modify on current systems without redesigning the game.
-
 ## Current status
 
-The first server modernization layer is working on **Node.js 24 LTS**:
+The project runs on **Node.js 24 LTS** and now includes:
 
 - original BrowserQuest client, maps, sprites and audio preserved;
-- obsolete WebSocket implementations replaced by the maintained `ws` package;
-- original JSON BrowserQuest protocol preserved;
-- `/status` health endpoint preserved;
-- old map loading updated for current Node.js;
-- automated server startup test;
-- automated real WebSocket `HELLO` / `WELCOME` handshake test.
+- modern RFC 6455 WebSocket server using `ws`;
+- original BrowserQuest JSON protocol preserved;
+- one-process hosting for the game client + WebSocket;
+- automatic `ws://` / `wss://` selection behind HTTP/HTTPS;
+- `/status`, `/health` and `/ready` endpoints;
+- visual first-run installer at `/setup`;
+- six-digit installation code printed in the Node.js logs;
+- owner/admin account created during setup with password stored as a `scrypt` hash;
+- authenticated administration area at `/admin`;
+- visual Story Editor at `/admin/story-editor`;
+- automated HTTP, WebSocket, installer, admin login and story CRUD smoke tests.
 
-The browser client is still the original BrowserQuest client. Making local/browser startup as simple as the server is the next modernization step.
+## aaPanel installation
 
-## Requirements
+Create a **Node.js Project** and use Node.js 24 LTS.
 
-- Node.js 24 LTS recommended
-- Node.js 22+ supported by the project configuration
-- npm
+Start command:
 
-No container runtime is required.
+```bash
+npm start
+```
 
-## Start the game server
+On the first start, open the configured domain. The project redirects to `/setup`.
+
+The six-digit setup code is printed in the Node.js project logs:
+
+```text
+CÓDIGO DE INSTALAÇÃO: 123456
+```
+
+The setup configures the world count, player limit and first owner/admin account. After setup, the same Node.js process serves the game and the administration area.
+
+No Docker, Redis or external database is required for the current version.
+
+## Story Editor
+
+Open:
+
+```text
+/admin/story-editor
+```
+
+The editor can create and publish campaign definitions containing:
+
+- stories and chapters;
+- missions;
+- NPC mission givers;
+- introductory and completion dialogue;
+- objectives: talk, kill, collect, visit, interact or custom;
+- quantities and target IDs;
+- rewards: item, achievement, story flag or custom;
+- linear next-mission links;
+- player choices and branching narrative conditions;
+- draft and published states.
+
+Story definitions are stored privately under `var/` and are not committed to Git.
+
+**Important:** the visual editor and storage/API are functional. The gameplay runtime that consumes published stories and advances player mission progress is a separate layer still to be implemented.
+
+## Native development
 
 ```bash
 npm install
 npm start
 ```
 
-The default game server listens on port `8000`.
+The default port is `8000`. You can override it with `PORT`.
 
-Server status can be checked at:
-
-```text
-http://localhost:8000/status
-```
-
-With the default configuration, a freshly started server returns the population of its five worlds.
-
-## Configuration
-
-Default server settings are in:
-
-```text
-server/config.json
-```
-
-For local overrides, copy:
-
-```text
-server/config_local.json-dist
-```
-
-to:
-
-```text
-server/config_local.json
-```
-
-The server also accepts a custom configuration path:
+Diagnostics:
 
 ```bash
-node server/js/main.js ./path/to/config.json
+npm run doctor:aapanel
 ```
 
-The listening port can additionally be overridden with the `PORT` environment variable.
+Run the legacy game server directly without the first-run wrapper:
+
+```bash
+npm run start:server
+```
 
 ## Project layout
 
+- `app.js` - aaPanel/first-run application bootstrap
 - `client/` - original HTML5 game client, UI, audio, images, sprites and maps
 - `server/` - multiplayer game server and world logic
+- `server/admin/` - admin authentication, Story Editor routes and campaign storage
 - `shared/` - protocol/entity definitions shared by client and server
 - `tools/` - original map conversion tools
 - `test/` - modernization smoke tests
-
-## Modernization policy
-
-Changes should preserve original gameplay and presentation unless a deliberate gameplay change is being developed. Compatibility work should be incremental so that old global/module assumptions can be removed without rewriting the entire game at once.
 
 ## Original project
 
