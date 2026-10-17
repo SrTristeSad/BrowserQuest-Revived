@@ -80,6 +80,8 @@ function createAdminHandler(options) {
 
     var configDir = options.configDir,
         services = options.infrastructure || null,
+        runtime = options.runtime || null,
+        processStartedAt = Date.now(),
         publicDir = path.join(__dirname, 'public'),
         adminPath = path.join(configDir, 'admin.json'),
         gameConfigPath = path.join(configDir, 'browserquest.json'),
@@ -239,6 +241,70 @@ function createAdminHandler(options) {
         return {accessMode: accessMode, registrationEnabled: registrationEnabled};
     }
 
+    function gameSnapshot() {
+        var serverRuntime = runtime && runtime.server && runtime.server.adminRuntime;
+        if(serverRuntime && typeof serverRuntime.getSnapshot === 'function') {
+            return serverRuntime.getSnapshot();
+        }
+        var gameConfig = runtime && runtime.config ? runtime.config : (safeRead(gameConfigPath) || {});
+        return {
+            onlinePlayers: 0,
+            worldCount: Number(gameConfig.nb_worlds || 0),
+            maxPlayersPerWorld: Number(gameConfig.nb_players_per_world || 0),
+            worlds: [],
+            websocket: Boolean(runtime && runtime.server)
+        };
+    }
+
+    function onlinePlayers() {
+        var serverRuntime = runtime && runtime.server && runtime.server.adminRuntime;
+        if(serverRuntime && typeof serverRuntime.listPlayers === 'function') {
+            return serverRuntime.listPlayers();
+        }
+        return [];
+    }
+
+    async function accountSummary() {
+        if(!services || !services.postgres) {
+            return {total: 0, active: 0, suspended: 0, banned: 0};
+        }
+        var result = await services.postgres.query(
+            "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='active')::int AS active, COUNT(*) FILTER (WHERE status='suspended')::int AS suspended, COUNT(*) FILTER (WHERE status='banned')::int AS banned FROM users WHERE role='player'"
+        );
+        return result.rows[0] || {total: 0, active: 0, suspended: 0, banned: 0};
+    }
+
+    async function listAccounts(query) {
+        if(!services || !services.postgres) { return []; }
+        query = String(query || '').trim().slice(0, 64);
+        var values = [], where = "u.role='player'";
+        if(query) {
+            values.push('%' + query.toLowerCase() + '%');
+            where += " AND (LOWER(u.username) LIKE $1 OR LOWER(COALESCE(c.name,'')) LIKE $1)";
+        }
+        var result = await services.postgres.query(
+            "SELECT u.id, u.username, u.display_name, u.status, u.last_login_at, u.created_at, c.id AS character_id, c.name AS character_name, c.weapon_kind, c.armor_kind, c.checkpoint_id FROM users u LEFT JOIN characters c ON c.user_id=u.id WHERE " + where + " ORDER BY u.created_at DESC LIMIT 100",
+            values
+        );
+        return result.rows.map(function(row) {
+            return {
+                id: Number(row.id),
+                username: row.username,
+                displayName: row.display_name,
+                status: row.status,
+                lastLoginAt: row.last_login_at,
+                createdAt: row.created_at,
+                character: row.character_id ? {
+                    id: Number(row.character_id),
+                    name: row.character_name,
+                    weaponKind: Number(row.weapon_kind || 0),
+                    armorKind: Number(row.armor_kind || 0),
+                    checkpointId: row.checkpoint_id === null ? null : Number(row.checkpoint_id)
+                } : null
+            };
+        });
+    }
+
     async function handle(request, response, pathname) {
         var session, body, match;
 
@@ -249,13 +315,18 @@ function createAdminHandler(options) {
 
         if(pathname === '/admin') {
             session = await requireAdmin(request, response, false);
-            if(session) { redirect(response, '/admin/settings'); }
+            if(session) { redirect(response, '/admin/dashboard'); }
             return;
         }
 
         if(pathname === '/admin/login' && request.method === 'GET') {
-            if(await currentAdmin(request)) { redirect(response, '/admin/settings'); }
+            if(await currentAdmin(request)) { redirect(response, '/admin/dashboard'); }
             else { serveFile(response, 'login.html'); }
+            return;
+        }
+
+        if(pathname === '/admin/dashboard' && request.method === 'GET') {
+            if(await requireAdmin(request, response, false)) { serveFile(response, 'dashboard.html'); }
             return;
         }
 
@@ -312,6 +383,36 @@ function createAdminHandler(options) {
             if(!await requireAdmin(request, response, true)) { return; }
             var health = services ? await services.health() : {postgres: false, redis: false};
             json(response, 200, {postgres: health.postgres, redis: health.redis, adminSessions: sessions.storage});
+            return;
+        }
+
+        if(pathname === '/admin/api/dashboard' && request.method === 'GET') {
+            if(!await requireAdmin(request, response, true)) { return; }
+            var dashboardHealth = services ? await services.health() : {postgres: false, redis: false},
+                game = gameSnapshot(),
+                accounts = await accountSummary();
+            json(response, 200, {
+                uptimeSeconds: Math.max(0, Math.floor((Date.now() - processStartedAt) / 1000)),
+                health: {postgres: dashboardHealth.postgres, redis: dashboardHealth.redis, websocket: Boolean(game.websocket)},
+                game: game,
+                accounts: accounts,
+                adminSessions: sessions.storage
+            });
+            return;
+        }
+
+        if(pathname === '/admin/api/players' && request.method === 'GET') {
+            if(!await requireAdmin(request, response, true)) { return; }
+            json(response, 200, {players: onlinePlayers()});
+            return;
+        }
+
+        if(pathname === '/admin/api/accounts' && request.method === 'GET') {
+            if(!await requireAdmin(request, response, true)) { return; }
+            var queryValue = '';
+            try { queryValue = new URL(request.url, 'http://admin.local').searchParams.get('q') || ''; }
+            catch(ignoreUrl) {}
+            json(response, 200, {accounts: await listAccounts(queryValue)});
             return;
         }
 

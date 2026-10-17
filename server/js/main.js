@@ -150,6 +150,49 @@ function start(config) {
         return JSON.stringify(getWorldDistribution(worlds));
     });
 
+    server.adminRuntime = {
+        startedAt: Date.now(),
+        getSnapshot: function() {
+            var distribution = getWorldDistribution(worlds);
+            return {
+                onlinePlayers: distribution.reduce(function(total, count) { return total + count; }, 0),
+                worldCount: worlds.length,
+                maxPlayersPerWorld: config.nb_players_per_world,
+                worlds: worlds.map(function(world, index) {
+                    return {
+                        id: world.id || ('world' + (index + 1)),
+                        index: index + 1,
+                        players: world.playerCount,
+                        capacity: config.nb_players_per_world
+                    };
+                }),
+                websocket: true
+            };
+        },
+        listPlayers: function() {
+            var players = [];
+            worlds.forEach(function(world, worldIndex) {
+                Object.keys(world.players || {}).forEach(function(playerId) {
+                    var player = world.players[playerId],
+                        auth = player && player.connection ? player.connection.authContext : null;
+                    if(!player) { return; }
+                    players.push({
+                        id: String(player.id),
+                        name: player.name || null,
+                        type: auth && auth.type === 'account' ? 'account' : 'guest',
+                        world: world.id || ('world' + (worldIndex + 1)),
+                        worldIndex: worldIndex + 1,
+                        userId: auth && auth.user ? Number(auth.user.id) : null,
+                        username: auth && auth.user ? auth.user.username : null,
+                        characterId: auth && auth.character ? Number(auth.character.id) : null,
+                        connected: true
+                    });
+                });
+            });
+            return players;
+        }
+    };
+
     if(metrics) {
         metrics.ready(function() { onPopulationChange(); });
     }

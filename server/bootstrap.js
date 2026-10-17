@@ -144,6 +144,7 @@ async function startGame(config) {
         playerAuth = null,
         playerAuthHandler = null,
         characterStore = null,
+        adminRuntime = {startedAt: Date.now(), server: null, config: null},
         adminHandler,
         combinedHttpHandler;
 
@@ -161,7 +162,7 @@ async function startGame(config) {
         console.warn('[BrowserQuest] Instalação legada sem PostgreSQL/Redis. O jogo continuará iniciando até a migração ser concluída.');
     }
 
-    adminHandler = AdminHttp.createAdminHandler({configDir: configDir, infrastructure: services});
+    adminHandler = AdminHttp.createAdminHandler({configDir: configDir, infrastructure: services, runtime: adminRuntime});
     combinedHttpHandler = function(request, response) {
         if(playerAuthHandler && playerAuthHandler(request, response)) { return true; }
         return adminHandler(request, response);
@@ -185,12 +186,14 @@ async function startGame(config) {
         manage_process_signals: services ? false : true
     });
 
+    adminRuntime.config = config;
+
     console.log('[BrowserQuest] Instalação encontrada. Iniciando jogo...');
     console.log('[BrowserQuest] Painel administrativo: /admin');
     if(playerAuth) {
         console.log('[BrowserQuest] Autenticação de jogadores: ' + (config.access_mode || 'mixed'));
     }
-    gameMain.start(config);
+    adminRuntime.server = gameMain.start(config);
 
     if(services) {
         GracefulShutdown.install({
