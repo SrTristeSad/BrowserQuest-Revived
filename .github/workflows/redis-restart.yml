@@ -1,0 +1,107 @@
+name: Redis Restart Recovery
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  redis-restart-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null || ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql redis-server
+          fi
+          sudo service postgresql start
+          sudo service redis-server start
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='browserquest'" | grep -q 1; then
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE browserquest LOGIN PASSWORD 'browserquest_test'"
+          fi
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='browserquest'" | grep -q 1; then
+            sudo -u postgres createdb -O browserquest browserquest
+          fi
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
+          redis-cli ping | grep -q PONG
+
+      - name: Install game and restart Redis while it is running
+        shell: bash
+        env:
+          TEST_HTTP_URL: http://127.0.0.1:8011
+          TEST_PG_HOST: 127.0.0.1
+          TEST_PG_PORT: 5432
+          TEST_PG_DATABASE: browserquest
+          TEST_PG_USER: browserquest
+          TEST_PG_PASSWORD: browserquest_test
+        run: |
+          set -euo pipefail
+          SETUP_DIR="$(mktemp -d)"
+          export BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config"
+          export PORT=8011
+
+          node app.js > /tmp/browserquest-redis-restart.log 2>&1 &
+          APP_PID=$!
+          cleanup() {
+            kill "$APP_PID" 2>/dev/null || true
+            if ! redis-cli ping >/dev/null 2>&1; then
+              sudo service redis-server start >/dev/null 2>&1 || true
+            fi
+            rm -rf "$SETUP_DIR"
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8011/setup >/tmp/redis-restart-setup.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-redis-restart.log | tail -1 | grep -oE '[0-9]{6}')"
+          test -n "$CODE"
+
+          cat > /tmp/redis-restart-setup.json <<JSON
+          {"code":"$CODE","worlds":1,"players":10,"accessMode":"mixed","pgHost":"127.0.0.1","pgPort":5432,"pgDatabase":"browserquest","pgUser":"browserquest","pgPassword":"browserquest_test","pgSsl":false,"redisHost":"127.0.0.1","redisPort":6379,"redisUsername":"","redisPassword":"","redisDatabase":0,"redisTls":false,"adminUsername":"owner_restart","adminPassword":"StrongPassword123!","adminPasswordConfirm":"StrongPassword123!"}
+          JSON
+
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/redis-restart-setup.json http://127.0.0.1:8011/setup/install | grep -q '"ok":true'
+
+          READY=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8011/api/auth/policy | grep -q '"accessMode":"mixed"'; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          if test "$READY" -ne 1; then
+            cat /tmp/browserquest-redis-restart.log
+            exit 1
+          fi
+
+          node test/redis-restart-live-smoke.js
+
+          curl --fail --silent http://127.0.0.1:8011/status | grep -q '^\['
+          redis-cli ping | grep -q PONG
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
+          echo 'BrowserQuest stayed alive and Redis reconnected successfully.'
