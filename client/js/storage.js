@@ -3,6 +3,7 @@ define(function() {
 
     var Storage = Class.extend({
         init: function() {
+            var self = this;
             this.achievementSyncTimeout = null;
             if(this.hasLocalStorage() && localStorage.data) {
                 this.data = JSON.parse(localStorage.data);
@@ -11,6 +12,16 @@ define(function() {
             }
             this.ensureDataShape();
             this.applyAccountAchievementState();
+
+            if(window.addEventListener) {
+                window.addEventListener('pagehide', function() {
+                    if(self.getAccountSession()) {
+                        clearTimeout(self.achievementSyncTimeout);
+                        self.achievementSyncTimeout = null;
+                        self.syncAchievements(true);
+                    }
+                });
+            }
         },
     
         resetData: function() {
@@ -30,8 +41,9 @@ define(function() {
                     totalDmg: 0,
                     totalRevives: 0
                 },
-                accountCharacterId: null,
-                guestAchievementsCache: null
+                activeAccountCharacterId: null,
+                guestAchievementsCache: null,
+                accountAchievementCaches: {}
             };
         },
 
@@ -39,11 +51,19 @@ define(function() {
             if(!this.data.achievements) {
                 this.data.achievements = this.normalizeAchievements({});
             }
-            if(this.data.accountCharacterId === undefined) {
-                this.data.accountCharacterId = null;
+            // Migrate the first account-cache prototype if a browser already saw it.
+            if(this.data.activeAccountCharacterId === undefined) {
+                this.data.activeAccountCharacterId = this.data.accountCharacterId || null;
             }
+            delete this.data.accountCharacterId;
             if(this.data.guestAchievementsCache === undefined) {
                 this.data.guestAchievementsCache = null;
+            }
+            if(!this.data.accountAchievementCaches || typeof this.data.accountAchievementCaches !== 'object') {
+                this.data.accountAchievementCaches = {};
+            }
+            if(this.data.activeAccountCharacterId && !this.data.accountAchievementCaches[String(this.data.activeAccountCharacterId)]) {
+                this.data.accountAchievementCaches[String(this.data.activeAccountCharacterId)] = this.normalizeAchievements(this.data.achievements);
             }
         },
 
@@ -76,43 +96,74 @@ define(function() {
             };
         },
 
+        mergeAchievements: function(first, second) {
+            first = this.normalizeAchievements(first);
+            second = this.normalizeAchievements(second);
+            var unlocked = first.unlocked.concat(second.unlocked);
+            return this.normalizeAchievements({
+                unlocked: unlocked,
+                ratCount: Math.max(first.ratCount, second.ratCount),
+                skeletonCount: Math.max(first.skeletonCount, second.skeletonCount),
+                totalKills: Math.max(first.totalKills, second.totalKills),
+                totalDmg: Math.max(first.totalDmg, second.totalDmg),
+                totalRevives: Math.max(first.totalRevives, second.totalRevives)
+            });
+        },
+
         getAccountSession: function() {
             var state = window.BQAuthState;
             return state && state.session && state.session.loggedIn ? state.session : null;
         },
 
+        cacheCurrentAccountAchievements: function() {
+            if(this.data.activeAccountCharacterId) {
+                this.data.accountAchievementCaches[String(this.data.activeAccountCharacterId)] = this.normalizeAchievements(this.data.achievements);
+            }
+        },
+
         applyAccountAchievementState: function() {
-            var session = this.getAccountSession(), serverAchievements, accountCharacterId;
+            var session = this.getAccountSession(), serverAchievements, accountCharacterId, cachedAchievements, wasAccountActive;
 
             if(!session || !session.character) {
-                // If the previous page session belonged to an account, restore the guest cache.
-                if(this.data.accountCharacterId) {
+                if(this.data.activeAccountCharacterId) {
+                    this.cacheCurrentAccountAchievements();
                     this.data.achievements = this.normalizeAchievements(this.data.guestAchievementsCache || {});
-                    this.data.accountCharacterId = null;
-                    this.data.guestAchievementsCache = null;
+                    this.data.activeAccountCharacterId = null;
                     this.saveLocalOnly();
                 }
                 return;
             }
 
             accountCharacterId = String(session.character.id);
-            if(String(this.data.accountCharacterId || '') !== accountCharacterId) {
-                // Preserve the pre-login guest state so logging out cannot leak account progress to guests.
-                if(!this.data.accountCharacterId) {
-                    this.data.guestAchievementsCache = this.normalizeAchievements(this.data.achievements);
-                }
-                this.data.accountCharacterId = accountCharacterId;
+            wasAccountActive = String(this.data.activeAccountCharacterId || '') === accountCharacterId;
+
+            if(!this.data.activeAccountCharacterId) {
+                this.data.guestAchievementsCache = this.normalizeAchievements(this.data.achievements);
+            } else if(!wasAccountActive) {
+                this.cacheCurrentAccountAchievements();
             }
 
+            cachedAchievements = this.data.accountAchievementCaches[accountCharacterId] || null;
             serverAchievements = session.progress && session.progress.achievements;
+            this.data.activeAccountCharacterId = accountCharacterId;
+
             if(serverAchievements) {
-                // Once a server record exists it is the source of truth. localStorage is only a cache.
-                this.data.achievements = this.normalizeAchievements(serverAchievements);
+                // PostgreSQL is canonical, but merge a cache belonging to this exact character
+                // so an update made immediately before a tab/browser close can be replayed safely.
+                this.data.achievements = cachedAchievements ?
+                    this.mergeAchievements(serverAchievements, cachedAchievements) :
+                    this.normalizeAchievements(serverAchievements);
+                this.data.accountAchievementCaches[accountCharacterId] = this.normalizeAchievements(this.data.achievements);
                 this.saveLocalOnly();
+                if(cachedAchievements) {
+                    this.scheduleAchievementSync(0);
+                }
             } else {
-                // Upgrade path for accounts created before server-backed achievements existed:
-                // seed PostgreSQL once from the existing local cache.
-                this.data.achievements = this.normalizeAchievements(this.data.achievements);
+                // Upgrade path for accounts created before server-backed achievements existed.
+                // Prefer a cache previously bound to this exact account; otherwise import the
+                // old single localStorage achievement snapshot once.
+                this.data.achievements = this.normalizeAchievements(cachedAchievements || this.data.achievements);
+                this.data.accountAchievementCaches[accountCharacterId] = this.normalizeAchievements(this.data.achievements);
                 this.saveLocalOnly();
                 this.scheduleAchievementSync(0);
             }
@@ -123,6 +174,7 @@ define(function() {
         },
 
         saveLocalOnly: function() {
+            this.cacheCurrentAccountAchievements();
             if(this.hasLocalStorage()) {
                 localStorage.data = JSON.stringify(this.data);
             }
@@ -143,11 +195,11 @@ define(function() {
             clearTimeout(this.achievementSyncTimeout);
             this.achievementSyncTimeout = setTimeout(function() {
                 self.achievementSyncTimeout = null;
-                self.syncAchievements();
+                self.syncAchievements(false);
             }, delay === undefined ? 250 : delay);
         },
 
-        syncAchievements: function() {
+        syncAchievements: function(keepalive) {
             var self = this,
                 session = this.getAccountSession(),
                 snapshot;
@@ -158,13 +210,17 @@ define(function() {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {'content-type': 'application/json'},
-                body: JSON.stringify({achievements: snapshot})
+                body: JSON.stringify({achievements: snapshot}),
+                keepalive: Boolean(keepalive)
             }).then(function(response) {
                 if(!response.ok) { throw new Error('Achievement sync failed: ' + response.status); }
                 return response.json();
             }).then(function(result) {
                 if(result && result.achievements) {
                     self.data.achievements = self.normalizeAchievements(result.achievements);
+                    if(self.data.activeAccountCharacterId) {
+                        self.data.accountAchievementCaches[String(self.data.activeAccountCharacterId)] = self.normalizeAchievements(self.data.achievements);
+                    }
                     if(window.BQAuthState && window.BQAuthState.session) {
                         window.BQAuthState.session.progress = window.BQAuthState.session.progress || {};
                         window.BQAuthState.session.progress.achievements = self.data.achievements;
@@ -172,9 +228,9 @@ define(function() {
                     self.saveLocalOnly();
                 }
             }).catch(function() {
-                // PostgreSQL/HTTP can be briefly unavailable. Keep the local cache and retry;
-                // server merge is monotonic, so replaying the same snapshot is safe.
-                if(self.getAccountSession()) {
+                if(self.getAccountSession() && !keepalive) {
+                    // PostgreSQL/HTTP can be briefly unavailable. Keep the account-specific cache
+                    // and retry; the server merge is monotonic, so replaying the snapshot is safe.
                     self.scheduleAchievementSync(2000);
                 }
             });
@@ -281,7 +337,7 @@ define(function() {
                 this.saveAchievements();
             }
         },
-        
+    
         // Hunter
         getTotalKills: function() {
             return this.data.achievements.totalKills;
