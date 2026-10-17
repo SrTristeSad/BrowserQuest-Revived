@@ -77,7 +77,8 @@ jobs:
             http://127.0.0.1:8010/setup/install | grep -q '"ok":true'
 
           for attempt in $(seq 1 20); do
-            if curl --fail --silent http://127.0.0.1:8010/status > /tmp/installed-status.json; then
+            curl --silent http://127.0.0.1:8010/status > /tmp/installed-status.json || true
+            if grep -q '^\[' /tmp/installed-status.json; then
               cat /tmp/installed-status.json
               curl --fail --silent http://127.0.0.1:8010/ | grep -qi BrowserQuest
               TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
