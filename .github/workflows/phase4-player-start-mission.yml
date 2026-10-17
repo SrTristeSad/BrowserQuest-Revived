@@ -1,0 +1,33 @@
+name: Phase 4 Player Start Mission
+
+on:
+  push:
+    branches: [phase4-player-start-mission]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply patch
+        run: node scripts/phase4-player-start-mission.mjs
+      - name: Syntax check
+        run: node --check server/js/player.js && node --check server/story/mission-service.js
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/js/player.js
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "feat: expose internal mission start on Player"
+            git push
+          fi
