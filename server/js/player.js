@@ -14,6 +14,7 @@ module.exports = Player = Character.extend({
         
         this.server = worldServer;
         this.connection = connection;
+        this.characterPersistence = connection.characterPersistence || null;
 
         this._super(this.connection.id, "player", Types.Entities.WARRIOR, 0, 0, "");
 
@@ -201,6 +202,7 @@ module.exports = Player = Character.extend({
                 var checkpoint = self.server.map.getCheckpoint(message[1]);
                 if(checkpoint) {
                     self.lastCheckpoint = checkpoint;
+                    self.schedulePersistence({checkpointId: checkpoint.id});
                 }
             }
             else {
@@ -215,6 +217,7 @@ module.exports = Player = Character.extend({
                 clearTimeout(self.firepotionTimeout);
             }
             clearTimeout(self.disconnectTimeout);
+            self.flushPersistence();
             if(self.exit_callback) {
                 self.exit_callback();
             }
@@ -226,9 +229,11 @@ module.exports = Player = Character.extend({
     handleHello: async function(message) {
         var auth = this.connection.authContext || {type: 'guest'},
             authService = this.connection.playerAuthService,
+            persisted = null,
             name,
             armor,
-            weapon;
+            weapon,
+            checkpoint;
 
         if(auth.type === 'account' && auth.character) {
             name = String(auth.character.name || '').substr(0, 15);
@@ -236,6 +241,23 @@ module.exports = Player = Character.extend({
             this.characterId = auth.character.id || null;
             armor = Number(auth.character.armorKind);
             weapon = Number(auth.character.weaponKind);
+
+            if(this.characterPersistence && this.characterId) {
+                try {
+                    persisted = await this.characterPersistence.load(this.characterId);
+                } catch(error) {
+                    log.error('Falha ao carregar estado persistente do personagem ' + this.characterId + ': ' + error.message);
+                }
+            }
+            if(persisted) {
+                if(persisted.armorKind !== null) { armor = persisted.armorKind; }
+                if(persisted.weaponKind !== null) { weapon = persisted.weaponKind; }
+                if(persisted.checkpointId !== null && this.server.map) {
+                    checkpoint = this.server.map.getCheckpoint(persisted.checkpointId);
+                    if(checkpoint) { this.lastCheckpoint = checkpoint; }
+                }
+            }
+
             if(!Types.isArmor(armor)) { armor = Types.Entities.CLOTHARMOR; }
             if(!Types.isWeapon(weapon)) { weapon = Types.Entities.SWORD1; }
         } else {
@@ -378,11 +400,27 @@ module.exports = Player = Character.extend({
             
             if(Types.isArmor(item.kind)) {
                 this.equipArmor(item.kind);
+                this.schedulePersistence({armorKind: item.kind});
                 this.updateHitPoints();
                 this.send(new Messages.HitPoints(this.maxHitPoints).serialize());
             } else if(Types.isWeapon(item.kind)) {
                 this.equipWeapon(item.kind);
+                this.schedulePersistence({weaponKind: item.kind});
             }
+        }
+    },
+
+    schedulePersistence: function(patch) {
+        if(this.characterPersistence && this.characterId) {
+            this.characterPersistence.schedule(this.characterId, patch);
+        }
+    },
+
+    flushPersistence: function() {
+        if(this.characterPersistence && this.characterId) {
+            this.characterPersistence.flush(this.characterId).catch(function(error) {
+                log.error('Falha no flush do personagem: ' + error.message);
+            });
         }
     },
     
