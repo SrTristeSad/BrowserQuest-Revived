@@ -254,6 +254,9 @@ module.exports = Player = Character.extend({
             if(this.storyProgress && this.characterId) {
                 try {
                     this.storyState = await this.storyProgress.list(this.characterId);
+                    if(this.storyState.length) {
+                        log.info('Story progress loaded for character ' + this.characterId + ': ' + this.storyState.length + ' storie(s).');
+                    }
                 } catch(error) {
                     this.storyState = [];
                     log.error('Falha ao carregar progresso de história do personagem ' + this.characterId + ': ' + error.message);
