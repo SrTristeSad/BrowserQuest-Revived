@@ -116,7 +116,8 @@ async function main() {
         first,
         second,
         runtime,
-        completion;
+        completion,
+        persisted;
 
     assert.deepStrictEqual(AchievementProgress.ACHIEVEMENT_IDS, Array.from({length: 20}, function(_, index) { return index + 1; }));
     assert.strictEqual(AchievementProgress.parseAchievementId('1'), 1);
@@ -182,16 +183,19 @@ async function main() {
         states: [{storyId: 'mission-story', activeMissionId: 'mission-achievement', objectiveProgress: 1, completedMissionIds: [], flags: {ready: true}}]
     });
     assert.strictEqual(completion.changed, true);
-    assert.strictEqual(completion.achievementRewards.length, 1);
-    assert.strictEqual(completion.achievementRewards[0].achievementId, 20);
-    assert.deepStrictEqual(completion.achievements.unlocked, [20]);
     assert.ok(completion.state.completedMissionIds.indexOf('mission-achievement') >= 0);
+    assert.strictEqual(completion.achievementRewards, undefined, 'mission completion should not expose achievement internals before client integration');
+    persisted = postgres.achievements.get(88);
+    assert.deepStrictEqual(persisted.unlocked, [20], 'mission completion must persist the published achievement through the canonical store');
+    assert.strictEqual(persisted.ratCount, 0);
+    assert.strictEqual(persisted.totalKills, 0);
 
     assert.ok(accountSource.indexOf('ACHIEVEMENT_IDS') !== -1, 'server must own an explicit canonical achievement catalog');
     assert.ok(accountSource.indexOf('parseAchievementId') !== -1, 'story rewards must share canonical server validation');
     assert.ok(rewardSource.indexOf("namespace='legacy' AND key='achievements' FOR UPDATE") !== -1, 'achievement row must be locked inside the reward transaction');
     assert.ok(rewardSource.indexOf("VALUES($1,'legacy','achievements'") !== -1, 'achievement reward must reuse canonical legacy persistence');
     assert.ok(completionSource.indexOf('saveCompletionWithRewards') !== -1, 'mission completion must use the general atomic reward path');
+    assert.strictEqual(completionSource.indexOf('achievement'), -1, 'mission completion should remain reward-type agnostic');
     assert.strictEqual(rewardSource.indexOf('eval('), -1);
 
     console.log('Story achievement reward smoke test passed.');
