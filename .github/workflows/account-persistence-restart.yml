@@ -142,7 +142,7 @@ jobs:
             node test/account-persistence-websocket-smoke.js
           test "$(grep -c 'Story progress loaded for character .*: 1 storie(s).' /tmp/browserquest-account-restart.log)" -ge 2
           PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -tAc \
-            "SELECT value->>'activeMissionId' || ':' || value->>'objectiveProgress' FROM character_progress cp JOIN characters c ON c.id=cp.character_id JOIN users u ON u.id=c.user_id WHERE u.username='$USERNAME' AND cp.namespace='story' AND cp.key='restart-story'" | grep -q 'mission-restart:2'
+            "SELECT (value->>'activeMissionId') || ':' || (value->>'objectiveProgress') FROM character_progress cp JOIN characters c ON c.id=cp.character_id JOIN users u ON u.id=c.user_id WHERE u.username='$USERNAME' AND cp.namespace='story' AND cp.key='restart-story'" | grep -q 'mission-restart:2'
 
           curl --fail --silent http://127.0.0.1:8012/status | grep -q '^\['
           echo 'Account equipment/checkpoint and story progress survived a complete Node restart.'
