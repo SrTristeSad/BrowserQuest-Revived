@@ -2,7 +2,7 @@ name: BrowserQuest CI
 
 on:
   push:
-    branches: [main, modernize-node, aapanel-visual-installer, world-editor]
+    branches: [main, modernize-node, aapanel-visual-installer, world-editor, pgsql-redis-accounts]
   pull_request:
     branches: [main]
 
@@ -25,10 +25,41 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null || ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql redis-server
+          fi
+          sudo service postgresql start
+          sudo service redis-server start
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='browserquest'" | grep -q 1; then
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE browserquest LOGIN PASSWORD 'browserquest_test'"
+          fi
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='browserquest'" | grep -q 1; then
+            sudo -u postgres createdb -O browserquest browserquest
+          fi
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
+          redis-cli ping | grep -q PONG
+
       - name: Syntax and aaPanel checks
         run: |
           npm run check
           npm run doctor:aapanel
+
+      - name: Verify PostgreSQL and Redis migrations
+        env:
+          TEST_PG_HOST: 127.0.0.1
+          TEST_PG_PORT: 5432
+          TEST_PG_DATABASE: browserquest
+          TEST_PG_USER: browserquest
+          TEST_PG_PASSWORD: browserquest_test
+          TEST_REDIS_HOST: 127.0.0.1
+          TEST_REDIS_PORT: 6379
+          TEST_REDIS_DATABASE: 0
+        run: node test/infrastructure-live-smoke.js
 
       - name: Verify direct game server HTTP/WebSocket
         shell: bash
@@ -51,7 +82,7 @@ jobs:
           cat /tmp/browserquest-server.log
           exit 1
 
-      - name: Verify installer, admin, Story Editor and World Editor
+      - name: Verify installer, PostgreSQL, Redis, admin and editors
         shell: bash
         run: |
           set -euo pipefail
@@ -70,14 +101,19 @@ jobs:
           done
 
           grep -qi 'BrowserQuest Revived' /tmp/setup.html
+          grep -qi 'PostgreSQL' /tmp/setup.html
+          grep -qi 'Redis' /tmp/setup.html
           grep -qi 'Conta do dono' /tmp/setup.html
           CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-setup.log | tail -1 | grep -oE '[0-9]{6}')"
           test -n "$CODE"
 
-          curl --fail --silent \
-            -H 'content-type: application/json' \
-            -d "{\"code\":\"$CODE\",\"worlds\":2,\"players\":10,\"adminUsername\":\"owner\",\"adminPassword\":\"StrongPassword123!\",\"adminPasswordConfirm\":\"StrongPassword123!\"}" \
-            http://127.0.0.1:8010/setup/install | grep -q '"ok":true'
+          cat > /tmp/setup-payload.json <<JSON
+          {"code":"$CODE","worlds":2,"players":10,"accessMode":"mixed","pgHost":"127.0.0.1","pgPort":5432,"pgDatabase":"browserquest","pgUser":"browserquest","pgPassword":"browserquest_test","pgSsl":false,"redisHost":"127.0.0.1","redisPort":6379,"redisUsername":"","redisPassword":"","redisDatabase":0,"redisTls":false,"adminUsername":"owner","adminPassword":"StrongPassword123!","adminPasswordConfirm":"StrongPassword123!"}
+          JSON
+
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/setup-payload.json http://127.0.0.1:8010/setup/test-postgres | grep -q '"ok":true'
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/setup-payload.json http://127.0.0.1:8010/setup/test-redis | grep -q '"ok":true'
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/setup-payload.json http://127.0.0.1:8010/setup/install | grep -q '"ok":true'
 
           for attempt in $(seq 1 20); do
             curl --silent http://127.0.0.1:8010/status > /tmp/installed-status.json || true
@@ -88,13 +124,20 @@ jobs:
           done
 
           grep -q '^\[' /tmp/installed-status.json
+          grep -q 'PostgreSQL conectado' /tmp/browserquest-setup.log
+          grep -q 'Redis conectado' /tmp/browserquest-setup.log
           curl --fail --silent http://127.0.0.1:8010/ | grep -qi BrowserQuest
           TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
           test -f "$SETUP_DIR/config/browserquest.json"
           test -f "$SETUP_DIR/config/admin.json"
           test ! -f "$SETUP_DIR/config/setup-token.txt"
           grep -q '"passwordHash": "scrypt\$' "$SETUP_DIR/config/admin.json"
+          grep -q '"infrastructure"' "$SETUP_DIR/config/browserquest.json"
+          grep -q '"access_mode": "mixed"' "$SETUP_DIR/config/browserquest.json"
           ! grep -q 'StrongPassword123!' "$SETUP_DIR/config/admin.json"
+
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -tAc "SELECT role || ':' || status FROM users WHERE username='owner'" | grep -q 'owner:active'
+          PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -tAc "SELECT value #>> '{}' FROM settings WHERE key='access_mode'" | grep -q mixed
 
           curl --fail --silent http://127.0.0.1:8010/admin/login | grep -qi 'PAINEL ADMINISTRATIVO'
           curl --fail --silent -c /tmp/bq-cookies.txt \
@@ -198,4 +241,6 @@ jobs:
             sleep 1
           done
           grep -q 'Loading published world from World Editor' /tmp/browserquest-restart.log
+          grep -q 'PostgreSQL conectado' /tmp/browserquest-restart.log
+          grep -q 'Redis conectado' /tmp/browserquest-restart.log
           TEST_WS_URL=ws://127.0.0.1:8010/ node test/websocket-smoke.js
