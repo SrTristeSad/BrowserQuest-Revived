@@ -204,6 +204,39 @@ function start(config) {
             });
             return delivered;
         },
+        mutePlayer: async function(playerId, durationSeconds, reason) {
+            var targetPlayer = null, found = null;
+            worlds.some(function(world, worldIndex) {
+                var player = world.players && world.players[String(playerId)], auth;
+                if(!player) { return false; }
+                auth = player.connection && player.connection.authContext;
+                targetPlayer = player;
+                found = {
+                    id: String(player.id),
+                    name: player.name || null,
+                    world: world.id || ('world' + (worldIndex + 1)),
+                    userId: auth && auth.user ? Number(auth.user.id) : null,
+                    username: auth && auth.user ? auth.user.username : null,
+                    characterId: auth && auth.character ? Number(auth.character.id) : null,
+                    type: auth && auth.type === 'account' ? 'account' : 'guest'
+                };
+                return true;
+            });
+            if(!targetPlayer) { return null; }
+
+            var seconds = Math.floor(Number(durationSeconds)), until = Date.now() + (seconds * 1000), persistent = false;
+            if(found.userId && targetPlayer.connection.playerAuthService && typeof targetPlayer.connection.playerAuthService.setMuteForUser === 'function') {
+                var stored = await targetPlayer.connection.playerAuthService.setMuteForUser(found.userId, seconds, reason);
+                until = stored.until;
+                persistent = true;
+            }
+            if(typeof targetPlayer.setMute === 'function') { targetPlayer.setMute(until, reason); }
+            targetPlayer.send([require('../../shared/js/gametypes').Messages.ANNOUNCEMENT, 'Você foi silenciado por ' + Math.ceil(seconds / 60) + ' min.']);
+            found.until = until;
+            found.durationSeconds = seconds;
+            found.persistent = persistent;
+            return found;
+        },
         kickPlayer: async function(playerId, reason) {
             var found = null, targetPlayer = null;
             worlds.some(function(world, worldIndex) {

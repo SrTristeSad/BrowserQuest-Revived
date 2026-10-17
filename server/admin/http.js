@@ -462,6 +462,34 @@ function createAdminHandler(options) {
             return;
         }
 
+        match = pathname.match(/^\/admin\/api\/players\/([0-9]+)\/mute$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+
+            var muteMinutes = Math.floor(Number(body.durationMinutes)),
+                muteReason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Silenciado pelo administrador.';
+            if(!Number.isInteger(muteMinutes) || muteMinutes < 1 || muteMinutes > 1440) {
+                json(response, 400, {error: 'Duração deve ficar entre 1 e 1440 minutos.'});
+                return;
+            }
+            var muteControls = controlRuntime(),
+                muted = muteControls && typeof muteControls.mutePlayer === 'function' ? await muteControls.mutePlayer(match[1], muteMinutes * 60, muteReason) : null;
+            if(!muted) { json(response, 404, {error: 'Jogador não está mais conectado.'}); return; }
+            await audit(session, 'player.mute', muted.username || muted.name || muted.id, {
+                playerId: muted.id,
+                userId: muted.userId,
+                characterId: muted.characterId,
+                durationMinutes: muteMinutes,
+                reason: muteReason,
+                persistent: muted.persistent
+            }, request);
+            json(response, 200, {ok: true, player: muted});
+            return;
+        }
+
         match = pathname.match(/^\/admin\/api\/players\/([0-9]+)\/kick$/);
         if(match && request.method === 'POST') {
             session = await requireAdmin(request, response, true);

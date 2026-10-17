@@ -27,6 +27,8 @@ module.exports = Player = Character.extend({
         this.disconnectTimeout = null;
         this.accountUserId = null;
         this.characterId = null;
+        this.mutedUntil = 0;
+        this.muteReason = '';
         
         this.connection.listen(function(message) {
             var action = parseInt(message[0]);
@@ -64,6 +66,11 @@ module.exports = Player = Character.extend({
                 self.zone_callback();
             }
             else if(action === Types.Messages.CHAT) {
+                if(self.isMuted()) {
+                    var remainingMinutes = Math.max(1, Math.ceil((self.mutedUntil - Date.now()) / 60000));
+                    self.send([Types.Messages.ANNOUNCEMENT, 'Você está silenciado. Tempo restante: ' + remainingMinutes + ' min.']);
+                    return;
+                }
                 var msg = Utils.sanitize(message[1]);
                 
                 if(msg && msg !== "") {
@@ -237,6 +244,9 @@ module.exports = Player = Character.extend({
 
         if(auth.type === 'account' && auth.character) {
             name = String(auth.character.name || '').substr(0, 15);
+            if(auth.mute && Number(auth.mute.until) > Date.now()) {
+                this.setMute(Number(auth.mute.until), auth.mute.reason);
+            }
             this.accountUserId = auth.user ? auth.user.id : null;
             this.characterId = auth.character.id || null;
             armor = Number(auth.character.armorKind);
@@ -318,6 +328,18 @@ module.exports = Player = Character.extend({
         return basestate.concat(state);
     },
     
+    setMute: function(until, reason) {
+        this.mutedUntil = Math.max(Date.now(), Number(until) || 0);
+        this.muteReason = String(reason || '').slice(0, 120);
+    },
+
+    isMuted: function() {
+        if(this.mutedUntil > Date.now()) { return true; }
+        this.mutedUntil = 0;
+        this.muteReason = '';
+        return false;
+    },
+
     send: function(message) {
         this.connection.send(message);
     },
