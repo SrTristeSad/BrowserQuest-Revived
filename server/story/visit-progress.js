@@ -140,43 +140,48 @@ function logProgressError(player, error) {
     }
 }
 
-function attach(WorldServer, Player) {
-    var worldPrototype,
-        playerPrototype,
-        originalOnPlayerEnter,
-        originalSetPosition;
+function wrapPlayerMovement(player, world) {
+    var originalSetPosition,
+        originalMoveCallback;
 
-    if(!WorldServer || !WorldServer.prototype || !Player || !Player.prototype) { return false; }
-    worldPrototype = WorldServer.prototype;
-    playerPrototype = Player.prototype;
-    if(worldPrototype.__storyVisitProgressAttached && playerPrototype.__storyVisitProgressAttached) { return true; }
-    if(typeof worldPrototype.onPlayerEnter !== 'function' || typeof playerPrototype.setPosition !== 'function') { return false; }
+    if(!player || player.__storyVisitMoveWrapped || typeof player.setPosition !== 'function' || typeof player.onMove !== 'function') {
+        return false;
+    }
 
-    originalSetPosition = playerPrototype.setPosition;
-    playerPrototype.setPosition = function(x, y) {
+    originalSetPosition = player.setPosition;
+    player.setPosition = function(x, y) {
         this.__storyVisitPreviousLocationIds = resolveLocationIds(this.server && this.server.map, this.x, this.y);
         return originalSetPosition.call(this, x, y);
     };
-    playerPrototype.__storyVisitProgressAttached = true;
+
+    originalMoveCallback = player.move_callback;
+    player.onMove(function(x, y) {
+        handleAcceptedMove(player, world && world.map).catch(function(error) {
+            logProgressError(player, error);
+        });
+        if(originalMoveCallback) {
+            originalMoveCallback(x, y);
+        }
+    });
+    player.__storyVisitMoveWrapped = true;
+    return true;
+}
+
+function attach(WorldServer) {
+    var worldPrototype,
+        originalOnPlayerEnter;
+
+    if(!WorldServer || !WorldServer.prototype) { return false; }
+    worldPrototype = WorldServer.prototype;
+    if(worldPrototype.__storyVisitProgressAttached) { return true; }
+    if(typeof worldPrototype.onPlayerEnter !== 'function') { return false; }
 
     originalOnPlayerEnter = worldPrototype.onPlayerEnter;
     worldPrototype.onPlayerEnter = function(callback) {
         var world = this;
         return originalOnPlayerEnter.call(this, function(player) {
-            var originalMoveCallback;
-
             callback(player);
-            if(!player || player.__storyVisitMoveWrapped || typeof player.onMove !== 'function') { return; }
-            originalMoveCallback = player.move_callback;
-            player.onMove(function(x, y) {
-                handleAcceptedMove(player, world.map).catch(function(error) {
-                    logProgressError(player, error);
-                });
-                if(originalMoveCallback) {
-                    originalMoveCallback(x, y);
-                }
-            });
-            player.__storyVisitMoveWrapped = true;
+            wrapPlayerMovement(player, world);
         });
     };
     worldPrototype.__storyVisitProgressAttached = true;
@@ -187,4 +192,5 @@ exports.resolveLocationIds = resolveLocationIds;
 exports.progressVisitObjectives = progressVisitObjectives;
 exports.progressVisit = progressVisit;
 exports.handleAcceptedMove = handleAcceptedMove;
+exports.wrapPlayerMovement = wrapPlayerMovement;
 exports.attach = attach;
