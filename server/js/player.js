@@ -272,10 +272,14 @@ module.exports = Player = Character.extend({
         
         this.server.addPlayer(this);
         this.server.enter_callback(this);
-        this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints, this.armor, this.weapon]);
+        this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints]);
         this.hasEnteredGame = true;
         this.handshakePending = false;
         this.isDead = false;
+        if(auth.type === 'account') {
+            this.send(new Messages.EquipItem(this, this.armor).serialize());
+            this.send(new Messages.EquipItem(this, this.weapon).serialize());
+        }
         this.persistTouch();
     },
 
