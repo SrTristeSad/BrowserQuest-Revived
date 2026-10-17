@@ -9,6 +9,7 @@ define(function() {
             } else {
                 this.resetData();
             }
+            this.ensureDataShape();
             this.applyAccountAchievementState();
         },
     
@@ -28,8 +29,22 @@ define(function() {
                     totalKills: 0,
                     totalDmg: 0,
                     totalRevives: 0
-                }
+                },
+                accountCharacterId: null,
+                guestAchievementsCache: null
             };
+        },
+
+        ensureDataShape: function() {
+            if(!this.data.achievements) {
+                this.data.achievements = this.normalizeAchievements({});
+            }
+            if(this.data.accountCharacterId === undefined) {
+                this.data.accountCharacterId = null;
+            }
+            if(this.data.guestAchievementsCache === undefined) {
+                this.data.guestAchievementsCache = null;
+            }
         },
 
         normalizeAchievements: function(value) {
@@ -67,8 +82,27 @@ define(function() {
         },
 
         applyAccountAchievementState: function() {
-            var session = this.getAccountSession(), serverAchievements;
-            if(!session) { return; }
+            var session = this.getAccountSession(), serverAchievements, accountCharacterId;
+
+            if(!session || !session.character) {
+                // If the previous page session belonged to an account, restore the guest cache.
+                if(this.data.accountCharacterId) {
+                    this.data.achievements = this.normalizeAchievements(this.data.guestAchievementsCache || {});
+                    this.data.accountCharacterId = null;
+                    this.data.guestAchievementsCache = null;
+                    this.saveLocalOnly();
+                }
+                return;
+            }
+
+            accountCharacterId = String(session.character.id);
+            if(String(this.data.accountCharacterId || '') !== accountCharacterId) {
+                // Preserve the pre-login guest state so logging out cannot leak account progress to guests.
+                if(!this.data.accountCharacterId) {
+                    this.data.guestAchievementsCache = this.normalizeAchievements(this.data.achievements);
+                }
+                this.data.accountCharacterId = accountCharacterId;
+            }
 
             serverAchievements = session.progress && session.progress.achievements;
             if(serverAchievements) {
@@ -79,6 +113,7 @@ define(function() {
                 // Upgrade path for accounts created before server-backed achievements existed:
                 // seed PostgreSQL once from the existing local cache.
                 this.data.achievements = this.normalizeAchievements(this.data.achievements);
+                this.saveLocalOnly();
                 this.scheduleAchievementSync(0);
             }
         },
