@@ -12,7 +12,7 @@
     "start:aapanel": "node app.js",
     "start:server": "node server/js/main.js",
     "doctor:aapanel": "node scripts/doctor-aapanel.mjs",
-    "check": "node --check app.js && node --check server/js/main.js && node --check server/js/ws.js && node --check server/js/map.js && node --check server/js/mob.js && node --check server/js/mobarea.js && node --check server/js/npc.js && node --check server/js/worldserver.js && node --check server/admin/auth.js && node --check server/admin/http.js && node --check server/admin/story-store.js && node --check server/admin/world-store.js"
+    "check": "node --check app.js && node --check server/js/main.js && node --check server/js/ws.js && node --check server/js/map.js && node --check server/js/brain.js && node --check server/js/mob.js && node --check server/js/mobarea.js && node --check server/js/npc.js && node --check server/js/worldserver.js && node --check server/admin/auth.js && node --check server/admin/http.js && node --check server/admin/story-store.js && node --check server/admin/world-store.js"
   },
   "dependencies": {
     "log": "1.4.0",

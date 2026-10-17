@@ -32,6 +32,29 @@ function int(value, min, max, fallback) {
 function text(value, max) { return String(value == null ? '' : value).trim().slice(0, max); }
 function bool(value) { return value !== false; }
 
+function normalizeBrain(brain, fallbackPreset) {
+    brain = brain || {};
+    var presets = ['villager','merchant','guard','passive','aggressive','coward','territorial','companion'],
+        modes = ['wander','patrol','follow'],
+        preset = presets.indexOf(brain.preset) >= 0 ? brain.preset : fallbackPreset,
+        mode = modes.indexOf(brain.mode) >= 0 ? brain.mode : (preset === 'guard' ? 'patrol' : (preset === 'companion' ? 'follow' : 'wander')),
+        moveChance = Number(brain.moveChance),
+        fleeBelowHp = Number(brain.fleeBelowHp),
+        patrol = Array.isArray(brain.patrol) ? brain.patrol.slice(0,32).map(function(point) {
+            return {x:int(point && point.x,1,1000,1),y:int(point && point.y,1,1000,1)};
+        }) : [];
+    if(!Number.isFinite(moveChance)) { moveChance = 0.6; }
+    if(!Number.isFinite(fleeBelowHp)) { fleeBelowHp = preset === 'coward' ? 0.4 : 0; }
+    return {
+        enabled: brain.enabled !== false, preset:preset, mode:mode,
+        thinkMs:int(brain.thinkMs,400,10000,1200), vision:int(brain.vision,1,50,7),
+        wanderRadius:int(brain.wanderRadius,1,50,6), moveChance:Math.max(0,Math.min(1,moveChance)),
+        fleeFromMobs:brain.fleeFromMobs === true, fleeBelowHp:Math.max(0,Math.min(0.95,fleeBelowHp)),
+        aggressive:brain.aggressive === true, leash:int(brain.leash,2,100,10),
+        followDistance:int(brain.followDistance,1,10,2), patrol:patrol
+    };
+}
+
 function tileToPosition(tile, width) {
     var zero = Number(tile) - 1;
     return {x: (zero % width) + 1, y: Math.floor(zero / width)};
@@ -75,7 +98,8 @@ function normalizeNpc(profile) {
         dialogue: Array.isArray(profile.dialogue) ? profile.dialogue.slice(0,50).map(function(line){return text(line,500);}).filter(Boolean) : [],
         storyId: text(profile.storyId,80),
         missionId: text(profile.missionId,80),
-        completionMissionId: text(profile.completionMissionId,80)
+        completionMissionId: text(profile.completionMissionId,80),
+        brain: normalizeBrain(profile.brain, (profile.baseKind === 'guard' || profile.baseKind === 'king') ? 'guard' : 'villager')
     };
 }
 
@@ -91,7 +115,8 @@ function normalizeMob(profile) {
         weaponLevel: int(profile.weaponLevel,0,1000,1),
         respawnMs: int(profile.respawnMs,1000,3600000,30000),
         aggroDistance: int(profile.aggroDistance,1,200,50),
-        drops: normalizeDrops(profile.drops)
+        drops: normalizeDrops(profile.drops),
+        brain: normalizeBrain(profile.brain, 'aggressive')
     };
 }
 
