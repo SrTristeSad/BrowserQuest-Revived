@@ -7,6 +7,8 @@ var http = require('http'),
     gameMain = require('./js/main'),
     AdminAuth = require('./admin/auth'),
     AdminHttp = require('./admin/http'),
+    PlayerAuthModule = require('./auth/player-auth'),
+    PlayerAuthHttp = require('./auth/http'),
     SetupPage = require('./setup/page'),
     SetupInfrastructure = require('./setup/infrastructure-setup'),
     Infrastructure = require('./storage/infrastructure');
@@ -135,25 +137,48 @@ function validateInstall(body) {
 }
 
 async function startGame(config) {
-    var services = null;
+    var services = null,
+        playerAuth = null,
+        playerAuthHandler = null,
+        adminHandler,
+        combinedHttpHandler;
+
     if(config.infrastructure && config.infrastructure.postgres && config.infrastructure.redis) {
         services = Infrastructure.createServices(config.infrastructure);
         await services.connect();
+        playerAuth = new PlayerAuthModule.PlayerAuth({services: services, accessMode: config.access_mode || 'mixed'});
+        playerAuthHandler = PlayerAuthHttp.createPlayerAuthHandler({auth: playerAuth});
         console.log('[BrowserQuest] PostgreSQL conectado.');
         console.log('[BrowserQuest] Redis conectado.');
     } else {
         console.warn('[BrowserQuest] Instalação legada sem PostgreSQL/Redis. O jogo continuará iniciando até a migração ser concluída.');
     }
 
+    adminHandler = AdminHttp.createAdminHandler({configDir: configDir, infrastructure: services});
+    combinedHttpHandler = function(request, response) {
+        if(playerAuthHandler && playerAuthHandler(request, response)) { return true; }
+        return adminHandler(request, response);
+    };
+
     config = Object.assign({}, config, {
         port: port,
         host: host,
         serve_client: true,
-        http_handler: AdminHttp.createAdminHandler({configDir: configDir, infrastructure: services})
+        http_handler: combinedHttpHandler,
+        player_authenticator: playerAuth ? function(connection) {
+            if(!connection.headers && connection._request) {
+                connection.headers = connection._request.headers || {};
+            }
+            return playerAuth.authorizeConnection(connection);
+        } : null,
+        player_auth_service: playerAuth
     });
 
     console.log('[BrowserQuest] Instalação encontrada. Iniciando jogo...');
     console.log('[BrowserQuest] Painel administrativo: /admin');
+    if(playerAuth) {
+        console.log('[BrowserQuest] Autenticação de jogadores: ' + (config.access_mode || 'mixed'));
+    }
     gameMain.start(config);
 
     if(services) {
