@@ -81,6 +81,7 @@ function createAdminHandler(options) {
     var configDir = options.configDir,
         services = options.infrastructure || null,
         runtime = options.runtime || null,
+        playerAuth = options.playerAuth || null,
         processStartedAt = Date.now(),
         publicDir = path.join(__dirname, 'public'),
         adminPath = path.join(configDir, 'admin.json'),
@@ -437,6 +438,40 @@ function createAdminHandler(options) {
             try { queryValue = new URL(request.url, 'http://admin.local').searchParams.get('q') || ''; }
             catch(ignoreUrl) {}
             json(response, 200, {accounts: await listAccounts(queryValue)});
+            return;
+        }
+
+        match = pathname.match(/^\/admin\/api\/accounts\/([0-9]+)\/sessions\/revoke$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            if(!playerAuth || typeof playerAuth.destroySessionsByUserId !== 'function') {
+                json(response, 503, {error: 'Gerenciamento de sessões de jogadores indisponível.'});
+                return;
+            }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+
+            var accountId = Number(match[1]),
+                accountResult = await services.postgres.query("SELECT id, username FROM users WHERE id=$1 AND role='player' LIMIT 1", [accountId]);
+            if(accountResult.rowCount !== 1) {
+                json(response, 404, {error: 'Conta de jogador não encontrada.'});
+                return;
+            }
+
+            var account = accountResult.rows[0],
+                reason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Sessões encerradas pelo administrador.',
+                sessionsRevoked = await playerAuth.destroySessionsByUserId(account.id),
+                controls = controlRuntime(),
+                connectionsClosed = controls && typeof controls.kickByUserId === 'function' ? controls.kickByUserId(account.id, reason) : 0;
+
+            await audit(session, 'account.sessions.revoke', account.username, {
+                userId: Number(account.id),
+                reason: reason,
+                sessionsRevoked: sessionsRevoked,
+                connectionsClosed: connectionsClosed
+            }, request);
+            json(response, 200, {ok: true, sessionsRevoked: sessionsRevoked, connectionsClosed: connectionsClosed});
             return;
         }
 
