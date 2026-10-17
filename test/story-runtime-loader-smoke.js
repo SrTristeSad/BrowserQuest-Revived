@@ -87,6 +87,18 @@ function main() {
         published[0].title = 'Mutado';
         assert.notStrictEqual(store.getPublishedStories()[0].title, 'Mutado', 'store must return defensive copies');
 
+        var root = path.join(__dirname, '..'),
+            bootstrap = fs.readFileSync(path.join(root, 'server', 'bootstrap.js'), 'utf8'),
+            mainServer = fs.readFileSync(path.join(root, 'server', 'js', 'main.js'), 'utf8'),
+            player = fs.readFileSync(path.join(root, 'server', 'js', 'player.js'), 'utf8');
+
+        assert.ok(bootstrap.indexOf("StoryStore = require('./admin/story-store').StoryStore") !== -1, 'bootstrap must require StoryStore');
+        assert.ok(bootstrap.indexOf("StoryRuntime = require('./story/runtime').StoryRuntime") !== -1, 'bootstrap must require StoryRuntime');
+        assert.ok(bootstrap.indexOf("storyRuntime = new StoryRuntime(new StoryStore(path.join(configDir, 'stories.json')))" ) !== -1, 'bootstrap must instantiate the published Story Runtime');
+        assert.ok(bootstrap.indexOf('story_runtime: storyRuntime') !== -1, 'bootstrap must inject Story Runtime into game config');
+        assert.ok(mainServer.indexOf('connection.storyRuntime = config.story_runtime || null;') !== -1, 'game connections must receive Story Runtime');
+        assert.ok(player.indexOf('this.storyRuntime = connection.storyRuntime || null;') !== -1, 'Player must retain Story Runtime reference');
+
         console.log('Story runtime loader smoke test passed.');
     } finally {
         fs.rmSync(dir, {recursive: true, force: true});

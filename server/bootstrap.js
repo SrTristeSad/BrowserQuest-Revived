@@ -14,6 +14,8 @@ var http = require('http'),
     Infrastructure = require('./storage/infrastructure'),
     Migrations = require('./storage/migrations'),
     CharacterStore = require('./persistence/character-store').CharacterStore,
+    StoryStore = require('./admin/story-store').StoryStore,
+    StoryRuntime = require('./story/runtime').StoryRuntime,
     StoryProgressStore = require('./story/progress-store').StoryProgressStore,
     GracefulShutdown = require('./lifecycle/graceful-shutdown');
 
@@ -145,6 +147,7 @@ async function startGame(config) {
         playerAuth = null,
         playerAuthHandler = null,
         characterStore = null,
+        storyRuntime = null,
         storyProgressStore = null,
         adminRuntime = {startedAt: Date.now(), server: null, config: null},
         adminHandler,
@@ -157,6 +160,7 @@ async function startGame(config) {
         await services.connect();
         playerAuth = new PlayerAuthModule.PlayerAuth({services: services, accessMode: config.access_mode || 'mixed'});
         characterStore = new CharacterStore({postgres: services.postgres});
+        storyRuntime = new StoryRuntime(new StoryStore(path.join(configDir, 'stories.json')));
         storyProgressStore = new StoryProgressStore({postgres: services.postgres});
         playerAuthHandler = PlayerAuthHttp.createPlayerAuthHandler({auth: playerAuth});
         console.log('[BrowserQuest] PostgreSQL conectado.');
@@ -184,6 +188,7 @@ async function startGame(config) {
         } : null,
         player_auth_service: playerAuth,
         player_persistence: characterStore,
+        story_runtime: storyRuntime,
         story_progress: storyProgressStore,
         // When PostgreSQL persistence is active the bootstrap owns SIGTERM/SIGINT
         // so pending state can be flushed before the aaPanel process exits.
