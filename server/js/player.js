@@ -6,6 +6,7 @@ var cls = require("./lib/class"),
     Properties = require("./properties"),
     Formulas = require("./formulas"),
     check = require("./format").check,
+    MissionService = require("../story/mission-service"),
     Types = require("../../shared/js/gametypes");
 
 module.exports = Player = Character.extend({
@@ -450,6 +451,21 @@ module.exports = Player = Character.extend({
                 this.schedulePersistence({weaponKind: item.kind});
             }
         }
+    },
+
+    startStoryMission: function(storyId, missionId) {
+        var self = this;
+        return MissionService.startMission({
+            runtime: this.storyRuntime,
+            progressStore: this.storyProgress,
+            characterId: this.characterId,
+            storyId: storyId,
+            missionId: missionId,
+            states: this.storyState
+        }).then(function(result) {
+            self.storyState = MissionService.upsertStoryState(self.storyState, result.state);
+            return result;
+        });
     },
 
     schedulePersistence: function(patch) {
