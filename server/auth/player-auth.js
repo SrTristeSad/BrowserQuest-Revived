@@ -254,6 +254,32 @@ PlayerAuth.prototype.destroySessionFromCookieHeader = async function(cookieHeade
     await this.destroySessionByToken(cookies[SESSION_COOKIE]);
 };
 
+PlayerAuth.prototype.destroySessionsByUserId = async function(userId) {
+    var numericUserId = Number(userId), cursor = '0', removed = 0, result, keys, values, toDelete;
+    if(!Number.isInteger(numericUserId) || numericUserId <= 0) { return 0; }
+
+    do {
+        result = await this.services.redis.scan(cursor, {MATCH: 'bq:player:session:*', COUNT: 100});
+        cursor = String(result.cursor);
+        keys = result.keys || [];
+        if(!keys.length) { continue; }
+
+        values = await this.services.redis.mGet(keys);
+        toDelete = [];
+        values.forEach(function(raw, index) {
+            var payload;
+            if(!raw) { return; }
+            try { payload = JSON.parse(raw); }
+            catch(ignoreInvalidSession) { return; }
+            if(Number(payload.userId) === numericUserId) { toDelete.push(keys[index]); }
+        });
+
+        if(toDelete.length) { removed += await this.services.redis.del(toDelete); }
+    } while(cursor !== '0');
+
+    return removed;
+};
+
 PlayerAuth.prototype.isCharacterNameReserved = async function(name) {
     var normalized = normalizeCharacterName(name), result = await this.services.postgres.query(
         'SELECT 1 FROM characters WHERE LOWER(name)=LOWER($1) LIMIT 1',

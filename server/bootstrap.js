@@ -162,7 +162,7 @@ async function startGame(config) {
         console.warn('[BrowserQuest] Instalação legada sem PostgreSQL/Redis. O jogo continuará iniciando até a migração ser concluída.');
     }
 
-    adminHandler = AdminHttp.createAdminHandler({configDir: configDir, infrastructure: services, runtime: adminRuntime});
+    adminHandler = AdminHttp.createAdminHandler({configDir: configDir, infrastructure: services, runtime: adminRuntime, playerAuth: playerAuth});
     combinedHttpHandler = function(request, response) {
         if(playerAuthHandler && playerAuthHandler(request, response)) { return true; }
         return adminHandler(request, response);

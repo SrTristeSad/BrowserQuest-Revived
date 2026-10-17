@@ -209,6 +209,21 @@ function start(config) {
                 return true;
             });
             return found;
+        },
+        kickByUserId: function(userId, reason) {
+            var count = 0;
+            userId = Number(userId);
+            worlds.forEach(function(world) {
+                Object.keys(world.players || {}).forEach(function(playerId) {
+                    var player = world.players[playerId],
+                        auth = player && player.connection ? player.connection.authContext : null;
+                    if(auth && auth.user && Number(auth.user.id) === userId) {
+                        count += 1;
+                        player.connection.close(String(reason || 'Sua sessão foi encerrada pelo administrador.').slice(0, 120));
+                    }
+                });
+            });
+            return count;
         }
     };
 
