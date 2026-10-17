@@ -60,6 +60,9 @@ var FormatChecker = cls.Class.extend({
     }
 });
 
+// Temporary compatibility for old modules that still expect this global.
+global.FormatChecker = FormatChecker;
+
 var checker = new FormatChecker();
 
 exports.FormatChecker = FormatChecker;
