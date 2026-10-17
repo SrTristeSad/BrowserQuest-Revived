@@ -1,0 +1,33 @@
+name: Phase 4 Story Runtime Live Reload
+
+on:
+  push:
+    branches: [phase4-story-runtime-live-reload]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply patch
+        run: node scripts/phase4-story-runtime-live-reload.mjs
+      - name: Syntax check
+        run: node --check server/bootstrap.js && node --check server/admin/http.js
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/bootstrap.js server/admin/http.js
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "feat: reload Story Runtime after admin story mutations"
+            git push
+          fi
