@@ -308,8 +308,9 @@ WorldStore.prototype.normalize = function(state) {
     return {schemaVersion:1,revision:int(state.revision,1,Number.MAX_SAFE_INTEGER,1),status:state.status==='published'?'published':'draft',updatedAt:state.updatedAt||new Date().toISOString(),publishedAt:state.publishedAt||null,map:map,npcs:npcs,mobs:mobs,catalogs:{npcKinds:NPC_KINDS.slice(),mobKinds:MOB_KINDS.slice(),tiles:tiles}};
 };
 WorldStore.prototype.save = function(input) {
-    var previous=this.load(),state=this.normalize(input);
+    var previous=this.load(),state;
     requireValidDoorLinks(input && input.map && input.map.doors,this.base.width,this.base.height);
+    state=this.normalize(input);
     requireStartingCheckpoint(state,this.base);
     state.revision=previous.revision+1; state.status='draft'; state.updatedAt=new Date().toISOString(); state.publishedAt=previous.publishedAt||null;
     atomicWrite(this.statePath,state); return state;
