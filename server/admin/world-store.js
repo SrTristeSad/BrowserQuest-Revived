@@ -2,7 +2,8 @@
 
 var fs = require('fs'),
     path = require('path'),
-    crypto = require('crypto');
+    crypto = require('crypto'),
+    ReferenceValidator = require('./story-reference-validator');
 
 var NPC_KINDS = ['guard','king','octocat','villagegirl','villager','priest','scientist','agent','rick','nyan','sorcerer','beachnpc','forestnpc','desertnpc','lavanpc','coder'];
 var MOB_KINDS = ['rat','skeleton','goblin','ogre','spectre','crab','bat','wizard','eye','snake','skeleton2','boss','deathknight'];
@@ -165,6 +166,7 @@ function WorldStore(options) {
     this.publishedClientJsonPath = options.publishedClientJsonPath;
     this.publishedClientJsPath = options.publishedClientJsPath;
     this.versionsDir = options.versionsDir;
+    this.storiesPath = options.storiesPath || path.join(path.dirname(this.statePath), 'stories.json');
     this.base = readJson(this.baseMapPath);
     this.baseClient = this.baseClientMapPath ? readJson(this.baseClientMapPath) : null;
 }
@@ -180,6 +182,15 @@ WorldStore.prototype.load = function() {
     return this.normalize(state);
 };
 
+WorldStore.prototype._publishedStories = function() {
+    try {
+        var data=readJson(this.storiesPath);
+        return Array.isArray(data.stories) ? data.stories.filter(function(story){return story&&story.status==='published';}) : [];
+    } catch(error) {
+        return [];
+    }
+};
+
 WorldStore.prototype.normalize = function(state) {
     state=state||{};
     var map=state.map||{},
@@ -189,8 +200,6 @@ WorldStore.prototype.normalize = function(state) {
     npcs.forEach(function(p){npcIds[p.id]=true;});
     mobs.forEach(function(p){mobIds[p.id]=true;});
 
-    // Tile painting is intentionally constrained to the original dimensions so the
-    // original visual tile layer stays aligned with server collision/pathing data.
     map.width=baseWidth;
     map.height=baseHeight;
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
@@ -267,7 +276,16 @@ WorldStore.prototype.buildClientMap = function(state) {
 };
 
 WorldStore.prototype.publish = function() {
-    var state=this.load(),publishedMap=this.buildServerMap(state),publishedClient=this.buildClientMap(state),stamp=new Date().toISOString().replace(/[:.]/g,'-'),snapshot;
+    var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
+    if(!validation.ok){
+        error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));
+        error.code='WORLD_STORY_REFERENCE_VALIDATION';
+        error.details=validation.errors;
+        throw error;
+    }
+    publishedMap=this.buildServerMap(state);
+    publishedClient=this.buildClientMap(state);
+    stamp=new Date().toISOString().replace(/[:.]/g,'-');
     fs.mkdirSync(this.versionsDir,{recursive:true,mode:0o700});
     if(fs.existsSync(this.publishedMapPath)){
         snapshot=path.join(this.versionsDir,'world-'+stamp+'.json');

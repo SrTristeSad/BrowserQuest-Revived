@@ -8,9 +8,25 @@ var assert = require('assert'),
     StoryRuntime = require('../server/story/runtime').StoryRuntime,
     startMission = require('../server/story/mission-service').startMission;
 
+function forcePublished(storiesPath, ids) {
+    var data = JSON.parse(fs.readFileSync(storiesPath, 'utf8')),
+        wanted = Object.create(null),
+        now = new Date().toISOString();
+    ids.forEach(function(id) { wanted[id] = true; });
+    data.stories.forEach(function(story) {
+        if(wanted[story.id]) {
+            story.status = 'published';
+            story.publishedAt = story.publishedAt || now;
+            story.updatedAt = now;
+        }
+    });
+    fs.writeFileSync(storiesPath, JSON.stringify(data, null, 2) + '\n', {mode: 0o600});
+}
+
 async function main() {
     var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bq-story-runtime-')),
-        store = new StoryStore(path.join(dir, 'stories.json'));
+        storiesPath = path.join(dir, 'stories.json'),
+        store = new StoryStore(storiesPath);
 
     try {
         store.save({
@@ -21,10 +37,12 @@ async function main() {
             chapters: [{id: 'draft-chapter', missions: [{id: 'draft-mission', title: 'Não carregar'}]}]
         });
 
+        // These fixtures intentionally bypass the modern pre-publication validator.
+        // The runtime must remain defensive when loading legacy/corrupted published data.
         store.save({
             id: 'main-story',
             title: 'História Publicada',
-            status: 'published',
+            status: 'draft',
             entryMissionId: 'm1',
             chapters: [
                 {
@@ -51,10 +69,11 @@ async function main() {
         store.save({
             id: 'broken-entry',
             title: 'Entrada quebrada',
-            status: 'published',
+            status: 'draft',
             entryMissionId: 'does-not-exist',
             chapters: [{id: 'only-chapter', missions: []}]
         });
+        forcePublished(storiesPath, ['main-story', 'broken-entry']);
 
         var runtime = new StoryRuntime(store),
             list = runtime.listStories(),
@@ -91,10 +110,11 @@ async function main() {
         store.save({
             id: 'live-story',
             title: 'Publicada sem reiniciar',
-            status: 'published',
+            status: 'draft',
             entryMissionId: 'live-m1',
             chapters: [{id: 'live-chapter', missions: [{id: 'live-m1', title: 'Nova missão'}]}]
         });
+        forcePublished(storiesPath, ['live-story']);
         assert.strictEqual(runtime.getStory('live-story'), null, 'runtime snapshot must not mutate until reload');
         runtime.reload();
         assert.strictEqual(runtime.getStory('live-story').title, 'Publicada sem reiniciar', 'reload must index newly published stories');
