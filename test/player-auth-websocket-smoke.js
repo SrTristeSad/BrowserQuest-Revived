@@ -1,13 +1,16 @@
 'use strict';
 
 var assert = require('assert'),
+    fs = require('fs'),
+    path = require('path'),
     http = require('http'),
     https = require('https'),
     WebSocket = require('ws'),
     URL = require('url').URL;
 
 var httpBase = process.env.TEST_HTTP_URL || 'http://127.0.0.1:8010',
-    wsUrl = process.env.TEST_WS_URL || 'ws://127.0.0.1:8010/';
+    wsUrl = process.env.TEST_WS_URL || 'ws://127.0.0.1:8010/',
+    baseWorld = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'server', 'maps', 'world_server.json'), 'utf8'));
 
 function requestJson(pathname, method, body, cookie) {
     return new Promise(function(resolve, reject) {
@@ -48,27 +51,106 @@ function requestJson(pathname, method, body, cookie) {
     });
 }
 
-function authenticatedHandshake(cookie, expectedName) {
+function checkpointContaining(x, y) {
+    return (baseWorld.checkpoints || []).find(function(checkpoint) {
+        return x >= checkpoint.x && x < checkpoint.x + checkpoint.w &&
+               y >= checkpoint.y && y < checkpoint.y + checkpoint.h;
+    }) || (baseWorld.checkpoints || []).find(function(checkpoint) {
+        return x >= checkpoint.x && x < checkpoint.x + checkpoint.width &&
+               y >= checkpoint.y && y < checkpoint.y + checkpoint.height;
+    }) || null;
+}
+
+function authenticatedPersistenceHandshake(cookie, expectedName) {
+    return new Promise(function(resolve, reject) {
+        var socket = new WebSocket(wsUrl, {headers: {Cookie: cookie}}),
+            done = false,
+            welcome = null,
+            checkpoint = null,
+            equipment = new Set(),
+            timeout = setTimeout(function() {
+                if(done) { return; }
+                done = true;
+                socket.terminate();
+                reject(new Error('Timed out waiting for authenticated persistence handshake'));
+            }, 8000);
+
+        function maybeCheckpoint() {
+            if(!welcome || !equipment.has(21) || !equipment.has(60) || checkpoint) { return; }
+            checkpoint = checkpointContaining(Number(welcome[3]), Number(welcome[4]));
+            if(!checkpoint) {
+                done = true;
+                clearTimeout(timeout);
+                socket.terminate();
+                reject(new Error('Initial account spawn is not inside a known checkpoint'));
+                return;
+            }
+            socket.send(JSON.stringify([26, checkpoint.id]));
+            setTimeout(function() {
+                if(done) { return; }
+                done = true;
+                clearTimeout(timeout);
+                socket.close();
+                resolve(checkpoint);
+            }, 250);
+        }
+
+        socket.on('message', function(data) {
+            var text = data.toString('utf8');
+            if(text === 'go') {
+                // Send valid but forged high-level equipment. The server must ignore it for accounts.
+                socket.send(JSON.stringify([0, 'SpoofedName', 26, 63]));
+                return;
+            }
+            var message;
+            try { message = JSON.parse(text); } catch(ignore) { return; }
+            if(!Array.isArray(message)) { return; }
+            if(message[0] === 1) {
+                try {
+                    assert.strictEqual(message[2], expectedName, 'server must override spoofed HELLO name');
+                    welcome = message;
+                    maybeCheckpoint();
+                } catch(error) {
+                    done = true;
+                    clearTimeout(timeout);
+                    socket.terminate();
+                    reject(error);
+                }
+            } else if(message[0] === 13) {
+                equipment.add(Number(message[2]));
+                maybeCheckpoint();
+            }
+        });
+        socket.on('error', function(error) {
+            if(!done) { done = true; clearTimeout(timeout); reject(error); }
+        });
+    });
+}
+
+function reconnectAtCheckpoint(cookie, expectedName, checkpoint) {
     return new Promise(function(resolve, reject) {
         var socket = new WebSocket(wsUrl, {headers: {Cookie: cookie}}), done = false,
             timeout = setTimeout(function() {
                 if(done) { return; }
                 done = true;
                 socket.terminate();
-                reject(new Error('Timed out waiting for authenticated WELCOME'));
-            }, 7000);
+                reject(new Error('Timed out waiting for checkpoint reconnect'));
+            }, 8000);
 
         socket.on('message', function(data) {
             var text = data.toString('utf8');
             if(text === 'go') {
-                socket.send(JSON.stringify([0, 'SpoofedName', 21, 60]));
+                socket.send(JSON.stringify([0, 'AnotherSpoof', 26, 63]));
                 return;
             }
             var message;
             try { message = JSON.parse(text); } catch(ignore) { return; }
             if(Array.isArray(message) && message[0] === 1) {
                 try {
-                    assert.strictEqual(message[2], expectedName, 'server must override spoofed HELLO name');
+                    assert.strictEqual(message[2], expectedName);
+                    var x = Number(message[3]), y = Number(message[4]), width = Number(checkpoint.w || checkpoint.width), height = Number(checkpoint.h || checkpoint.height);
+                    assert.ok(x >= checkpoint.x && x < checkpoint.x + width, 'reconnected x must be inside saved checkpoint');
+                    assert.ok(y >= checkpoint.y && y < checkpoint.y + height, 'reconnected y must be inside saved checkpoint');
                     done = true;
                     clearTimeout(timeout);
                     socket.close();
@@ -180,6 +262,8 @@ async function main() {
     });
     assert.strictEqual(registration.data.loggedIn, true);
     assert.strictEqual(registration.data.character.name, characterName);
+    assert.strictEqual(registration.data.character.armorKind, 21);
+    assert.strictEqual(registration.data.character.weaponKind, 60);
 
     var setCookie = registration.headers['set-cookie'];
     assert.ok(setCookie && setCookie.length, 'registration must set a session cookie');
@@ -190,7 +274,8 @@ async function main() {
     assert.strictEqual(session.data.loggedIn, true);
     assert.strictEqual(session.data.character.name, characterName);
 
-    await authenticatedHandshake(cookie, characterName);
+    var checkpoint = await authenticatedPersistenceHandshake(cookie, characterName);
+    await reconnectAtCheckpoint(cookie, characterName, checkpoint);
     await reservedGuestHandshake(characterName);
 
     var logout = await requestJson('/api/auth/logout', 'POST', {}, cookie);
@@ -199,9 +284,12 @@ async function main() {
     var afterLogout = await requestJson('/api/auth/session', 'GET', undefined, cookie);
     assert.strictEqual(afterLogout.data.loggedIn, false);
 
+    var relogin = await requestJson('/api/auth/login', 'POST', {username: username, password: password});
+    assert.strictEqual(relogin.data.character.lastCheckpointId, Number(checkpoint.id));
+
     await verifyAdminInfrastructure();
 
-    console.log('Player auth/admin settings HTTP/WebSocket smoke tests passed.');
+    console.log('Player persistence/auth/admin HTTP/WebSocket smoke tests passed.');
 }
 
 main().catch(function(error) {
