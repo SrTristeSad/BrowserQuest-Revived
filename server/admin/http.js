@@ -564,6 +564,37 @@ function createAdminHandler(options) {
             return;
         }
 
+        match = pathname.match(/^\/admin\/api\/accounts\/([0-9]+)\/reactivate$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+
+            var reactivateAccountId = Number(match[1]),
+                reactivateResult = await services.postgres.query("SELECT id, username, status FROM users WHERE id=$1 AND role='player' LIMIT 1", [reactivateAccountId]);
+            if(reactivateResult.rowCount !== 1) {
+                json(response, 404, {error: 'Conta de jogador não encontrada.'});
+                return;
+            }
+
+            var reactivateAccount = reactivateResult.rows[0],
+                reactivateReason = String(body.reason || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'Conta reativada pelo administrador.',
+                reactivatePreviousStatus = reactivateAccount.status,
+                reactivated = (await services.postgres.query("UPDATE users SET status='active', updated_at=NOW() WHERE id=$1 AND role='player' RETURNING id, username, status", [reactivateAccount.id])).rows[0];
+
+            await audit(session, 'account.reactivate', reactivateAccount.username, {
+                userId: Number(reactivateAccount.id),
+                previousStatus: reactivatePreviousStatus,
+                reason: reactivateReason
+            }, request);
+            json(response, 200, {
+                ok: true,
+                account: {id: Number(reactivated.id), username: reactivated.username, status: reactivated.status}
+            });
+            return;
+        }
+
         if(pathname === '/admin/api/settings/access' && request.method === 'GET') {
             if(!await requireAdmin(request, response, true)) { return; }
             json(response, 200, await getAccessSettings());
