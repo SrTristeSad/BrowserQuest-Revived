@@ -34,9 +34,7 @@ function unchangedResult(missionEntry, state, alreadyCompleted) {
         mission: missionEntry,
         state: state,
         itemRewards: [],
-        inventory: null,
-        achievementRewards: [],
-        achievements: null
+        inventory: null
     };
 }
 
@@ -146,9 +144,7 @@ async function completeMission(options) {
         state: state,
         completedMissionId: missionId,
         itemRewards: rewardResult ? rewardResult.itemRewards : [],
-        inventory: rewardResult ? rewardResult.inventory : null,
-        achievementRewards: rewardResult ? rewardResult.achievementRewards : [],
-        achievements: rewardResult ? rewardResult.achievements : null
+        inventory: rewardResult ? rewardResult.inventory : null
     };
 }
 
