@@ -306,6 +306,44 @@ function createAdminHandler(options) {
         });
     }
 
+    function sanitizeAuditMetadata(value) {
+        if(Array.isArray(value)) {
+            return value.map(sanitizeAuditMetadata);
+        }
+        if(!value || typeof value !== 'object') { return value; }
+        var clean = {};
+        Object.keys(value).forEach(function(key) {
+            if(/password|token|secret|cookie|authorization/i.test(key)) { return; }
+            clean[key] = sanitizeAuditMetadata(value[key]);
+        });
+        return clean;
+    }
+
+    async function listAuditEntries(limit, before) {
+        if(!services || !services.postgres) { return {entries: [], nextBefore: null}; }
+        limit = Math.max(1, Math.min(100, Number(limit) || 50));
+        before = before && /^[0-9]+$/.test(String(before)) ? Number(before) : null;
+        var result = await services.postgres.query(
+            "SELECT l.id, l.actor_user_id, u.username AS actor_username, u.role AS actor_role, l.action, l.target, l.metadata, l.created_at FROM admin_audit_log l LEFT JOIN users u ON u.id=l.actor_user_id WHERE ($1::bigint IS NULL OR l.id < $1::bigint) ORDER BY l.id DESC LIMIT $2",
+            [before, limit]
+        ), entries = result.rows.map(function(row) {
+            return {
+                id: Number(row.id),
+                actorUserId: row.actor_user_id === null ? null : Number(row.actor_user_id),
+                actorUsername: row.actor_username || null,
+                actorRole: row.actor_role || null,
+                action: row.action,
+                target: row.target || null,
+                metadata: sanitizeAuditMetadata(row.metadata || {}),
+                createdAt: row.created_at
+            };
+        });
+        return {
+            entries: entries,
+            nextBefore: entries.length === limit ? entries[entries.length - 1].id : null
+        };
+    }
+
     function controlRuntime() {
         return runtime && runtime.server && runtime.server.adminRuntime ? runtime.server.adminRuntime : null;
     }
@@ -403,6 +441,18 @@ function createAdminHandler(options) {
                 accounts: accounts,
                 adminSessions: sessions.storage
             });
+            return;
+        }
+
+        if(pathname === '/admin/api/audit' && request.method === 'GET') {
+            if(!await requireAdmin(request, response, true)) { return; }
+            var auditLimit = 50, auditBefore = null;
+            try {
+                var auditUrl = new URL(request.url, 'http://admin.local');
+                auditLimit = auditUrl.searchParams.get('limit') || 50;
+                auditBefore = auditUrl.searchParams.get('before');
+            } catch(ignoreAuditUrl) {}
+            json(response, 200, await listAuditEntries(auditLimit, auditBefore));
             return;
         }
 
