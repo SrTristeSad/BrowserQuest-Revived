@@ -32,6 +32,7 @@ function start(config) {
     var ws = require('./ws'),
         WorldServer = require('./worldserver'),
         Player = require('./player'),
+        StoryKillProgress = require('../story/kill-progress'),
         _ = require('underscore'),
         worlds = [],
         metrics,
@@ -39,6 +40,7 @@ function start(config) {
         lastTotalPlayers = 0,
         checkPopulationInterval;
 
+    StoryKillProgress.attach(WorldServer);
     config = resolvePublishedMap(Object.assign({}, config));
     config.port = parseInt(process.env.PORT || config.port || 8000, 10);
     config.host = process.env.HOST || config.host || '127.0.0.1';
