@@ -1,0 +1,38 @@
+name: Patch account equipment sync
+
+on:
+  push:
+    branches: [account-equipment-sync]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: account-equipment-sync
+      - name: Synchronize authoritative equipment after WELCOME
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('server/js/player.js')
+          text = path.read_text()
+          old = "        this.send([Types.Messages.WELCOME, this.id, this.name, this.x, this.y, this.hitPoints]);\n"
+          new = old + "        if(auth.type === 'account') {\n            // WELCOME stays backward-compatible; existing EQUIP messages synchronize\n            // the account's authoritative PostgreSQL equipment to this client.\n            this.send(this.equip(this.armor).serialize());\n            this.send(this.equip(this.weapon).serialize());\n        }\n"
+          if text.count(old) != 1:
+              raise SystemExit('WELCOME anchor was not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify syntax
+        run: node --check server/js/player.js
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/js/player.js
+          git commit -m "fix: sync persisted account equipment after welcome"
+          git push
