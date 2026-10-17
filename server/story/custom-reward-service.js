@@ -177,10 +177,11 @@ function expandCustomRewards(options) {
         missionEntry = options.missionEntry,
         state = options.state || {},
         sourceRewards = Array.isArray(options.rewards) ? options.rewards : [],
+        hasCustom = sourceRewards.some(function(reward) { return reward && reward.type === 'custom'; }),
         expanded = [],
         executions = [];
 
-    if(!runtime || typeof runtime.resolveCustomHandler !== 'function') {
+    if(hasCustom && (!runtime || typeof runtime.resolveCustomHandler !== 'function')) {
         throw customRewardError('STORY_RUNTIME_UNAVAILABLE', 'Story Runtime custom indisponível para recompensa.');
     }
 
