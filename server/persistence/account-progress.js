@@ -1,5 +1,7 @@
 'use strict';
 
+var ACHIEVEMENT_IDS = Object.freeze(Array.from({length: 20}, function(_, index) { return index + 1; }));
+
 var DEFAULT_ACHIEVEMENTS = Object.freeze({
     unlocked: [],
     ratCount: 0,
@@ -28,6 +30,17 @@ function copyDefaults() {
     };
 }
 
+function isValidAchievementId(value) {
+    return Number.isInteger(value) && ACHIEVEMENT_IDS.indexOf(value) >= 0;
+}
+
+function parseAchievementId(value) {
+    var text = String(value == null ? '' : value).trim(), id;
+    if(!/^\d+$/.test(text)) { return null; }
+    id = Number(text);
+    return isValidAchievementId(id) ? id : null;
+}
+
 function clampInteger(value, maximum) {
     var number = Number(value);
     if(!Number.isFinite(number)) { return 0; }
@@ -40,7 +53,7 @@ function normalizeUnlocked(value) {
     var seen = {};
     if(!Array.isArray(value)) { return []; }
     return value.map(function(id) { return Number(id); }).filter(function(id) {
-        if(!Number.isInteger(id) || id < 1 || id > 20 || seen[id]) { return false; }
+        if(!isValidAchievementId(id) || seen[id]) { return false; }
         seen[id] = true;
         return true;
     }).sort(function(a, b) { return a - b; });
@@ -130,6 +143,9 @@ AccountProgress.prototype.mergeAchievements = async function(characterId, incomi
 };
 
 exports.AccountProgress = AccountProgress;
+exports.ACHIEVEMENT_IDS = ACHIEVEMENT_IDS;
 exports.DEFAULT_ACHIEVEMENTS = DEFAULT_ACHIEVEMENTS;
+exports.isValidAchievementId = isValidAchievementId;
+exports.parseAchievementId = parseAchievementId;
 exports.normalizeAchievements = normalizeAchievements;
 exports.mergeAchievements = mergeAchievements;
