@@ -32,6 +32,7 @@ function start(config) {
     var ws = require('./ws'),
         WorldServer = require('./worldserver'),
         Player = require('./player'),
+        Messages = require('./message'),
         _ = require('underscore'),
         worlds = [],
         metrics,
@@ -190,6 +191,51 @@ function start(config) {
                 });
             });
             return players;
+        },
+        kickPlayer: function(playerId, reason) {
+            var found = null;
+            worlds.some(function(world, worldIndex) {
+                var player = world.players && world.players[String(playerId)];
+                if(!player) { return false; }
+                var auth = player.connection && player.connection.authContext;
+                found = {
+                    id: String(player.id),
+                    name: player.name || null,
+                    world: world.id || ('world' + (worldIndex + 1)),
+                    userId: auth && auth.user ? Number(auth.user.id) : null,
+                    username: auth && auth.user ? auth.user.username : null,
+                    characterId: auth && auth.character ? Number(auth.character.id) : null
+                };
+                player.connection.close(String(reason || 'Conexão encerrada pelo administrador.').slice(0, 120));
+                return true;
+            });
+            return found;
+        },
+        kickByUserId: function(userId, reason) {
+            var count = 0;
+            userId = Number(userId);
+            worlds.forEach(function(world) {
+                Object.keys(world.players || {}).forEach(function(playerId) {
+                    var player = world.players[playerId],
+                        auth = player && player.connection ? player.connection.authContext : null;
+                    if(auth && auth.user && Number(auth.user.id) === userId) {
+                        count += 1;
+                        player.connection.close(String(reason || 'Sua sessão foi encerrada pelo administrador.').slice(0, 120));
+                    }
+                });
+            });
+            return count;
+        },
+        broadcastAnnouncement: function(message) {
+            var count = 0, text = '[ADMIN] ' + String(message || '').trim().slice(0, 120);
+            if(text === '[ADMIN] ') { return 0; }
+            worlds.forEach(function(world) {
+                world.forEachPlayer(function(player) {
+                    world.pushToPlayer(player, new Messages.Chat(player, text));
+                    count += 1;
+                });
+            });
+            return count;
         }
     };
 

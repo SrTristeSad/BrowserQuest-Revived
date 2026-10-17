@@ -305,6 +305,36 @@ function createAdminHandler(options) {
         });
     }
 
+    function controlRuntime() {
+        return runtime && runtime.server && runtime.server.adminRuntime ? runtime.server.adminRuntime : null;
+    }
+
+    async function revokePlayerSessions(userId) {
+        if(!services || !services.redis) { return 0; }
+        var removed = 0;
+        for await (var page of services.redis.scanIterator({MATCH: 'bq:player:session:*', COUNT: 100})) {
+            var keys = Array.isArray(page) ? page : [page];
+            if(!keys.length) { continue; }
+            var values = await services.redis.mGet(keys), toDelete = [];
+            values.forEach(function(raw, index) {
+                if(!raw) { return; }
+                try {
+                    var session = JSON.parse(raw);
+                    if(Number(session.userId) === Number(userId)) { toDelete.push(keys[index]); }
+                } catch(ignoreSession) {}
+            });
+            if(toDelete.length) {
+                removed += await services.redis.del(toDelete);
+            }
+        }
+        return removed;
+    }
+
+    function cleanReason(value, fallback) {
+        var reason = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+        return reason || fallback;
+    }
+
     async function handle(request, response, pathname) {
         var session, body, match;
 
@@ -413,6 +443,80 @@ function createAdminHandler(options) {
             try { queryValue = new URL(request.url, 'http://admin.local').searchParams.get('q') || ''; }
             catch(ignoreUrl) {}
             json(response, 200, {accounts: await listAccounts(queryValue)});
+            return;
+        }
+
+        match = pathname.match(/^\/admin\/api\/players\/([0-9]+)\/kick$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+            var kickReason = cleanReason(body.reason, 'Conexão encerrada pelo administrador.'),
+                controls = controlRuntime(),
+                kicked = controls && typeof controls.kickPlayer === 'function' ? controls.kickPlayer(match[1], kickReason) : null;
+            if(!kicked) { json(response, 404, {error: 'Jogador não está mais conectado.'}); return; }
+            await audit(session, 'player.kick', kicked.username || kicked.name || kicked.id, {playerId: kicked.id, userId: kicked.userId, characterId: kicked.characterId, reason: kickReason}, request);
+            json(response, 200, {ok: true, player: kicked});
+            return;
+        }
+
+        match = pathname.match(/^\/admin\/api\/accounts\/([0-9]+)\/status$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+            var nextStatus = String(body.status || ''),
+                statusReason = cleanReason(body.reason, nextStatus === 'active' ? 'Status restaurado pelo administrador.' : 'Ação administrativa.'),
+                allowedStatuses = ['active', 'suspended', 'banned'];
+            if(allowedStatuses.indexOf(nextStatus) === -1) { json(response, 400, {error: 'Status de conta inválido.'}); return; }
+            var statusResult = await services.postgres.query(
+                "UPDATE users SET status=$1, updated_at=NOW() WHERE id=$2 AND role='player' RETURNING id, username, status",
+                [nextStatus, Number(match[1])]
+            );
+            if(statusResult.rowCount !== 1) { json(response, 404, {error: 'Conta de jogador não encontrada.'}); return; }
+            var changed = statusResult.rows[0], removedSessions = 0, disconnected = 0;
+            if(nextStatus !== 'active') {
+                removedSessions = await revokePlayerSessions(changed.id);
+                controls = controlRuntime();
+                if(controls && typeof controls.kickByUserId === 'function') {
+                    disconnected = controls.kickByUserId(changed.id, nextStatus === 'banned' ? 'Sua conta foi banida.' : 'Sua conta foi suspensa.');
+                }
+            }
+            await audit(session, 'account.status.' + nextStatus, changed.username, {userId: Number(changed.id), reason: statusReason, sessionsRevoked: removedSessions, connectionsClosed: disconnected}, request);
+            json(response, 200, {ok: true, account: {id: Number(changed.id), username: changed.username, status: changed.status}, sessionsRevoked: removedSessions, connectionsClosed: disconnected});
+            return;
+        }
+
+        match = pathname.match(/^\/admin\/api\/accounts\/([0-9]+)\/sessions\/revoke$/);
+        if(match && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+            var accountResult = await services.postgres.query("SELECT id, username FROM users WHERE id=$1 AND role='player'", [Number(match[1])]);
+            if(accountResult.rowCount !== 1) { json(response, 404, {error: 'Conta de jogador não encontrada.'}); return; }
+            var account = accountResult.rows[0], revokeReason = cleanReason(body.reason, 'Sessões encerradas pelo administrador.');
+            removedSessions = await revokePlayerSessions(account.id);
+            controls = controlRuntime();
+            disconnected = controls && typeof controls.kickByUserId === 'function' ? controls.kickByUserId(account.id, revokeReason) : 0;
+            await audit(session, 'account.sessions.revoke', account.username, {userId: Number(account.id), reason: revokeReason, sessionsRevoked: removedSessions, connectionsClosed: disconnected}, request);
+            json(response, 200, {ok: true, sessionsRevoked: removedSessions, connectionsClosed: disconnected});
+            return;
+        }
+
+        if(pathname === '/admin/api/announcement' && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            try { body = await readJson(request); }
+            catch(error) { json(response, 400, {error: 'JSON inválido.'}); return; }
+            var announcement = String(body.message || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+            if(!announcement) { json(response, 400, {error: 'Digite uma mensagem para o anúncio.'}); return; }
+            controls = controlRuntime();
+            var delivered = controls && typeof controls.broadcastAnnouncement === 'function' ? controls.broadcastAnnouncement(announcement) : 0;
+            await audit(session, 'announcement.send', 'all-online-players', {message: announcement, delivered: delivered}, request);
+            json(response, 200, {ok: true, delivered: delivered});
             return;
         }
 
