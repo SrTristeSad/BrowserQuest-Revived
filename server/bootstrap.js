@@ -9,6 +9,7 @@ var http = require('http'),
     AdminHttp = require('./admin/http'),
     PlayerAuthModule = require('./auth/player-auth'),
     PlayerAuthHttp = require('./auth/http'),
+    PlayerProgress = require('./storage/player-progress').PlayerProgress,
     SetupPage = require('./setup/page'),
     SetupInfrastructure = require('./setup/infrastructure-setup'),
     Infrastructure = require('./storage/infrastructure');
@@ -139,6 +140,7 @@ function validateInstall(body) {
 async function startGame(config) {
     var services = null,
         playerAuth = null,
+        playerProgress = null,
         playerAuthHandler = null,
         adminHandler,
         combinedHttpHandler;
@@ -147,6 +149,7 @@ async function startGame(config) {
         services = Infrastructure.createServices(config.infrastructure);
         await services.connect();
         playerAuth = new PlayerAuthModule.PlayerAuth({services: services, accessMode: config.access_mode || 'mixed'});
+        playerProgress = new PlayerProgress({postgres: services.postgres});
         playerAuthHandler = PlayerAuthHttp.createPlayerAuthHandler({auth: playerAuth});
         console.log('[BrowserQuest] PostgreSQL conectado.');
         console.log('[BrowserQuest] Redis conectado.');
@@ -171,13 +174,15 @@ async function startGame(config) {
             }
             return playerAuth.authorizeConnection(connection);
         } : null,
-        player_auth_service: playerAuth
+        player_auth_service: playerAuth,
+        player_persistence_service: playerProgress
     });
 
     console.log('[BrowserQuest] Instalação encontrada. Iniciando jogo...');
     console.log('[BrowserQuest] Painel administrativo: /admin');
     if(playerAuth) {
         console.log('[BrowserQuest] Autenticação de jogadores: ' + (config.access_mode || 'mixed'));
+        console.log('[BrowserQuest] Persistência de personagem: PostgreSQL');
     }
     gameMain.start(config);
 
