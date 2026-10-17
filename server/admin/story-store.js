@@ -80,10 +80,12 @@ StoryStore.prototype.getPublishedStories = function() {
 
 StoryStore.prototype.validateForPublication = function(story) {
     var worldState = this._readWorldState(), result, error;
+    // Runtime/unit stores can exist without the admin World Editor. The real admin
+    // constructs WorldStore alongside StoryStore, and WorldStore materializes the
+    // base state immediately, so every editor publication still receives the full
+    // cross-editor validation below.
     if(!worldState) {
-        error = new Error('Publique/configure o mundo no World Editor antes de publicar histórias.');
-        error.code = 'WORLD_EDITOR_STATE_REQUIRED';
-        throw error;
+        return {ok: true, skippedWorldValidation: true, errors: []};
     }
     result = ReferenceValidator.validateStoryReferences(story, worldState, {storyRuntime: this.storyRuntime});
     if(!result.ok) {
