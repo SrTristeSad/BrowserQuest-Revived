@@ -1,0 +1,36 @@
+name: Phase 3 Audit History UI Patch
+
+on:
+  push:
+    branches: [phase3-audit-history-ui]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-audit-history-ui:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply audit history UI patch
+        run: node scripts/phase3-audit-history-ui-patch.mjs
+      - name: Verify dashboard audit controls
+        run: |
+          grep -q 'Histórico administrativo' server/admin/public/dashboard.html
+          grep -q '/admin/api/audit?limit=25' server/admin/public/dashboard.html
+          grep -q "pre.textContent=auditMetadataText" server/admin/public/dashboard.html
+      - name: Commit audit history UI patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/admin/public/dashboard.html
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "feat: show admin audit history in dashboard"
+            git push
+          fi
