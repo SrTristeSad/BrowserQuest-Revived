@@ -1,0 +1,99 @@
+name: Admin Dashboard E2E
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-live-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null || ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql redis-server
+          fi
+          sudo service postgresql start
+          sudo service redis-server start
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='browserquest'" | grep -q 1; then
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE browserquest LOGIN PASSWORD 'browserquest_test'"
+          fi
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='browserquest'" | grep -q 1; then
+            sudo -u postgres createdb -O browserquest browserquest
+          fi
+          redis-cli ping | grep -q PONG
+
+      - name: Install BrowserQuest and open dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETUP_DIR="$(mktemp -d)"
+          echo "BROWSERQUEST_CONFIG_DIR=$SETUP_DIR/config" >> "$GITHUB_ENV"
+          echo "SETUP_DIR=$SETUP_DIR" >> "$GITHUB_ENV"
+          BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config" PORT=8014 node app.js > /tmp/browserquest-admin-dashboard.log 2>&1 &
+          echo "$!" > /tmp/browserquest-admin-dashboard.pid
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8014/setup >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          CODE="$(grep -oE 'CÓDIGO DE INSTALAÇÃO: [0-9]{6}' /tmp/browserquest-admin-dashboard.log | tail -1 | grep -oE '[0-9]{6}')"
+          test -n "$CODE"
+
+          cat > /tmp/admin-dashboard-setup.json <<JSON
+          {"code":"$CODE","worlds":2,"players":10,"accessMode":"mixed","pgHost":"127.0.0.1","pgPort":5432,"pgDatabase":"browserquest","pgUser":"browserquest","pgPassword":"browserquest_test","pgSsl":false,"redisHost":"127.0.0.1","redisPort":6379,"redisUsername":"","redisPassword":"","redisDatabase":0,"redisTls":false,"adminUsername":"owner_dashboard","adminPassword":"StrongPassword123!","adminPasswordConfirm":"StrongPassword123!"}
+          JSON
+          curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/admin-dashboard-setup.json http://127.0.0.1:8014/setup/install | grep -q '"ok":true'
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8014/api/auth/policy | grep -q '"accessMode":"mixed"'; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8014/admin/login | grep -qi 'PAINEL ADMINISTRATIVO'
+
+      - name: Verify dashboard live data and account listing
+        env:
+          TEST_HTTP_URL: http://127.0.0.1:8014
+          TEST_WS_URL: ws://127.0.0.1:8014/
+          TEST_ADMIN_USERNAME: owner_dashboard
+          TEST_ADMIN_PASSWORD: StrongPassword123!
+        run: node test/admin-dashboard-e2e.js
+
+      - name: Verify dashboard HTML route
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent -c /tmp/admin-dashboard-cookie.txt \
+            -H 'content-type: application/json' \
+            -d '{"username":"owner_dashboard","password":"StrongPassword123!"}' \
+            http://127.0.0.1:8014/admin/api/login | grep -q '"ok":true'
+          curl --fail --silent -b /tmp/admin-dashboard-cookie.txt http://127.0.0.1:8014/admin/dashboard | grep -qi '<h1>Dashboard</h1>'
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/browserquest-admin-dashboard.pid; then
+            kill "$(cat /tmp/browserquest-admin-dashboard.pid)" 2>/dev/null || true
+          fi
+          rm -rf "${SETUP_DIR:-}" || true
