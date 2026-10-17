@@ -148,40 +148,8 @@ jobs:
           curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/story-editor | grep -qi 'Editor de História'
           curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/world-editor | grep -qi 'Editor de Mundo'
 
-          cat > /tmp/story.json <<'JSON'
-          {
-            "title": "A Ponte dos Ratos",
-            "description": "Campanha de teste do editor.",
-            "status": "draft",
-            "chapters": [{
-              "title": "Primeiro capítulo",
-              "missions": [{
-                "title": "Limpe a ponte",
-                "giverNpc": "Guarda",
-                "introDialogue": [{"speaker":"Guarda","text":"A ponte está tomada."}],
-                "objective": {"type":"kill","target":"rat","amount":5,"text":"Derrote 5 ratos"},
-                "rewards": [{"type":"item","value":"sword2","amount":1}],
-                "choices": []
-              }]
-            }]
-          }
-          JSON
-
-          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/story.json http://127.0.0.1:8010/admin/api/stories > /tmp/saved-story.json
-          grep -q 'A Ponte dos Ratos' /tmp/saved-story.json
-          STORY_ID="$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/saved-story.json','utf8')).id)")"
-          test -n "$STORY_ID"
-          curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/api/stories | grep -q "$STORY_ID"
-
-          node - <<'NODE'
-          const fs = require('fs');
-          const story = JSON.parse(fs.readFileSync('/tmp/saved-story.json', 'utf8'));
-          story.status = 'published';
-          fs.writeFileSync('/tmp/published-story.json', JSON.stringify(story));
-          NODE
-          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/published-story.json http://127.0.0.1:8010/admin/api/stories | grep -q '"status":"published"'
-          curl --fail --silent -b /tmp/bq-cookies.txt -X DELETE http://127.0.0.1:8010/admin/api/stories/$STORY_ID | grep -q '"ok":true'
-
+          # Create the World Editor draft first so Story publication can validate
+          # the real NPC/mob references used by this campaign.
           curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/api/world > /tmp/world.json
           node - <<'NODE'
           const fs = require('fs');
@@ -208,6 +176,47 @@ jobs:
           grep -q 'Guarda do Teste' /tmp/world-saved.json
           grep -q 'Rato Alfa' /tmp/world-saved.json
 
+          cat > /tmp/story.json <<'JSON'
+          {
+            "id": "story-test",
+            "title": "A Ponte dos Ratos",
+            "description": "Campanha de teste do editor.",
+            "status": "draft",
+            "entryMissionId": "mission-test",
+            "chapters": [{
+              "id": "chapter-test",
+              "title": "Primeiro capítulo",
+              "missions": [{
+                "id": "mission-test",
+                "title": "Limpe a ponte",
+                "giverNpc": "npc_test_guard",
+                "introDialogue": [{"speaker":"Guarda","text":"A ponte está tomada."}],
+                "objective": {"type":"kill","target":"mob_test_rat","amount":5,"text":"Derrote 5 ratos"},
+                "rewards": [{"type":"item","value":"sword2","amount":1}],
+                "choices": []
+              }]
+            }]
+          }
+          JSON
+
+          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/story.json http://127.0.0.1:8010/admin/api/stories > /tmp/saved-story.json
+          grep -q 'A Ponte dos Ratos' /tmp/saved-story.json
+          STORY_ID="$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/saved-story.json','utf8')).id)")"
+          test "$STORY_ID" = 'story-test'
+          curl --fail --silent -b /tmp/bq-cookies.txt http://127.0.0.1:8010/admin/api/stories | grep -q "$STORY_ID"
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const story = JSON.parse(fs.readFileSync('/tmp/saved-story.json', 'utf8'));
+          story.status = 'published';
+          fs.writeFileSync('/tmp/published-story.json', JSON.stringify(story));
+          NODE
+          curl --fail --silent -b /tmp/bq-cookies.txt -H 'content-type: application/json' --data-binary @/tmp/published-story.json http://127.0.0.1:8010/admin/api/stories > /tmp/story-published.json
+          grep -q '"status":"published"' /tmp/story-published.json
+          grep -q '"giverNpc":"npc_test_guard"' /tmp/story-published.json
+          grep -q '"target":"mob_test_rat"' /tmp/story-published.json
+
+          # World publication now cross-checks its story links against the published story.
           curl --fail --silent -b /tmp/bq-cookies.txt -X POST -H 'content-type: application/json' -d '{}' http://127.0.0.1:8010/admin/api/world/publish > /tmp/world-publish.json
           grep -q '"ok":true' /tmp/world-publish.json
           grep -q '"clientMapSynchronized":true' /tmp/world-publish.json
@@ -221,6 +230,8 @@ jobs:
           const server = JSON.parse(fs.readFileSync(dir + '/world_server_published.json', 'utf8'));
           const client = JSON.parse(fs.readFileSync(dir + '/world_client_published.json', 'utf8'));
           if (server.editorProfiles.npcs.npc_test_guard.name !== 'Guarda do Teste') throw new Error('custom NPC missing');
+          if (server.editorProfiles.npcs.npc_test_guard.storyId !== 'story-test') throw new Error('NPC story link missing');
+          if (server.editorProfiles.npcs.npc_test_guard.missionId !== 'mission-test') throw new Error('NPC mission link missing');
           if (server.editorProfiles.mobs.mob_test_rat.hitPoints !== 321) throw new Error('custom mob stats missing');
           if (!server.roamingAreas.some(a => a.profileId === 'mob_test_rat')) throw new Error('custom roaming area missing');
           if (server.editorRevision !== client.editorRevision) throw new Error('client/server revision mismatch');
