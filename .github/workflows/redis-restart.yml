@@ -44,22 +44,27 @@ jobs:
           PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
           redis-cli ping | grep -q PONG
 
-      - name: Install BrowserQuest and keep it running
+      - name: Install game and restart Redis while it is running
         shell: bash
+        env:
+          TEST_HTTP_URL: http://127.0.0.1:8011
+          TEST_PG_HOST: 127.0.0.1
+          TEST_PG_PORT: 5432
+          TEST_PG_DATABASE: browserquest
+          TEST_PG_USER: browserquest
+          TEST_PG_PASSWORD: browserquest_test
         run: |
           set -euo pipefail
           SETUP_DIR="$(mktemp -d)"
-          echo "BROWSERQUEST_CONFIG_DIR=$SETUP_DIR/config" >> "$GITHUB_ENV"
-          echo "PORT=8011" >> "$GITHUB_ENV"
           export BROWSERQUEST_CONFIG_DIR="$SETUP_DIR/config"
           export PORT=8011
 
           node app.js > /tmp/browserquest-redis-restart.log 2>&1 &
-          echo "$!" > /tmp/browserquest-redis-restart.pid
-
+          APP_PID=$!
           cleanup() {
-            if test -f /tmp/browserquest-redis-restart.pid; then
-              kill "$(cat /tmp/browserquest-redis-restart.pid)" 2>/dev/null || true
+            kill "$APP_PID" 2>/dev/null || true
+            if ! redis-cli ping >/dev/null 2>&1; then
+              sudo service redis-server start >/dev/null 2>&1 || true
             fi
             rm -rf "$SETUP_DIR"
           }
@@ -81,30 +86,23 @@ jobs:
 
           curl --fail --silent -H 'content-type: application/json' --data-binary @/tmp/redis-restart-setup.json http://127.0.0.1:8011/setup/install | grep -q '"ok":true'
 
+          READY=0
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8011/api/auth/policy | grep -q '"accessMode":"mixed"'; then
-              exit 0
+              READY=1
+              break
             fi
             sleep 1
           done
+          if test "$READY" -ne 1; then
+            cat /tmp/browserquest-redis-restart.log
+            exit 1
+          fi
 
-          cat /tmp/browserquest-redis-restart.log
-          exit 1
+          node test/redis-restart-live-smoke.js
 
-      - name: Restart Redis while game stays online
-        env:
-          TEST_HTTP_URL: http://127.0.0.1:8011
-          TEST_PG_HOST: 127.0.0.1
-          TEST_PG_PORT: 5432
-          TEST_PG_DATABASE: browserquest
-          TEST_PG_USER: browserquest
-          TEST_PG_PASSWORD: browserquest_test
-        run: node test/redis-restart-live-smoke.js
-
-      - name: Verify game process survived Redis restart
-        shell: bash
-        run: |
-          set -euo pipefail
           curl --fail --silent http://127.0.0.1:8011/status | grep -q '^\['
           redis-cli ping | grep -q PONG
           PGPASSWORD=browserquest_test psql -h 127.0.0.1 -U browserquest -d browserquest -c 'SELECT 1'
+          grep -q 'Redis:' /tmp/browserquest-redis-restart.log
+          echo 'BrowserQuest stayed alive and Redis reconnected successfully.'
