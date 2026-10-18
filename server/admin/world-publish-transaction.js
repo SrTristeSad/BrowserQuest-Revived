@@ -36,6 +36,8 @@ function recover(versionsDir) {
             replaceAtomic(file.dest, fs.readFileSync(backup));
         } else if(fs.existsSync(file.dest)) { fs.unlinkSync(file.dest); }
     });
+    var orphan = path.join(dir, 'manifest.json');
+    if(fs.existsSync(orphan)) { fs.unlinkSync(orphan); }
     fs.unlinkSync(journal);
     return true;
 }
@@ -75,8 +77,14 @@ function publish(entries, versionsDir, options) {
             if(typeof options.afterReplace === 'function') { options.afterReplace(i, entry.dest); }
         });
         // Journal deletion is the commit boundary: recovery always restores all previous files.
+        var publishedFiles = entries.map(function(entry,i) {
+            var filename = i + '.release';
+            fs.writeFileSync(path.join(dir,filename),entry.content,{mode:0o600});
+            return {dest:entry.dest,snapshot:filename};
+        });
         fs.writeFileSync(path.join(dir,'manifest.json'), JSON.stringify({
-            id:id,createdAt:new Date().toISOString(),files:records,revision:options.revision||null
+            id:id,createdAt:new Date().toISOString(),files:records,
+            publishedFiles:publishedFiles,revision:options.revision||null
         },null,2)+'\n',{mode:0o600});
         fs.unlinkSync(journal);
         return {id:id};
@@ -95,6 +103,29 @@ function publish(entries, versionsDir, options) {
     }
 }
 
+
+function restore(versionId,versionsDir,destinations,options) {
+    options=options||{};
+    if(typeof versionId !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(versionId)) {
+        throw new Error('Versão do mundo inválida.');
+    }
+    recover(versionsDir);
+    var folder=path.join(versionsDir,'releases',versionId),
+        manifest=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));
+    if(manifest.id!==versionId || !Array.isArray(manifest.publishedFiles)) {
+        throw new Error('Esta versão não contém um snapshot completo restaurável.');
+    }
+    var entries=destinations.map(function(dest) {
+        var item=manifest.publishedFiles.find(function(file){return file && file.dest===dest;});
+        if(!item || typeof item.snapshot!=='string' || !/^\d+\.release$/.test(item.snapshot)) {
+            throw new Error('Arquivo ausente ou inseguro no snapshot da versão.');
+        }
+        return {dest:dest,content:fs.readFileSync(path.join(folder,item.snapshot))};
+    });
+    if(typeof options.validate==='function') { options.validate(entries); }
+    return publish(entries,versionsDir,{revision:options.revision || manifest.revision});
+}
+
 function list(versionsDir) {
     if(!versionsDir) { return []; }
     recover(versionsDir);
@@ -106,11 +137,9 @@ function list(versionsDir) {
         if(!fs.existsSync(file)) { return []; }
         try {
             var m = JSON.parse(fs.readFileSync(file,'utf8'));
-            return [{id:id,createdAt:m.createdAt,revision:m.revision,restorable:m.files.some(function(f) {
-                return f.existed && f.dest && /world_server|server\.json/.test(path.basename(f.dest));
-            })}];
+            return [{id:id,createdAt:m.createdAt,revision:m.revision,restorable:Array.isArray(m.publishedFiles) && m.publishedFiles.length >= 2 && m.publishedFiles.every(function(f) { return f && /^\d+\.release$/.test(f.snapshot) && fs.existsSync(path.join(dir,id,f.snapshot)); })}];
         } catch(ignore) { return []; }
     });
 }
 
-module.exports = {publish:publish,recover:recover,list:list};
+module.exports = {publish:publish,recover:recover,list:list,restore:restore};
