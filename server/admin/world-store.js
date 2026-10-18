@@ -164,8 +164,8 @@ function validateRawWorld(raw, width, height, maxTileId) {
             add('map.width/height','Dimensões incompatíveis com o mapa original.');
         }
         if(map.data != null) {
-            if(!Array.isArray(map.data) || map.data.length > total) {
-                add('map.data','Grade de tiles inválida ou maior que o mapa.');
+            if(!Array.isArray(map.data)) {
+                add('map.data','Grade de tiles inválida.');
             } else if(map.data.length === total) {
                 var i = map.data.findIndex(function(tile) {
                     return !Number.isSafeInteger(tile) || tile < -1 || tile > maxTileId;
