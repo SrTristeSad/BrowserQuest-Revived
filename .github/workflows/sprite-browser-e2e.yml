@@ -1,0 +1,54 @@
+name: Sprite Chromium Visual E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Use Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install isolated browser driver (no production dependency)
+        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright-core@1.56.1
+      - name: Find Chromium/Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          for binary in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$binary" >/dev/null 2>&1; then
+              echo "CHROME_BIN=$(command -v "$binary")" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo 'No browser executable found on runner' >&2
+          exit 1
+      - name: Run real Chrome browser visual validation
+        shell: bash
+        env:
+          SPRITE_SCREENSHOT_DIR: ${{ runner.temp }}/sprite-screenshots
+        run: |
+          set -euo pipefail
+          node --check test/sprite-chromium-visual-e2e.js
+          npm run test:sprites:browser
+      - name: Preserve desktop/mobile browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprite-chromium-desktop-mobile
+          path: ${{ runner.temp }}/sprite-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7
