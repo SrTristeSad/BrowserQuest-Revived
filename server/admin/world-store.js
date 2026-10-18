@@ -487,8 +487,8 @@ WorldStore.prototype.normalize = function(state) {
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state;
-    requireRawWorld(input,this.base.width,this.base.height,this.tileCatalog.maxTileId,true);
     requireValidStaticItems(input && input.map,this.base.width,this.base.height);
+    requireRawWorld(input,this.base.width,this.base.height,this.tileCatalog.maxTileId,true);
     requireValidChests(input && input.map,this.base.width,this.base.height);
     requireValidMobAreas(input && input.map && input.map.roamingAreas, this.base.width, this.base.height, input && input.mobs);
     requireValidDoorLinks(input && input.map && input.map.doors,this.base.width,this.base.height);
@@ -531,8 +531,8 @@ WorldStore.prototype.publish = function() {
         state=this.normalize(clone(rawDraft)),
         validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),
         error,publishedMap,publishedClient,entries,stamp,result;
-    requireRawWorld(rawDraft,this.base.width,this.base.height,this.tileCatalog.maxTileId);
     requireValidStaticItems(rawDraft.map,this.base.width,this.base.height);
+    requireRawWorld(rawDraft,this.base.width,this.base.height,this.tileCatalog.maxTileId);
     requireValidChests(rawDraft.map,this.base.width,this.base.height);
     requireValidMobAreas(rawDraft.map && rawDraft.map.roamingAreas,this.base.width,this.base.height,rawDraft.mobs);
     requireValidDoorLinks(rawDraft.map && rawDraft.map.doors,this.base.width,this.base.height);
