@@ -145,6 +145,9 @@ function buildEditableMap(base, baseClient, maxTileId) {
         height: base.height,
         data: normalizeTileData(baseTileData, baseTileData, tileCount, maxTileId),
         collisions: Array.isArray(base.collisions) ? base.collisions.slice() : [],
+        blocking: Array.isArray(baseClient && baseClient.blocking)?baseClient.blocking.slice():[],
+        plateau: Array.isArray(baseClient && baseClient.plateau)?baseClient.plateau.slice():[],
+        high: Array.isArray(baseClient && baseClient.high)?baseClient.high.slice():[],
         doors: clone(base.doors || []),
         checkpoints: clone(base.checkpoints || []),
         chestAreas: clone(base.chestAreas || []),
@@ -152,6 +155,18 @@ function buildEditableMap(base, baseClient, maxTileId) {
         roamingAreas: clone(base.roamingAreas || []),
         entities: entities
     };
+}
+
+function normalizeLayerIndices(list, base, limit, minimum) {
+    if(!Array.isArray(list)) { list=Array.isArray(base)?base:[]; }
+    return Array.from(new Set(list.filter(function(value) {
+        return Number.isSafeInteger(value) && value >= minimum && value < limit;
+    }))).sort(function(a,b){return a-b;});
+}
+function validLayerIndices(list, limit, minimum) {
+    return list == null || Array.isArray(list) && list.every(function(value) {
+        return Number.isSafeInteger(value) && value >= minimum && value < limit;
+    });
 }
 
 function validateRawWorld(raw, width, height, maxTileId, migrateLegacy) {
@@ -174,6 +189,9 @@ function validateRawWorld(raw, width, height, maxTileId, migrateLegacy) {
             }
             // Legacy short grids are migrated/padded by normalizeTileData.
         }
+        if(!validLayerIndices(map.blocking,total,0)) { add('map.blocking','Célula de bloqueio fora do mapa.'); }
+        if(!validLayerIndices(map.plateau,total,0)) { add('map.plateau','Célula de platô fora do mapa.'); }
+        if(!validLayerIndices(map.high,maxTileId+2,1)) { add('map.high','Tile de primeiro plano fora do tileset.'); }
         if(map.collisions != null && (!Array.isArray(map.collisions) ||
            map.collisions.some(function(v){return !Number.isSafeInteger(v)||v<0||v>=total;}))) {
             add('map.collisions','Colisões devem ser índices inteiros válidos.');
@@ -477,6 +495,9 @@ WorldStore.prototype.normalize = function(state) {
     map.width=baseWidth; map.height=baseHeight;
     map.data=normalizeTileData(map.data,baseTileData,baseWidth*baseHeight,this.tileCatalog.maxTileId);
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
+    map.blocking=normalizeLayerIndices(map.blocking,this.baseClient && this.baseClient.blocking,baseWidth*baseHeight,0);
+    map.plateau=normalizeLayerIndices(map.plateau,this.baseClient && this.baseClient.plateau,baseWidth*baseHeight,0);
+    map.high=normalizeLayerIndices(map.high,this.baseClient && this.baseClient.high,this.tileCatalog.maxTileId+2,1);
     map.doors=normalizeDoorLinks(map.doors,baseWidth,baseHeight);
     map.checkpoints=normalizeCheckpointAreas(map.checkpoints,baseWidth,baseHeight);
     map.chestAreas=normalizeChestAreas(map.chestAreas,baseWidth,baseHeight);
@@ -519,12 +540,38 @@ WorldStore.prototype.buildClientMap = function(state) {
     state=this.normalize(state||this.load());
     var client=clone(this.baseClient);
     client.width=state.map.width; client.height=state.map.height; client.data=state.map.data.slice(); client.collisions=state.map.collisions.slice();
-    client.doors=clone(state.map.doors); client.checkpoints=clone(state.map.checkpoints); client.editorRevision=state.revision;
+    client.doors=clone(state.map.doors); client.checkpoints=clone(state.map.checkpoints);
+    client.blocking=state.map.blocking.slice();client.plateau=state.map.plateau.slice();client.high=state.map.high.slice(); client.editorRevision=state.revision;
     return client;
 };
 WorldStore.prototype.validateDraft = function() {
-    var raw=readJson(this.statePath),state=this.normalize(clone(raw));
-    return validateRawWorld(raw,this.base.width,this.base.height,this.tileCatalog.maxTileId);
+    var raw=readJson(this.statePath),state=this.normalize(clone(raw)),
+        result=validateRawWorld(raw,this.base.width,this.base.height,this.tileCatalog.maxTileId),
+        refs=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories());
+    [
+        function(){requireValidStaticItems(raw.map,this.base.width,this.base.height);},
+        function(){requireValidChests(raw.map,this.base.width,this.base.height);},
+        function(){requireValidMobAreas(raw.map && raw.map.roamingAreas,this.base.width,this.base.height,raw.mobs);},
+        function(){requireValidDoorLinks(raw.map && raw.map.doors,this.base.width,this.base.height);},
+        function(){requireStartingCheckpoint(state,this.base);}
+    ].forEach(function(check) {
+        try { check.call(this); }
+        catch(error) { result.errors.push({path:error.code||'map',message:error.message}); }
+    },this);
+    if(!refs.ok) {
+        refs.errors.forEach(function(e){result.errors.push({path:e.path,message:e.message});});
+    }
+    result.ok=result.errors.length===0;
+    return result;
+};
+WorldStore.prototype.preview = function() {
+    var report=this.validateDraft(),state=this.load();
+    return {ok:report.ok,errors:report.errors,revision:state.revision,
+        map:{width:state.map.width,height:state.map.height,tiles:state.map.data.length,
+             doors:state.map.doors.length,checkpoints:state.map.checkpoints.length,
+             roamingAreas:state.map.roamingAreas.length,staticChests:state.map.staticChests.length,
+             chestAreas:state.map.chestAreas.length,staticItems:state.map.entities.filter(function(e){return e.profileType==='item';}).length},
+        liveUnchanged:true,gameplaySimulation:false};
 };
 WorldStore.prototype.publish = function() {
     var rawDraft=readJson(this.statePath),
@@ -556,6 +603,33 @@ WorldStore.prototype.publish = function() {
         restartRequired:true,publishedMapPath:this.publishedMapPath,clientMapSynchronized:!!publishedClient};
 };
 WorldStore.prototype.listVersions = function() { return WorldPublishTransaction.list(this.versionsDir); };
+WorldStore.prototype.restoreVersion = function(versionId) {
+    var self=this,files=[this.publishedMapPath],
+        expectedRevision=null;
+    if(this.baseClient && this.publishedClientJsonPath && this.publishedClientJsPath) {
+        files.push(this.publishedClientJsonPath,this.publishedClientJsPath);
+    }
+    files.push(this.statePath);
+    var result=WorldPublishTransaction.restore(versionId,this.versionsDir,files,{
+        validate:function(entries) {
+            var draft=JSON.parse(entries[entries.length-1].content.toString()),
+                server=JSON.parse(entries[0].content.toString()),
+                client=entries.length>2 ? JSON.parse(entries[1].content.toString()) : null;
+            expectedRevision=draft.revision;
+            requireRawWorld(draft,self.base.width,self.base.height,self.tileCatalog.maxTileId);
+            requireValidStaticItems(draft.map,self.base.width,self.base.height);
+            requireValidChests(draft.map,self.base.width,self.base.height);
+            requireValidMobAreas(draft.map&&draft.map.roamingAreas,self.base.width,self.base.height,draft.mobs);
+            requireValidDoorLinks(draft.map&&draft.map.doors,self.base.width,self.base.height);
+            requireStartingCheckpoint(self.normalize(clone(draft)),self.base);
+            if(server.editorRevision!==draft.revision || client && client.editorRevision!==draft.revision) {
+                throw new Error('Revisões divergentes no snapshot do mundo.');
+            }
+        }
+    });
+    return {ok:true,restoredFrom:versionId,newVersionId:result.id,revision:expectedRevision,restartRequired:true};
+};
+
 
 WorldStore.prototype.getPublishedPath=function(){return fs.existsSync(this.publishedMapPath)?this.publishedMapPath:null;};
 
