@@ -3,7 +3,8 @@
 var fs = require('fs'),
     path = require('path'),
     crypto = require('crypto'),
-    ReferenceValidator = require('./story-reference-validator');
+    ReferenceValidator = require('./story-reference-validator'),
+    Types = require('../../shared/js/gametypes');
 
 var NPC_KINDS = ['guard','king','octocat','villagegirl','villager','priest','scientist','agent','rick','nyan','sorcerer','beachnpc','forestnpc','desertnpc','lavanpc','coder'];
 var MOB_KINDS = ['rat','skeleton','goblin','ogre','spectre','crab','bat','wizard','eye','snake','skeleton2','boss','deathknight'];
@@ -150,6 +151,61 @@ function buildEditableMap(base, baseClient, maxTileId) {
         roamingAreas: clone(base.roamingAreas || []),
         entities: entities
     };
+}
+
+function chestItemCatalog() {
+    var out = [];
+    Types.forEachKind(function(kind, name) {
+        if(Number.isSafeInteger(kind) && Types.isItem(kind)) { out.push({id:kind,name:name}); }
+    });
+    return out.sort(function(a,b){return a.id-b.id;});
+}
+var CHEST_ITEM_CATALOG = chestItemCatalog();
+var CHEST_ITEM_IDS = new Set(CHEST_ITEM_CATALOG.map(function(entry){return entry.id;}));
+function validChestItems(items) {
+    return Array.isArray(items) && items.length >= 1 && items.length <= 20 &&
+           items.every(function(v){return Number.isSafeInteger(v) && CHEST_ITEM_IDS.has(v);});
+}
+function normalizeStaticChests(list,width,height) {
+    if(!Array.isArray(list)) { return []; }
+    var used = new Set(),out = [];
+    list.slice(0,5000).forEach(function(chest) {
+        if(!chest || typeof chest !== 'object' || Array.isArray(chest) ||
+           !Number.isSafeInteger(chest.x) || !Number.isSafeInteger(chest.y) ||
+           chest.x < 1 || chest.x >= width || chest.y < 1 || chest.y >= height ||
+           !validChestItems(chest.i)) { return; }
+        var key = chest.x + ':' + chest.y;
+        if(used.has(key)) { return; }
+        used.add(key); out.push({x:chest.x,y:chest.y,i:chest.i.slice()});
+    });
+    return out;
+}
+function normalizeChestAreas(list,width,height) {
+    if(!Array.isArray(list)) { return []; }
+    var used = new Set(),out = [];
+    list.slice(0,1000).forEach(function(area) {
+        if(!area || typeof area !== 'object' || Array.isArray(area) ||
+           ![area.x,area.y,area.w,area.h,area.tx,area.ty].every(Number.isSafeInteger) ||
+           area.x < 1 || area.y < 1 || area.w < 1 || area.h < 1 ||
+           area.x + area.w >= width || area.y + area.h >= height ||
+           area.tx < 1 || area.tx >= width || area.ty < 1 || area.ty >= height ||
+           !validChestItems(area.i)) { return; }
+        var key = area.x + ':' + area.y + ':' + area.w + ':' + area.h;
+        if(used.has(key)) { return; }
+        used.add(key);out.push({x:area.x,y:area.y,w:area.w,h:area.h,i:area.i.slice(),tx:area.tx,ty:area.ty});
+    });
+    return out;
+}
+function requireValidChests(map,width,height) {
+    if(!map) { return; }
+    var stat=map.staticChests,areas=map.chestAreas;
+    if(stat != null && (!Array.isArray(stat) || stat.length > 5000 ||
+       normalizeStaticChests(stat,width,height).length !== stat.length) ||
+       areas != null && (!Array.isArray(areas) || areas.length > 1000 ||
+       normalizeChestAreas(areas,width,height).length !== areas.length)) {
+        var error = new Error('Baús inválidos: confira posição, região, destino e IDs numéricos de itens.');
+        error.code='WORLD_CHEST_VALIDATION';error.statusCode=422;throw error;
+    }
 }
 
 function normalizeDoorLinks(list, width, height) {
@@ -334,14 +390,15 @@ WorldStore.prototype.normalize = function(state) {
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
     map.doors=normalizeDoorLinks(map.doors,baseWidth,baseHeight);
     map.checkpoints=normalizeCheckpointAreas(map.checkpoints,baseWidth,baseHeight);
-    map.chestAreas=Array.isArray(map.chestAreas)?map.chestAreas.slice(0,1000):[];
-    map.staticChests=Array.isArray(map.staticChests)?map.staticChests.slice(0,5000):[];
+    map.chestAreas=normalizeChestAreas(map.chestAreas,baseWidth,baseHeight);
+    map.staticChests=normalizeStaticChests(map.staticChests,baseWidth,baseHeight);
     map.entities=Array.isArray(map.entities)?map.entities.slice(0,10000).map(function(e){return normalizeEntity(e,map,npcIds,mobIds);}):[];
     map.roamingAreas=normalizeMobAreas(map.roamingAreas,baseWidth,baseHeight,mobs);
-    return {schemaVersion:1,revision:int(state.revision,1,Number.MAX_SAFE_INTEGER,1),status:state.status==='published'?'published':'draft',updatedAt:state.updatedAt||new Date().toISOString(),publishedAt:state.publishedAt||null,map:map,npcs:npcs,mobs:mobs,catalogs:{npcKinds:NPC_KINDS.slice(),mobKinds:MOB_KINDS.slice(),tiles:tiles}};
+    return {schemaVersion:1,revision:int(state.revision,1,Number.MAX_SAFE_INTEGER,1),status:state.status==='published'?'published':'draft',updatedAt:state.updatedAt||new Date().toISOString(),publishedAt:state.publishedAt||null,map:map,npcs:npcs,mobs:mobs,catalogs:{npcKinds:NPC_KINDS.slice(),mobKinds:MOB_KINDS.slice(),chestItems:CHEST_ITEM_CATALOG.map(function(e){return {id:e.id,name:e.name};}),tiles:tiles}};
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state;
+    requireValidChests(input && input.map,this.base.width,this.base.height);
     requireValidMobAreas(input && input.map && input.map.roamingAreas, this.base.width, this.base.height, input && input.mobs);
     requireValidDoorLinks(input && input.map && input.map.doors,this.base.width,this.base.height);
     state=this.normalize(input);
@@ -377,6 +434,7 @@ WorldStore.prototype.buildClientMap = function(state) {
 WorldStore.prototype.publish = function() {
     var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
     var rawDraft=readJson(this.statePath);
+    requireValidChests(rawDraft.map,this.base.width,this.base.height);
     requireValidMobAreas(rawDraft.map && rawDraft.map.roamingAreas,this.base.width,this.base.height,rawDraft.mobs);
     requireValidDoorLinks(readJson(this.statePath).map.doors,this.base.width,this.base.height);
     requireStartingCheckpoint(state,this.base);
@@ -401,4 +459,8 @@ exports.normalizeCheckpointAreas=normalizeCheckpointAreas;
 exports.normalizeDoorLinks=normalizeDoorLinks;
 exports.normalizeMobAreas=normalizeMobAreas;
 exports.requireValidMobAreas=requireValidMobAreas;
+exports.chestItemCatalog=chestItemCatalog;
+exports.normalizeStaticChests=normalizeStaticChests;
+exports.normalizeChestAreas=normalizeChestAreas;
+exports.requireValidChests=requireValidChests;
 exports.requireValidDoorLinks=requireValidDoorLinks;
