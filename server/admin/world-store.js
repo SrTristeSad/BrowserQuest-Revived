@@ -154,7 +154,7 @@ function buildEditableMap(base, baseClient, maxTileId) {
     };
 }
 
-function validateRawWorld(raw, width, height, maxTileId) {
+function validateRawWorld(raw, width, height, maxTileId, migrateLegacy) {
     var errors = [], map = raw && raw.map, total = width * height;
     function add(path, message) { errors.push({path:path,message:message}); }
     if(!map || typeof map !== 'object' || Array.isArray(map)) {
@@ -178,7 +178,7 @@ function validateRawWorld(raw, width, height, maxTileId) {
            map.collisions.some(function(v){return !Number.isSafeInteger(v)||v<0||v>=total;}))) {
             add('map.collisions','Colisões devem ser índices inteiros válidos.');
         }
-        if(map.checkpoints != null && (!Array.isArray(map.checkpoints) ||
+        if(!migrateLegacy && map.checkpoints != null && (!Array.isArray(map.checkpoints) ||
            normalizeCheckpointAreas(map.checkpoints,width,height).length !== map.checkpoints.length)) {
             add('map.checkpoints','Checkpoint duplicado ou fora dos limites.');
         }
@@ -190,8 +190,8 @@ function validateRawWorld(raw, width, height, maxTileId) {
     }
     return {ok:errors.length === 0,errors:errors};
 }
-function requireRawWorld(raw,width,height,maxTileId) {
-    var report=validateRawWorld(raw,width,height,maxTileId);
+function requireRawWorld(raw,width,height,maxTileId,migrateLegacy) {
+    var report=validateRawWorld(raw,width,height,maxTileId,migrateLegacy);
     if(!report.ok) {
         var error=new Error('Validação do mundo falhou: '+report.errors.slice(0,5).map(function(e){return e.path+' — '+e.message;}).join(' | '));
         error.code='WORLD_MAP_VALIDATION';error.statusCode=422;error.details=report.errors;throw error;
@@ -487,7 +487,7 @@ WorldStore.prototype.normalize = function(state) {
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state;
-    requireRawWorld(input,this.base.width,this.base.height,this.tileCatalog.maxTileId);
+    requireRawWorld(input,this.base.width,this.base.height,this.tileCatalog.maxTileId,true);
     requireValidStaticItems(input && input.map,this.base.width,this.base.height);
     requireValidChests(input && input.map,this.base.width,this.base.height);
     requireValidMobAreas(input && input.map && input.map.roamingAreas, this.base.width, this.base.height, input && input.mobs);
