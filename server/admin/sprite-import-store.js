@@ -207,6 +207,10 @@ class SpriteImportStore {
                         mapped[key]=Object.assign({},r.animations[key]||r.animations['idle_'+direction]||base);
                     }
                 }
+                for(const action of ['idle','walk','atk']) {
+                    const left=action+'_left';
+                    if(r.animations[left])mapped[left]=Object.assign({},r.animations[left]);
+                }
                 mapped.death=Object.assign({},r.animations.death||base);
                 const name='custom_'+r.id;
                 sprites[name]={id:name,custom:true,pngId:r.id,path:'/game/sprites/'+r.id+'.png',
