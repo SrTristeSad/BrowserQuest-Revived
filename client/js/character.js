@@ -74,9 +74,13 @@ define(['entity', 'transition', 'timer'], function(Entity, Transition, Timer) {
                 this.flipSpriteY = false;
 
                 if(_.indexOf(oriented, animation) >= 0) {
-                    direction = (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));
+                    var authoredLeft = o === Types.Orientations.LEFT &&
+                        this.sprite && this.sprite.custom && this.animations &&
+                        this.animations[animation + "_left"];
+                    direction = authoredLeft ? "left" :
+                        (o === Types.Orientations.LEFT ? "right" : Types.getOrientationAsString(o));
                     animation += "_" + direction;
-                    this.flipSpriteX = (this.orientation === Types.Orientations.LEFT);
+                    this.flipSpriteX = (o === Types.Orientations.LEFT && !authoredLeft);
                 }
 
                 // Many legacy NPCs only provide idle_down. Keep movement functional
@@ -93,6 +97,11 @@ define(['entity', 'transition', 'timer'], function(Entity, Transition, Timer) {
                     }
                 }
 
+                var customAnimation = this.sprite && this.sprite.custom &&
+                    this.sprite.animationData && this.sprite.animationData[animation];
+                if(customAnimation && customAnimation.flipX === true) {
+                    this.flipSpriteX = !this.flipSpriteX;
+                }
                 this.setAnimation(animation, speed, count, onEndCount);
             }
         },
