@@ -339,11 +339,32 @@ function normalizeDrops(list) {
     return list.slice(0, 20).map(function(drop) { return {kind:text(drop.kind,40),chance:int(drop.chance,0,100,0)}; })
         .filter(function(drop) { return drop.kind && drop.chance > 0; });
 }
+function normalizeSpriteId(value) {
+    return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : '';
+}
+function requirePublishedSpriteReferences(state, spriteImports) {
+    var profiles=(state.npcs||[]).concat(state.mobs||[]);
+    profiles.forEach(function(profile) {
+        if(!profile.spriteId) { return; }
+        if(!spriteImports) {
+            var missing=new Error('Catálogo de sprites não está disponível para esta publicação.');
+            missing.code='WORLD_SPRITE_IMPORT_UNAVAILABLE';missing.statusCode=422;throw missing;
+        }
+        try {
+            var record=spriteImports.get(profile.spriteId);
+            if(record.published!==true||!record.animations||!record.animations.idle_down)
+                throw new Error('Sprite não publicado ou sem animação inicial.');
+        }catch(e){
+            var error=new Error('Sprite do perfil '+profile.id+' está ausente ou não foi publicado.');
+            error.code='WORLD_SPRITE_REFERENCE_INVALID';error.statusCode=422;throw error;
+        }
+    });
+}
 function normalizeNpc(profile) {
     profile = profile || {};
     return {
         id: text(profile.id,80) || id('npc'), name: text(profile.name,80) || 'Novo NPC',
-        baseKind: NPC_KINDS.indexOf(profile.baseKind) >= 0 ? profile.baseKind : 'villager', enabled: bool(profile.enabled),
+        baseKind: NPC_KINDS.indexOf(profile.baseKind) >= 0 ? profile.baseKind : 'villager', spriteId: normalizeSpriteId(profile.spriteId), enabled: bool(profile.enabled),
         dialogue: Array.isArray(profile.dialogue) ? profile.dialogue.slice(0,50).map(function(line){return text(line,500);}).filter(Boolean) : [],
         storyId: text(profile.storyId,80), missionId: text(profile.missionId,80), completionMissionId: text(profile.completionMissionId,80),
         brain: normalizeBrain(profile.brain, (profile.baseKind === 'guard' || profile.baseKind === 'king') ? 'guard' : 'villager')
@@ -353,7 +374,7 @@ function normalizeMob(profile) {
     profile = profile || {};
     return {
         id: text(profile.id,80) || id('mob'), name: text(profile.name,80) || 'Novo Mob',
-        baseKind: MOB_KINDS.indexOf(profile.baseKind) >= 0 ? profile.baseKind : 'rat', enabled: bool(profile.enabled),
+        baseKind: MOB_KINDS.indexOf(profile.baseKind) >= 0 ? profile.baseKind : 'rat', spriteId: normalizeSpriteId(profile.spriteId), enabled: bool(profile.enabled),
         hitPoints: int(profile.hitPoints,1,1000000,50), armorLevel: int(profile.armorLevel,0,1000,1),
         weaponLevel: int(profile.weaponLevel,0,1000,1), respawnMs: int(profile.respawnMs,1000,3600000,30000),
         aggroDistance: int(profile.aggroDistance,1,200,50), drops: normalizeDrops(profile.drops), brain: normalizeBrain(profile.brain, 'aggressive')
@@ -461,6 +482,7 @@ function WorldStore(options) {
     this.publishedClientJsonPath = options.publishedClientJsonPath;
     this.publishedClientJsPath = options.publishedClientJsPath;
     this.versionsDir = options.versionsDir;
+    this.spriteImports = options.spriteImportStore || null;
     WorldPublishTransaction.recover(this.versionsDir);
     this.storiesPath = options.storiesPath || path.join(path.dirname(this.statePath), 'stories.json');
     this.tilesetPath = options.tilesetPath || (this.baseClientMapPath ? path.join(path.dirname(this.baseClientMapPath), '..', 'img', '1', 'tilesheet.png') : null);
@@ -553,7 +575,8 @@ WorldStore.prototype.validateDraft = function() {
         function(){requireValidChests(raw.map,this.base.width,this.base.height);},
         function(){requireValidMobAreas(raw.map && raw.map.roamingAreas,this.base.width,this.base.height,raw.mobs);},
         function(){requireValidDoorLinks(raw.map && raw.map.doors,this.base.width,this.base.height);},
-        function(){requireStartingCheckpoint(state,this.base);}
+        function(){requireStartingCheckpoint(state,this.base);},
+        function(){requirePublishedSpriteReferences(state,this.spriteImports);}
     ].forEach(function(check) {
         try { check.call(this); }
         catch(error) { result.errors.push({path:error.code||'map',message:error.message}); }
@@ -584,6 +607,7 @@ WorldStore.prototype.publish = function() {
     requireValidMobAreas(rawDraft.map && rawDraft.map.roamingAreas,this.base.width,this.base.height,rawDraft.mobs);
     requireValidDoorLinks(rawDraft.map && rawDraft.map.doors,this.base.width,this.base.height);
     requireStartingCheckpoint(state,this.base);
+    requirePublishedSpriteReferences(state,this.spriteImports);
     if(!validation.ok) {
         error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));
         error.code='WORLD_STORY_REFERENCE_VALIDATION';error.details=validation.errors;error.statusCode=422;throw error;
@@ -622,6 +646,7 @@ WorldStore.prototype.restoreVersion = function(versionId) {
             requireValidMobAreas(draft.map&&draft.map.roamingAreas,self.base.width,self.base.height,draft.mobs);
             requireValidDoorLinks(draft.map&&draft.map.doors,self.base.width,self.base.height);
             requireStartingCheckpoint(self.normalize(clone(draft)),self.base);
+            requirePublishedSpriteReferences(self.normalize(clone(draft)),self.spriteImports);
             if(server.editorRevision!==draft.revision || client && client.editorRevision!==draft.revision) {
                 throw new Error('Revisões divergentes no snapshot do mundo.');
             }

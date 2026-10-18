@@ -153,7 +153,9 @@ class SpriteImportStore {
         return record;
     }
     configure(id,config){
-        const original=this.get(id),validated=validateAnimations(original,config);
+        const original=this.get(id);
+        if(original.published)throw invalid('Sprite publicado é imutável: importe uma nova versão para alterar animações.');
+        const validated=validateAnimations(original,config);
         // Always recheck the private PNG before accepting a new animation map.
         const bytes=this.image(id),dimensions=readPng(bytes);
         if(dimensions.width!==original.width||dimensions.height!==original.height)
@@ -168,6 +170,51 @@ class SpriteImportStore {
             fs.renameSync(temporary,dest);
         }finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
         return this.get(id);
+    }
+    publish(id){
+        const record=this.get(id);
+        if(record.published)return record;
+        if(!record.animations)throw invalid('Configure as animações antes de publicar.');
+        const data=validateAnimations(record,{
+            animations:record.animations,offsetX:record.offsetX,offsetY:record.offsetY
+        });
+        const image=this.image(id),dimensions=readPng(image);
+        if(dimensions.width!==record.width||dimensions.height!==record.height)
+            throw invalid('PNG privado não corresponde à geometria do sprite.');
+        const next=Object.assign({},record,data,{published:true,draftOnly:false,publishedAt:new Date().toISOString()});
+        const target=path.join(this.directory,id+'.json'),
+              temporary=path.join(this.directory,id+'.publish-'+crypto.randomBytes(6).toString('hex'));
+        try{
+            fs.writeFileSync(temporary,JSON.stringify(next,null,2)+'\n',{flag:'wx',mode:0o600});
+            fs.renameSync(temporary,target);
+        }finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
+        return this.get(id);
+    }
+    publishedImage(id){
+        const record=this.get(id);
+        if(record.published!==true)throw invalid('Sprite não publicado.');
+        return this.image(id);
+    }
+    publicCatalog(){
+        const sprites=Object.create(null);
+        this.list().filter(r=>r.published===true).forEach(r=>{
+            try{
+                validateAnimations(r,{animations:r.animations,offsetX:r.offsetX,offsetY:r.offsetY});
+                const mapped=Object.create(null),base=r.animations.idle_down;
+                for(const name of ['idle','walk','atk']){
+                    for(const direction of ['down','up','right']){
+                        const key=name+'_'+direction;
+                        mapped[key]=Object.assign({},r.animations[key]||r.animations['idle_'+direction]||base);
+                    }
+                }
+                mapped.death=Object.assign({},r.animations.death||base);
+                const name='custom_'+r.id;
+                sprites[name]={id:name,custom:true,pngId:r.id,path:'/game/sprites/'+r.id+'.png',
+                    width:r.frameWidth,height:r.frameHeight,offset_x:r.offsetX,offset_y:r.offsetY,
+                    animations:mapped};
+            }catch(ignore){}
+        });
+        return sprites;
     }
     image(id){
         this.get(id);

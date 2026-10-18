@@ -73,7 +73,11 @@ define(function() {
     	},
 	
     	getSpriteName: function() {
-    	    return Types.getKindAsString(this.kind);
+    	    var id=this.editorData && this.editorData.spriteId;
+            if((Types.isNpc(this.kind)||Types.isMob(this.kind)) && /^[a-f0-9]{32}$/.test(id||'') &&
+                typeof window!=='undefined' && window.BrowserQuestPublishedSprites &&
+                Object.prototype.hasOwnProperty.call(window.BrowserQuestPublishedSprites,'custom_'+id))return 'custom_'+id;
+            return Types.getKindAsString(this.kind);
     	},
 	
     	getAnimationByName: function(name) {
@@ -104,7 +108,8 @@ define(function() {
     				if(name.substr(0, 3) === "atk") {
     				    this.currentAnimation.reset();
     				}
-    				this.currentAnimation.setSpeed(speed);
+    				this.currentAnimation.setSpeed(s.custom && s.animationData[name] && s.animationData[name].fps ? 1000/s.animationData[name].fps : speed);
+                    if(s.custom && s.animationData[name] && s.animationData[name].flipX) this.flipSpriteX=!this.flipSpriteX;
     				this.currentAnimation.setCount(count ? count : 0, onEndCount || function() {
     				    self.idle();
     				});

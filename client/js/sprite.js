@@ -13,7 +13,8 @@ define(['jquery', 'animation', 'sprites'], function($, Animation, sprites) {
         
         loadJSON: function(data) {
     		this.id = data.id;
-    		this.filepath = "img/" + this.scale + "/" + this.id + ".png";
+    		this.custom=data.custom===true && /^custom_[a-f0-9]{32}$/.test(data.id);
+            this.filepath=this.custom?data.path:"img/" + this.scale + "/" + this.id + ".png";
     		this.animationData = data.animations;
     		this.width = data.width;
     		this.height = data.height;
@@ -24,26 +25,35 @@ define(['jquery', 'animation', 'sprites'], function($, Animation, sprites) {
     	},
 
         load: function() {
-        	var self = this;
-
-        	this.image = new Image();
-        	this.image.src = this.filepath;
-
-        	this.image.onload = function() {
-        		self.isLoaded = true;
-    		    
-                if(self.onload_func) {
-                    self.onload_func();
+            var self=this,image=new Image();
+            this.image=image;
+            image.onload=function(){
+                if(self.custom && self.scale>1){
+                    var scaled=document.createElement('canvas'),ctx=scaled.getContext('2d');
+                    scaled.width=image.width*self.scale;scaled.height=image.height*self.scale;
+                    ctx.imageSmoothingEnabled=false;
+                    ctx.drawImage(image,0,0,scaled.width,scaled.height);
+                    self.image=scaled;
                 }
-        	};
+                self.isLoaded=true;
+                if(self.onload_func)self.onload_func();
+            };
+            if(this.custom){
+                image.onerror=function(){
+                    self.loadFailed=true;
+                    self.isLoaded=true;
+                    if(self.onload_func)self.onload_func();
+                };
+            }
+            image.src=this.filepath;
         },
-    
+
         createAnimations: function() {
             var animations = {};
         
     	    for(var name in this.animationData) {
     	        var a = this.animationData[name];
-    	        animations[name] = new Animation(name, a.length, a.row, this.width, this.height);
+    	        animations[name] = new Animation(name, a.length, a.row, this.width, this.height, this.custom ? (a.start||0) : 0);
     	    }
 	    
     	    return animations;

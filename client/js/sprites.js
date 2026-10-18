@@ -78,5 +78,11 @@ define(['text!../sprites/agent.json',
         sprites[sprite.id] = sprite;
     });
     
+    var custom=(typeof window !== 'undefined' && window.BrowserQuestPublishedSprites)||{};
+    Object.keys(custom).forEach(function(name){
+        if(/^custom_[a-f0-9]{32}$/.test(name) && !Object.prototype.hasOwnProperty.call(sprites,name)) {
+            sprites[name]=custom[name];
+        }
+    });
     return sprites;
 });
