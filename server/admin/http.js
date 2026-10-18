@@ -441,6 +441,19 @@ function createAdminHandler(options) {
             return;
         }
 
+        if(pathname === '/game/sprites/catalog.js' && request.method === 'GET') {
+            const list=spriteImports.publicCatalog();
+            send(response,200,'window.BrowserQuestPublishedSprites = '+JSON.stringify(list)+';\n',
+                'application/javascript; charset=utf-8');
+            return;
+        }
+        if(request.method === 'GET' && /^\/game\/sprites\/[a-f0-9]{32}\.png$/.test(pathname)) {
+            try{
+                const spriteId=pathname.slice('/game/sprites/'.length,-4);
+                send(response,200,spriteImports.publishedImage(spriteId),'image/png');
+            }catch(error){json(response,404,{error:'Sprite publicado não encontrado.'});}
+            return;
+        }
         if(pathname === '/admin') {
             session = await requireAdmin(request, response, false);
             if(session) { redirect(response, '/admin/dashboard'); }
@@ -506,6 +519,16 @@ function createAdminHandler(options) {
                 await audit(session,'sprite.animate',updated.id,{animations:Object.keys(updated.animations)},request);
                 json(response,200,updated);
             }catch(error){json(response,error.statusCode||500,{error:error.statusCode?error.message:'Falha ao configurar animações.'});}
+            return;
+        }
+        if(pathname === '/admin/api/sprites/publish' && request.method === 'POST') {
+            session=await requireAdmin(request,response,true);if(!session)return;
+            try{body=await readJson(request);}catch(error){json(response,400,{error:'JSON inválido.'});return;}
+            try{
+                const published=spriteImports.publish(body&&body.id);
+                await audit(session,'sprite.publish',published.id,{label:published.label},request);
+                json(response,200,published);
+            }catch(error){json(response,error.statusCode||500,{error:error.statusCode?error.message:'Falha ao publicar sprite.'});}
             return;
         }
         if(pathname === '/admin/api/sprites/image' && request.method === 'GET') {
@@ -954,7 +977,8 @@ function createAdminHandler(options) {
 
     return function adminHandler(request, response) {
         var pathname = String(request.url || '/').split('?')[0];
-        if(pathname !== '/admin' && pathname.indexOf('/admin/') !== 0) { return false; }
+        if(pathname !== '/admin' && pathname.indexOf('/admin/') !== 0 &&
+           pathname !== '/game/sprites/catalog.js' && !/^\/game\/sprites\/[a-f0-9]{32}\.png$/.test(pathname)) { return false; }
         handle(request, response, pathname).catch(function(error) {
             console.error('[BrowserQuest] Admin HTTP:', error && error.stack ? error.stack : error);
             if(!response.headersSent) { json(response, 500, {error: 'Falha interna no painel administrativo.'}); }
