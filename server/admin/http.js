@@ -110,6 +110,7 @@ function createAdminHandler(options) {
         }),
         spriteImports = new SpriteImportStore(path.join(configDir,'sprite-imports')),
         legacyAttempts = new Map();
+    world.spriteImports = spriteImports;
 
     async function currentAdmin(request) {
         var cookies = parseCookies(request.headers.cookie);
