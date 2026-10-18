@@ -109,7 +109,7 @@ define(function() {
     				    this.currentAnimation.reset();
     				}
     				this.currentAnimation.setSpeed(s.custom && s.animationData[name] && s.animationData[name].fps ? 1000/s.animationData[name].fps : speed);
-                    if(s.custom && s.animationData[name] && s.animationData[name].flipX) this.flipSpriteX=!this.flipSpriteX;
+                    // Flip is resolved by Character.animate so repeated idle() calls remain deterministic.
     				this.currentAnimation.setCount(count ? count : 0, onEndCount || function() {
     				    self.idle();
     				});
