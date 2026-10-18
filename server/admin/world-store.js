@@ -296,13 +296,56 @@ function normalizeMob(profile) {
         aggroDistance: int(profile.aggroDistance,1,200,50), drops: normalizeDrops(profile.drops), brain: normalizeBrain(profile.brain, 'aggressive')
     };
 }
+var STATIC_ITEM_KINDS = new Set(CHEST_ITEM_CATALOG.map(function(entry){return entry.name;}));
+function requireValidStaticItems(map, width, height) {
+    if(!map || map.entities == null) { return; }
+    if(!Array.isArray(map.entities)) { throw staticItemError(); }
+    var items = map.entities, locations = new Set(), chestLocations = new Set(),
+        blocked = new Set(Array.isArray(map.collisions) ? map.collisions : []),
+        itemIds = new Set();
+    (Array.isArray(map.staticChests) ? map.staticChests : []).forEach(function(chest) {
+        if(chest && Number.isSafeInteger(chest.x) && Number.isSafeInteger(chest.y)) {
+            chestLocations.add(chest.x + ':' + chest.y);
+        }
+    });
+    items.forEach(function(entity) {
+        if(!entity || typeof entity !== 'object') { return; }
+        if(Number.isSafeInteger(entity.x) && Number.isSafeInteger(entity.y)) {
+            locations.add(entity.x + ':' + entity.y);
+        }
+    });
+    items.forEach(function(entity) {
+        if(!entity || typeof entity !== 'object' || Array.isArray(entity)) { return; }
+        if(entity.profileType !== 'item' && !STATIC_ITEM_KINDS.has(entity.kind)) { return; }
+        var key = entity.x + ':' + entity.y;
+        if(!STATIC_ITEM_KINDS.has(entity.kind) ||
+           (entity.profileType !== '' && entity.profileType !== 'item' && entity.profileType != null) ||
+           (entity.profileId != null && entity.profileId !== '') ||
+           typeof entity.id !== 'string' || !entity.id || entity.id.length > 100 ||
+           itemIds.has(entity.id) || !Number.isSafeInteger(entity.x) || !Number.isSafeInteger(entity.y) ||
+           entity.x < 1 || entity.y < 1 || entity.x >= width || entity.y >= height ||
+           chestLocations.has(key) || blocked.has(entity.y * width + entity.x) ||
+           items.some(function(other) { return other !== entity && other &&
+               other.x === entity.x && other.y === entity.y; })) {
+            throw staticItemError();
+        }
+        itemIds.add(entity.id);
+    });
+}
+function staticItemError() {
+    var error = new Error('Item estático inválido: confira tipo, posição, colisão e sobreposição.');
+    error.code = 'WORLD_STATIC_ITEM_VALIDATION';
+    error.statusCode = 422;
+    return error;
+}
 function normalizeEntity(entity, map, npcIds, mobIds) {
     entity = entity || {};
-    var profileType = entity.profileType === 'npc' || entity.profileType === 'mob' ? entity.profileType : '',
+    var profileType = entity.profileType === 'npc' || entity.profileType === 'mob' || entity.profileType === 'item' ? entity.profileType : '',
         profileId = text(entity.profileId,80), kind = text(entity.kind,40);
     if(profileType === 'npc' && !npcIds[profileId]) { profileType=''; profileId=''; }
     if(profileType === 'mob' && !mobIds[profileId]) { profileType=''; profileId=''; }
-    if(profileType === '' && NPC_KINDS.indexOf(kind) < 0 && MOB_KINDS.indexOf(kind) < 0) { kind='villager'; }
+    if(profileType === 'item') { profileId=''; }
+    if(profileType === '' && NPC_KINDS.indexOf(kind) < 0 && MOB_KINDS.indexOf(kind) < 0 && !STATIC_ITEM_KINDS.has(kind)) { kind='villager'; }
     return {id:text(entity.id,100)||id('entity'),x:int(entity.x,1,Math.max(1,map.width-1),1),y:int(entity.y,1,Math.max(1,map.height-1),1),kind:kind,profileType:profileType,profileId:profileId,source:entity.source === 'base' ? 'base' : 'editor'};
 }
 function normalizeMobAreas(list, width, height, mobProfiles) {
@@ -398,6 +441,7 @@ WorldStore.prototype.normalize = function(state) {
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state;
+    requireValidStaticItems(input && input.map,this.base.width,this.base.height);
     requireValidChests(input && input.map,this.base.width,this.base.height);
     requireValidMobAreas(input && input.map && input.map.roamingAreas, this.base.width, this.base.height, input && input.mobs);
     requireValidDoorLinks(input && input.map && input.map.doors,this.base.width,this.base.height);
@@ -434,6 +478,7 @@ WorldStore.prototype.buildClientMap = function(state) {
 WorldStore.prototype.publish = function() {
     var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
     var rawDraft=readJson(this.statePath);
+    requireValidStaticItems(rawDraft.map,this.base.width,this.base.height);
     requireValidChests(rawDraft.map,this.base.width,this.base.height);
     requireValidMobAreas(rawDraft.map && rawDraft.map.roamingAreas,this.base.width,this.base.height,rawDraft.mobs);
     requireValidDoorLinks(readJson(this.statePath).map.doors,this.base.width,this.base.height);
@@ -463,4 +508,5 @@ exports.chestItemCatalog=chestItemCatalog;
 exports.normalizeStaticChests=normalizeStaticChests;
 exports.normalizeChestAreas=normalizeChestAreas;
 exports.requireValidChests=requireValidChests;
+exports.requireValidStaticItems=requireValidStaticItems;
 exports.requireValidDoorLinks=requireValidDoorLinks;
