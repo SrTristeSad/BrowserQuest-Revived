@@ -72,8 +72,6 @@ try {
   assert.strictEqual(JSON.parse(fs.readFileSync(file('server.json'),'utf8')).editorRevision,store.load().revision);
   assert.strictEqual(JSON.parse(fs.readFileSync(file('client.json'),'utf8')).editorRevision,store.load().revision);
   assert(store.listVersions().some(v=>v.id===published.versionId),'Published release appears in version history');
-  assert.throws(()=>World.validateRawWorld({map:{width:12,height:10}},10,10,0).ok===true
-      ?(()=>{throw new Error('unexpected')}) : (()=>{throw new Error('validation failed')}),
-      /validation failed/);
+  assert.strictEqual(World.validateRawWorld({map:{width:12,height:10}},10,10,0).ok,false);
   console.log('World publish validation, prepared release, rollback and crash recovery passed.');
 } finally {fs.rmSync(temp,{recursive:true,force:true})}
