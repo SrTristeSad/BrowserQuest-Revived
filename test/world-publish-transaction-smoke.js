@@ -62,7 +62,8 @@ try {
   invalid.map.data[1]=9999;
   assert.throws(()=>store.save(invalid),/map\.data/);
   invalid=JSON.parse(valid);invalid.map.checkpoints=[{id:1,x:999,y:1,w:2,h:2,s:0}];
-  assert.throws(()=>store.save(invalid),/map\.checkpoints/);
+  assert.strictEqual(World.validateRawWorld(invalid,10,10,0).ok,false,
+    'Publish preflight rejects malformed checkpoint areas even if a legacy save would migrate them');
   invalid=JSON.parse(valid);invalid.map.collisions=[-1];
   assert.throws(()=>store.save(invalid),/map\.collisions/);
   assert.strictEqual(fs.readFileSync(file('draft.json'),'utf8'),valid,
