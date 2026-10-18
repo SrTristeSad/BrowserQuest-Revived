@@ -102,6 +102,25 @@ Publishing generates private runtime map files rather than modifying the origina
 
 **Current scope:** this version edits logical world data and preserves the original terrain/tile artwork. Full terrain tile painting using the BrowserQuest tilesheet remains outside the current release scope.
 
+## Sprite Importer — Phase 6 foundation
+
+Administrators can open `/admin/sprite-importer` from the World Editor to import
+PNG sprite sheets, inspect grid frames, and store the assets privately.
+
+- Accepted: PNG 8-bit RGB, RGBA, grayscale or indexed, non-interlaced.
+- Maximum uploaded file: 2 MiB; maximum image area: 4 megapixels.
+- Frame dimensions are configurable (1–1024 px per axis) and must divide
+  the full sheet dimensions exactly; at most 4,096 frames per import.
+- Imported assets are stored under the installation's private
+  `var/sprite-imports` equivalent (the same `configDir` used by the admin panel),
+  outside the public `client/img` assets. Existing game sprites are unchanged.
+- The PNG preview URL requires a current admin session. Invalid PNG chunks,
+  CRCs, oversized compressed payloads and invalid frame geometry are rejected.
+- **Import does not yet publish or bind a sprite to an NPC/mob.**
+  The next Phase 6 delivery maps animation directions and integrates
+  an explicitly published asset into the existing client sprite registry.
+  Do not reference an imported ID as a sprite kind until integration ships.
+
 ## Brain System
 
 Version **0.4.0** introduces a lightweight behavior engine shared by NPCs and mobs. It is deliberately **not a neural network**: decisions are deterministic game logic using perception, short memory, priorities and small behavior states, so it remains inexpensive enough for a browser multiplayer game.

@@ -5,7 +5,8 @@ var fs = require('fs'),
     crypto = require('crypto'),
     Auth = require('./auth'),
     StoryStore = require('./story-store').StoryStore,
-    WorldStore = require('./world-store').WorldStore;
+    WorldStore = require('./world-store').WorldStore,
+    SpriteImportStore = require('./sprite-import-store').SpriteImportStore;
 
 function parseCookies(header) {
     var out = {};
@@ -107,6 +108,7 @@ function createAdminHandler(options) {
             publishedClientJsPath: path.join(configDir, 'world_client_published.js'),
             versionsDir: path.join(configDir, 'world-versions')
         }),
+        spriteImports = new SpriteImportStore(path.join(configDir,'sprite-imports')),
         legacyAttempts = new Map();
 
     async function currentAdmin(request) {
@@ -468,6 +470,38 @@ function createAdminHandler(options) {
 
         if(pathname === '/admin/world-editor' && request.method === 'GET') {
             if(await requireAdmin(request, response, false)) { serveFile(response, 'world-editor.html'); }
+            return;
+        }
+
+        if(pathname === '/admin/sprite-importer' && request.method === 'GET') {
+            if(await requireAdmin(request,response,false)) { serveFile(response,'sprite-importer.html'); }
+            return;
+        }
+        if(pathname === '/admin/api/sprites' && request.method === 'GET') {
+            if(!await requireAdmin(request,response,true)) { return; }
+            try { json(response,200,{sprites:spriteImports.list()}); }
+            catch(error) { json(response,500,{error:'Falha ao listar sprites.'}); }
+            return;
+        }
+        if(pathname === '/admin/api/sprites' && request.method === 'POST') {
+            session=await requireAdmin(request,response,true);
+            if(!session) { return; }
+            try { body=await readJson(request); }
+            catch(error) { json(response,400,{error:'JSON inválido ou arquivo muito grande.'}); return; }
+            try {
+                var imported=spriteImports.import(body);
+                await audit(session,'sprite.import',imported.id,
+                    {label:imported.label,width:imported.width,height:imported.height,frames:imported.frames},request);
+                json(response,201,imported);
+            } catch(error) { json(response,error.statusCode||500,{error:error.statusCode?error.message:'Falha ao importar sprite.'}); }
+            return;
+        }
+        if(pathname === '/admin/api/sprites/image' && request.method === 'GET') {
+            if(!await requireAdmin(request,response,true)) { return; }
+            try {
+                var spriteId=new URL(request.url,'http://localhost').searchParams.get('id');
+                send(response,200,spriteImports.image(spriteId),'image/png');
+            }catch(error){json(response,error.statusCode||404,{error:'Sprite não encontrado ou inválido.'});}
             return;
         }
 
