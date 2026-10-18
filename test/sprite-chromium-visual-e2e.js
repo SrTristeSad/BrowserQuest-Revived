@@ -56,8 +56,10 @@ const server=http.createServer(async(req,res)=>{
     if(pathname==='/admin/api/sprites/publish'&&req.method==='POST'){const data=await body(req);return send(res,200,store.publish(data.id))}
     if(pathname==='/admin/api/sprites/image'&&req.method==='GET')return send(res,200,store.image(url.searchParams.get('id')));
     if(pathname==='/game/sprites/catalog.js')return send(res,200,'window.BrowserQuestPublishedSprites='+JSON.stringify(store.publicCatalog())+';','application/javascript; charset=utf-8');
-    if(/^\/game\/sprites\/[a-f0-9]{32}\.png$/.test(pathname))
-      return send(res,200,store.publishedImage(pathname.split('/').pop().slice(0,-4)));
+    if(/^\/game\/sprites\/[a-f0-9]{32}\.png$/.test(pathname)){
+      try{return send(res,200,store.publishedImage(pathname.split('/').pop().slice(0,-4)))}
+      catch(error){return send(res,404,{error:'Sprite publicado não encontrado.'})}
+    }
     if(/^\/img\/[123]\/rat\.png$/.test(pathname))return send(res,200,png);
     send(res,404,{error:'Not found'});
   }catch(e){send(res,e.statusCode||404,{error:e.message})}
