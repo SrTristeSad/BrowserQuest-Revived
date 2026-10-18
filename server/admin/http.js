@@ -836,6 +836,27 @@ function createAdminHandler(options) {
             return;
         }
 
+        if(pathname === '/admin/api/world/preview' && request.method === 'GET') {
+            if(!await requireAdmin(request,response,true)) { return; }
+            try { json(response,200,world.preview()); }
+            catch(error) { json(response,error.statusCode||422,{error:error.message}); }
+            return;
+        }
+        if(pathname === '/admin/api/world/versions' && request.method === 'GET') {
+            if(!await requireAdmin(request,response,true)) { return; }
+            try { json(response,200,{versions:world.listVersions()}); }
+            catch(error) { json(response,500,{error:error.message}); }
+            return;
+        }
+        if(pathname === '/admin/api/world/restore' && request.method === 'POST') {
+            if(!await requireAdmin(request,response,true)) { return; }
+            try { body=await readJson(request); }
+            catch(error) { json(response,400,{error:'JSON inválido.'}); return; }
+            if(!body || typeof body.versionId!=='string') { json(response,400,{error:'Selecione uma versão válida.'}); return; }
+            try { json(response,200,world.restoreVersion(body.versionId)); }
+            catch(error) { json(response,error.statusCode||422,{error:error.message}); }
+            return;
+        }
         if(pathname === '/admin/api/world/reset' && request.method === 'POST') {
             if(!await requireAdmin(request, response, true)) { return; }
             try { json(response, 200, world.reset()); }
