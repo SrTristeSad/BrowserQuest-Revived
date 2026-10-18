@@ -75,10 +75,10 @@ function publish(entries, versionsDir, options) {
             if(typeof options.afterReplace === 'function') { options.afterReplace(i, entry.dest); }
         });
         // Journal deletion is the commit boundary: recovery always restores all previous files.
-        fs.unlinkSync(journal);
         fs.writeFileSync(path.join(dir,'manifest.json'), JSON.stringify({
             id:id,createdAt:new Date().toISOString(),files:records,revision:options.revision||null
         },null,2)+'\n',{mode:0o600});
+        fs.unlinkSync(journal);
         return {id:id};
     } catch(error) {
         if(prepared) {
