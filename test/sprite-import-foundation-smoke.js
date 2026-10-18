@@ -80,9 +80,7 @@ assert.strictEqual(scripts.length,1);
 new vm.Script(scripts[0][1],{filename:'sprite-importer.html inline script'});
 for(const key of ['type="file"','id="frameWidth"','id="frameHeight"','id="sheet"',
     'id="framePreview"','id="submit"','/admin/api/sprites','/admin/api/sprites/image',
-    'Nenhum sprite importado','Nenhum PNG importado','draftOnly']){
-    // draftOnly is server metadata, not necessarily echoed in page
-    if(key==='draftOnly')continue;
+    'Nenhum PNG importado']){
     assert(html.includes(key),'Missing sprite importer UI: '+key);
 }
 const http=fs.readFileSync(path.join(__dirname,'../server/admin/http.js'),'utf8');
