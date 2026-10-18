@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrowserQuest Revived · Importador de sprites</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#191611;color:#f3e6d0;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:#eac18a}button,input{font:inherit}button{cursor:pointer;background:#735029;color:white;border:1px solid #aa7c47;border-radius:7px;padding:10px 14px}button:disabled{opacity:.5;cursor:not-allowed}
+header{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:#2b241a;border-bottom:1px solid #5d4a31;padding:14px 24px}
+header strong{font-size:18px}main{max-width:1200px;margin:25px auto;padding:0 18px}.layout{display:grid;grid-template-columns:minmax(290px,380px) 1fr;gap:20px}
+.panel{background:#251f18;border:1px solid #50412e;border-radius:12px;padding:20px}h1{font-size:23px;margin:0 0 12px}h2{font-size:18px;margin:0 0 12px}
+p,.hint{font-size:14px;color:#cfbea4;line-height:1.5}label{display:block;font-size:13px;font-weight:700;margin:15px 0 5px}input{display:block;width:100%;padding:10px;background:#15130e;color:#f3e6d0;border:1px solid #746146;border-radius:7px}
+.row{display:flex;gap:12px}.row>div{flex:1;min-width:0}.box{background:#15130e;border:1px solid #4c4031;border-radius:9px;padding:15px;margin-bottom:14px}
+canvas{display:block;max-width:100%;border:1px solid #86734d;background:repeating-conic-gradient(#40382c 0% 25%,#211e19 0% 50%) 50%/16px 16px;image-rendering:pixelated}
+.preview{overflow:auto;max-height:550px;display:flex;justify-content:center}.mini{min-height:115px;display:flex;justify-content:center;align-items:center}
+#framePreview{max-width:180px;max-height:180px;object-fit:contain}#message{white-space:pre-wrap;padding:12px 14px;border-radius:6px;min-height:45px;background:#30291f;color:#f6d6aa}
+#list{display:grid;gap:8px}.item{display:flex;align-items:center;gap:12px;background:#352b20;padding:9px;border-radius:7px}.item img{width:56px;height:56px;object-fit:contain;image-rendering:pixelated;background:#17130f;border:1px solid #594936}
+.item small{display:block;color:#c5b197;word-break:break-all}footer{font-size:12px;color:#bdab8e;margin:20px 0 35px}
+@media(max-width:800px){.layout{grid-template-columns:1fr}header{padding:12px}main{margin:14px auto}}
+</style>
+</head>
+<body>
+<header><strong>BrowserQuest · Importador de sprites</strong><a href="/admin/world-editor">Editor de Mundo</a><a href="/admin/story-editor">Histórias</a></header>
+<main>
+<h1>Importação de spritesheets</h1>
+<p>Etapa inicial da Fase 6: valide e guarde artes PNG em uma área privada. Nenhum sprite importado substitui personagens ou é publicado no cliente automaticamente.</p>
+<div class="layout">
+<section class="panel">
+<h2>1 · Selecionar PNG</h2>
+<form id="form">
+<label for="spriteFile">Arquivo PNG (máximo 2 MiB)</label>
+<input type="file" id="spriteFile" accept=".png,image/png" required>
+<label for="spriteLabel">Nome da arte</label><input id="spriteLabel" maxlength="80" placeholder="Ex.: Guerreiro da floresta" required>
+<div class="row">
+<div><label for="frameWidth">Largura do frame</label><input id="frameWidth" type="number" value="32" min="1" max="1024" step="1" required></div>
+<div><label for="frameHeight">Altura do frame</label><input id="frameHeight" type="number" value="32" min="1" max="1024" step="1" required></div>
+</div>
+<p class="hint">O tamanho dos frames é livre; apenas deve dividir exatamente as dimensões da imagem. Use PNG 8-bit RGB/RGBA ou indexado, sem entrelaçamento. Animações e direções serão configuradas na próxima etapa.</p>
+<button id="submit" type="submit" disabled>Validar e importar PNG</button>
+</form>
+<div id="message" role="status">Escolha uma spritesheet para começar.</div>
+</section>
+<section class="panel">
+<h2>2 · Visualizar frames</h2>
+<div id="dimensions" class="hint">Nenhuma imagem selecionada.</div>
+<div class="box preview"><canvas id="sheet" width="400" height="200" aria-label="Prévia da spritesheet"></canvas></div>
+<div class="box mini"><canvas id="framePreview" width="96" height="96" aria-label="Frame selecionado"></canvas></div>
+<div id="frameInfo" class="hint">Clique em um frame da folha para inspecioná-lo.</div>
+<h2>Artes importadas</h2><button id="refresh" type="button">Atualizar lista</button>
+<div id="list"><p class="hint">Carregando...</p></div>
+</section>
+</div>
+<footer>Sprites ficam na pasta privada de dados do servidor e não recebem URL pública. O preview exige autenticação administrativa.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id),sheet=$('sheet'),ctx=sheet.getContext('2d'),
+      thumb=$('framePreview'),tctx=thumb.getContext('2d');
+let file=null,img=null,objectUrl=null,scale=1,columns=0,rows=0,frameW=32,frameH=32;
+ctx.imageSmoothingEnabled=false;tctx.imageSmoothingEnabled=false;
+function status(message){$('message').textContent=message}
+function geometry(){
+  if(!img)return null;
+  frameW=+$('frameWidth').value;frameH=+$('frameHeight').value;
+  if(!Number.isSafeInteger(frameW)||!Number.isSafeInteger(frameH)||frameW<1||frameH<1||
+     frameW>1024||frameH>1024||img.naturalWidth%frameW||img.naturalHeight%frameH){
+     $('submit').disabled=true;$('dimensions').textContent='Frame inválido: ajuste largura/altura para divisores exatos da imagem.';return null;
+  }
+  columns=img.naturalWidth/frameW;rows=img.naturalHeight/frameH;
+  if(columns*rows>4096){$('submit').disabled=true;status('Limite de 4096 frames excedido.');return null}
+  $('submit').disabled=false;
+  $('dimensions').textContent=img.naturalWidth+' × '+img.naturalHeight+' px · '+columns+' colunas × '+rows+' linhas · '+columns*rows+' frames';
+  return {frameW,frameH,columns,rows};
+}
+function previewFrame(column,row){
+  if(!img)return;
+  thumb.width=frameW;thumb.height=frameH;
+  tctx.imageSmoothingEnabled=false;
+  tctx.clearRect(0,0,thumb.width,thumb.height);
+  tctx.drawImage(img,column*frameW,row*frameH,frameW,frameH,0,0,frameW,frameH);
+  $('frameInfo').textContent='Frame '+(row*columns+column)+' · coluna '+column+' · linha '+row+' ('+frameW+' × '+frameH+' px)';
+}
+function redraw(){
+  if(!img||!geometry())return;
+  scale=Math.min(1,800/img.naturalWidth,440/img.naturalHeight);
+  sheet.width=Math.max(1,Math.round(img.naturalWidth*scale));
+  sheet.height=Math.max(1,Math.round(img.naturalHeight*scale));
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(img,0,0,sheet.width,sheet.height);
+  ctx.strokeStyle='rgba(248,208,117,.65)';
+  ctx.lineWidth=1;
+  for(let x=1;x<columns;x++){let px=Math.round(x*frameW*scale)+.5;ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,sheet.height);ctx.stroke()}
+  for(let y=1;y<rows;y++){let py=Math.round(y*frameH*scale)+.5;ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(sheet.width,py);ctx.stroke()}
+  previewFrame(0,0);
+}
+function openFile(nextFile){
+  if(objectUrl)URL.revokeObjectURL(objectUrl);
+  img=null;file=null;$('submit').disabled=true;
+  if(!nextFile)return;
+  if(nextFile.size>2*1024*1024||!nextFile.size){status('Arquivo vazio ou maior que 2 MiB.');return}
+  file=nextFile;
+  objectUrl=URL.createObjectURL(file);
+  const nextImg=new Image();
+  nextImg.onload=()=>{
+    if(img&&img!==nextImg)return;
+    img=nextImg;redraw();status('Imagem carregada localmente. Confira os frames antes de importar.');
+  };
+  nextImg.onerror=()=>{img=null;$('submit').disabled=true;status('O navegador não conseguiu abrir esse PNG.')};
+  nextImg.src=objectUrl;
+}
+$('spriteFile').onchange=()=>{const selected=$('spriteFile').files[0];if(selected&&!$('spriteLabel').value)$('spriteLabel').value=selected.name.replace(/\.png$/i,'').slice(0,80);openFile(selected)};
+$('frameWidth').oninput=redraw;$('frameHeight').oninput=redraw;
+sheet.onclick=e=>{if(!img||!geometry())return;const rect=sheet.getBoundingClientRect(),x=Math.floor((e.clientX-rect.left)*sheet.width/rect.width/scale/frameW),y=Math.floor((e.clientY-rect.top)*sheet.height/rect.height/scale/frameH);previewFrame(Math.min(columns-1,Math.max(0,x)),Math.min(rows-1,Math.max(0,y)))};
+async function api(url,options){
+  const response=await fetch(url,options);if(response.status===401){location.href='/admin/login';throw Error('Sessão expirada')}
+  const data=await response.json();if(!response.ok)throw Error(data.error||'Falha na operação.');return data;
+}
+async function refresh(){
+  try{
+    const data=await api('/admin/api/sprites');
+    $('list').replaceChildren();
+    if(!data.sprites.length){$('list').textContent='Nenhum PNG importado.';return}
+    for(const sprite of data.sprites){
+      const item=document.createElement('div'),preview=document.createElement('img'),name=document.createElement('div'),strong=document.createElement('strong'),small=document.createElement('small');
+      item.className='item';preview.alt='Prévia privada de '+sprite.label;
+      preview.src='/admin/api/sprites/image?id='+encodeURIComponent(sprite.id);
+      strong.textContent=sprite.label;
+      small.textContent=sprite.width+'×'+sprite.height+' · frame '+sprite.frameWidth+'×'+sprite.frameHeight+' · '+sprite.frames+' frames · privado';
+      name.append(strong,small);item.append(preview,name);$('list').append(item);
+    }
+  }catch(error){$('list').textContent=error.message}
+}
+$('refresh').onclick=refresh;
+$('form').onsubmit=async e=>{
+  e.preventDefault();if(!file||!geometry())return;
+  $('submit').disabled=true;
+  try{
+    status('Validando e salvando no servidor...');
+    const base64=await new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+      reader.onerror=()=>reject(Error('Falha de leitura do arquivo.'));
+      reader.readAsDataURL(file);
+    });
+    const created=await api('/admin/api/sprites',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({pngBase64:base64,label:$('spriteLabel').value,frameWidth:frameW,frameHeight:frameH})});
+    status('Importado: '+created.label+' ('+created.frames+' frames). Arquivo privado, ainda não publicado no jogo.');
+    await refresh();
+  }catch(error){status(error.message)}
+  finally{$('submit').disabled=!geometry()}
+};
+refresh();
+</script>
+</body>
+</html>
