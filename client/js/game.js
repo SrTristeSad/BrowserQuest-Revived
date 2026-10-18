@@ -336,7 +336,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 
                 _.each(this.entities, function(entity) {
                     entity.sprite = null;
-                    entity.setSprite(self.sprites[entity.getSpriteName()]);
+                    entity.setSprite(self.sprites[entity.getSpriteName()] && !self.sprites[entity.getSpriteName()].loadFailed ? self.sprites[entity.getSpriteName()] : self.sprites[Types.getKindAsString(entity.kind)]);
                 });
                 this.initHurtSprites();
                 this.initShadows();
@@ -350,7 +350,8 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
             this.spritesets[0] = {};
             this.spritesets[1] = {};
             this.spritesets[2] = {};
-            _.map(this.spriteNames, this.loadSprite, this);
+            var custom=window.BrowserQuestPublishedSprites || {};
+            _.map(this.spriteNames.concat(Object.keys(custom).filter(function(k){return /^custom_[a-f0-9]{32}$/.test(k);})),this.loadSprite,this);
         },
     
         spritesLoaded: function() {
@@ -1094,7 +1095,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                     if(!self.entityIdExists(entity.id)) {
                         try {
                             if(entity.id !== self.playerId) {
-                                entity.setSprite(self.sprites[entity.getSpriteName()]);
+                                entity.setSprite(self.sprites[entity.getSpriteName()] && !self.sprites[entity.getSpriteName()].loadFailed ? self.sprites[entity.getSpriteName()] : self.sprites[Types.getKindAsString(entity.kind)]);
                                 entity.setGridPosition(x, y);
                                 entity.setOrientation(orientation);
                                 entity.idle();
