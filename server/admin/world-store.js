@@ -575,8 +575,8 @@ WorldStore.prototype.validateDraft = function() {
         function(){requireValidChests(raw.map,this.base.width,this.base.height);},
         function(){requireValidMobAreas(raw.map && raw.map.roamingAreas,this.base.width,this.base.height,raw.mobs);},
         function(){requireValidDoorLinks(raw.map && raw.map.doors,this.base.width,this.base.height);},
-        function(){requireStartingCheckpoint(state,this.base);,
-        function(){requirePublishedSpriteReferences(state,this.spriteImports);}}
+        function(){requireStartingCheckpoint(state,this.base);},
+        function(){requirePublishedSpriteReferences(state,this.spriteImports);}
     ].forEach(function(check) {
         try { check.call(this); }
         catch(error) { result.errors.push({path:error.code||'map',message:error.message}); }
