@@ -86,6 +86,40 @@ function validateFrames(image,frameWidth,frameHeight) {
     if(columns*rows>4096)throw invalid('A spritesheet excede 4096 frames.');
     return {frameWidth,frameHeight,columns,rows,frames:columns*rows};
 }
+
+const ANIMATION_NAMES=new Set(['idle_down','idle_up','idle_left','idle_right',
+    'walk_down','walk_up','walk_left','walk_right',
+    'atk_down','atk_up','atk_left','atk_right','death']);
+function validateAnimations(record,config) {
+    if(!config||typeof config!=='object'||Array.isArray(config)||
+       !config.animations||typeof config.animations!=='object'||Array.isArray(config.animations))
+        throw invalid('Configure pelo menos a animação idle_down.');
+    const names=Object.keys(config.animations);
+    if(!names.length||names.length>13||!names.includes('idle_down')||
+       names.some(name=>!ANIMATION_NAMES.has(name)))
+        throw invalid('Nomes de animação inválidos ou idle_down ausente.');
+    const animations=Object.create(null);
+    names.forEach(name=>{
+        const entry=config.animations[name];
+        if(!entry||typeof entry!=='object'||Array.isArray(entry)||
+           ![entry.row,entry.start,entry.length,entry.fps].every(Number.isSafeInteger)||
+           entry.row<0||entry.row>=record.rows||entry.start<0||
+           entry.length<1||entry.length>record.columns||
+           entry.start+entry.length>record.columns||
+           entry.fps<1||entry.fps>60||
+           (entry.flipX!==undefined&&typeof entry.flipX!=='boolean'))
+            throw invalid('Frames, linha, duração ou direção inválidos: '+name);
+        animations[name]={row:entry.row,start:entry.start,length:entry.length,
+                          fps:entry.fps,flipX:entry.flipX===true};
+    });
+    const offsetX=config.offsetX==null?-Math.floor((record.frameWidth-16)/2):config.offsetX,
+          offsetY=config.offsetY==null?-Math.floor((record.frameHeight-16)/2):config.offsetY;
+    if(!Number.isSafeInteger(offsetX)||!Number.isSafeInteger(offsetY)||
+       Math.abs(offsetX)>2048||Math.abs(offsetY)>2048)
+        throw invalid('Offsets do sprite inválidos.');
+    return {animations,offsetX,offsetY};
+}
+
 class SpriteImportStore {
     constructor(directory){if(typeof directory!=='string'||!path.isAbsolute(directory))throw new Error('Diretório privado de sprites obrigatório.');this.directory=directory;}
     import(payload){
@@ -118,6 +152,23 @@ class SpriteImportStore {
         if(!record||record.id!==id)throw invalid('Metadados de sprite inválidos.');
         return record;
     }
+    configure(id,config){
+        const original=this.get(id),validated=validateAnimations(original,config);
+        // Always recheck the private PNG before accepting a new animation map.
+        const bytes=this.image(id),dimensions=readPng(bytes);
+        if(dimensions.width!==original.width||dimensions.height!==original.height)
+            throw invalid('PNG diferente da geometria originalmente importada.');
+        const record=Object.assign({},original,validated,{
+            draftOnly:true,published:false,updatedAt:new Date().toISOString()
+        });
+        const dest=path.join(this.directory,id+'.json'),
+              temporary=path.join(this.directory,id+'.stage-'+crypto.randomBytes(6).toString('hex'));
+        try {
+            fs.writeFileSync(temporary,JSON.stringify(record,null,2)+'\n',{flag:'wx',mode:0o600});
+            fs.renameSync(temporary,dest);
+        }finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
+        return this.get(id);
+    }
     image(id){
         this.get(id);
         const buffer=fs.readFileSync(path.join(this.directory,id+'.png'));
@@ -131,4 +182,4 @@ class SpriteImportStore {
            .sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     }
 }
-module.exports={SpriteImportStore,readPng,validateFrames,parseUploadBase64,MAX_UPLOAD};
+module.exports={SpriteImportStore,readPng,validateFrames,parseUploadBase64,validateAnimations,MAX_UPLOAD};
