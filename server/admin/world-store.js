@@ -4,6 +4,7 @@ var fs = require('fs'),
     path = require('path'),
     crypto = require('crypto'),
     ReferenceValidator = require('./story-reference-validator'),
+    WorldPublishTransaction = require('./world-publish-transaction'),
     Types = require('../../shared/js/gametypes');
 
 var NPC_KINDS = ['guard','king','octocat','villagegirl','villager','priest','scientist','agent','rick','nyan','sorcerer','beachnpc','forestnpc','desertnpc','lavanpc','coder'];
@@ -151,6 +152,50 @@ function buildEditableMap(base, baseClient, maxTileId) {
         roamingAreas: clone(base.roamingAreas || []),
         entities: entities
     };
+}
+
+function validateRawWorld(raw, width, height, maxTileId) {
+    var errors = [], map = raw && raw.map, total = width * height;
+    function add(path, message) { errors.push({path:path,message:message}); }
+    if(!map || typeof map !== 'object' || Array.isArray(map)) {
+        add('map','Mapa ausente ou inválido.');
+    } else {
+        if(map.width != null && map.width !== width || map.height != null && map.height !== height) {
+            add('map.width/height','Dimensões incompatíveis com o mapa original.');
+        }
+        if(map.data != null) {
+            if(!Array.isArray(map.data) || map.data.length > total) {
+                add('map.data','Grade de tiles inválida ou maior que o mapa.');
+            } else if(map.data.length === total) {
+                var i = map.data.findIndex(function(tile) {
+                    return !Number.isSafeInteger(tile) || tile < -1 || tile > maxTileId;
+                });
+                if(i !== -1) { add('map.data['+i+']','Tile fora do catálogo do tileset.'); }
+            }
+            // Legacy short grids are migrated/padded by normalizeTileData.
+        }
+        if(map.collisions != null && (!Array.isArray(map.collisions) ||
+           map.collisions.some(function(v){return !Number.isSafeInteger(v)||v<0||v>=total;}))) {
+            add('map.collisions','Colisões devem ser índices inteiros válidos.');
+        }
+        if(map.checkpoints != null && (!Array.isArray(map.checkpoints) ||
+           normalizeCheckpointAreas(map.checkpoints,width,height).length !== map.checkpoints.length)) {
+            add('map.checkpoints','Checkpoint duplicado ou fora dos limites.');
+        }
+        if(map.entities != null && (!Array.isArray(map.entities) ||
+           map.entities.some(function(e) {
+               return !e || !Number.isSafeInteger(e.x)||!Number.isSafeInteger(e.y)||
+                 e.x < 1||e.y < 1||e.x >= width||e.y >= height;
+           }))) { add('map.entities','Entidade com posição fora do mapa.'); }
+    }
+    return {ok:errors.length === 0,errors:errors};
+}
+function requireRawWorld(raw,width,height,maxTileId) {
+    var report=validateRawWorld(raw,width,height,maxTileId);
+    if(!report.ok) {
+        var error=new Error('Validação do mundo falhou: '+report.errors.slice(0,5).map(function(e){return e.path+' — '+e.message;}).join(' | '));
+        error.code='WORLD_MAP_VALIDATION';error.statusCode=422;error.details=report.errors;throw error;
+    }
 }
 
 function chestItemCatalog() {
@@ -398,6 +443,7 @@ function WorldStore(options) {
     this.publishedClientJsonPath = options.publishedClientJsonPath;
     this.publishedClientJsPath = options.publishedClientJsPath;
     this.versionsDir = options.versionsDir;
+    WorldPublishTransaction.recover(this.versionsDir);
     this.storiesPath = options.storiesPath || path.join(path.dirname(this.statePath), 'stories.json');
     this.tilesetPath = options.tilesetPath || (this.baseClientMapPath ? path.join(path.dirname(this.baseClientMapPath), '..', 'img', '1', 'tilesheet.png') : null);
     this.tilesetUrl = options.tilesetUrl || '/img/1/tilesheet.png';
@@ -441,6 +487,7 @@ WorldStore.prototype.normalize = function(state) {
 };
 WorldStore.prototype.save = function(input) {
     var previous=this.load(),state;
+    requireRawWorld(input,this.base.width,this.base.height,this.tileCatalog.maxTileId);
     requireValidStaticItems(input && input.map,this.base.width,this.base.height);
     requireValidChests(input && input.map,this.base.width,this.base.height);
     requireValidMobAreas(input && input.map && input.map.roamingAreas, this.base.width, this.base.height, input && input.mobs);
@@ -475,23 +522,41 @@ WorldStore.prototype.buildClientMap = function(state) {
     client.doors=clone(state.map.doors); client.checkpoints=clone(state.map.checkpoints); client.editorRevision=state.revision;
     return client;
 };
+WorldStore.prototype.validateDraft = function() {
+    var raw=readJson(this.statePath),state=this.normalize(clone(raw));
+    return validateRawWorld(raw,this.base.width,this.base.height,this.tileCatalog.maxTileId);
+};
 WorldStore.prototype.publish = function() {
-    var state=this.load(),validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),publishedMap,publishedClient,stamp,snapshot,error;
-    var rawDraft=readJson(this.statePath);
+    var rawDraft=readJson(this.statePath),
+        state=this.normalize(clone(rawDraft)),
+        validation=ReferenceValidator.validateWorldStoryReferences(state,this._publishedStories()),
+        error,publishedMap,publishedClient,entries,stamp,result;
+    requireRawWorld(rawDraft,this.base.width,this.base.height,this.tileCatalog.maxTileId);
     requireValidStaticItems(rawDraft.map,this.base.width,this.base.height);
     requireValidChests(rawDraft.map,this.base.width,this.base.height);
     requireValidMobAreas(rawDraft.map && rawDraft.map.roamingAreas,this.base.width,this.base.height,rawDraft.mobs);
-    requireValidDoorLinks(readJson(this.statePath).map.doors,this.base.width,this.base.height);
+    requireValidDoorLinks(rawDraft.map && rawDraft.map.doors,this.base.width,this.base.height);
     requireStartingCheckpoint(state,this.base);
-    if(!validation.ok){error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));error.code='WORLD_STORY_REFERENCE_VALIDATION';error.details=validation.errors;throw error;}
-    publishedMap=this.buildServerMap(state); publishedClient=this.buildClientMap(state); stamp=new Date().toISOString().replace(/[:.]/g,'-');
-    fs.mkdirSync(this.versionsDir,{recursive:true,mode:0o700});
-    if(fs.existsSync(this.publishedMapPath)){snapshot=path.join(this.versionsDir,'world-'+stamp+'.json');fs.copyFileSync(this.publishedMapPath,snapshot);fs.chmodSync(snapshot,0o600);}
-    atomicWrite(this.publishedMapPath,publishedMap);
-    if(publishedClient&&this.publishedClientJsonPath&&this.publishedClientJsPath){atomicWrite(this.publishedClientJsonPath,publishedClient);atomicWriteText(this.publishedClientJsPath,'var mapData = '+JSON.stringify(publishedClient)+';\n');}
-    state.status='published'; state.publishedAt=new Date().toISOString(); state.updatedAt=state.publishedAt; atomicWrite(this.statePath,state);
-    return {ok:true,revision:state.revision,publishedAt:state.publishedAt,restartRequired:true,publishedMapPath:this.publishedMapPath,clientMapSynchronized:!!publishedClient};
+    if(!validation.ok) {
+        error=new Error('Referências de história inválidas no mundo: '+validation.errors.slice(0,6).map(function(item){return item.path+' — '+item.message;}).join(' | '));
+        error.code='WORLD_STORY_REFERENCE_VALIDATION';error.details=validation.errors;error.statusCode=422;throw error;
+    }
+    publishedMap=this.buildServerMap(state);
+    publishedClient=this.buildClientMap(state);
+    stamp=new Date().toISOString();
+    state.status='published';state.publishedAt=stamp;state.updatedAt=stamp;
+    entries=[{dest:this.publishedMapPath,content:JSON.stringify(publishedMap,null,2)+'\n'}];
+    if(publishedClient && this.publishedClientJsonPath && this.publishedClientJsPath) {
+        entries.push({dest:this.publishedClientJsonPath,content:JSON.stringify(publishedClient,null,2)+'\n'});
+        entries.push({dest:this.publishedClientJsPath,content:'var mapData = '+JSON.stringify(publishedClient)+';\n'});
+    }
+    entries.push({dest:this.statePath,content:JSON.stringify(state,null,2)+'\n'});
+    result=WorldPublishTransaction.publish(entries,this.versionsDir,{revision:state.revision});
+    return {ok:true,revision:state.revision,publishedAt:stamp,versionId:result.id,
+        restartRequired:true,publishedMapPath:this.publishedMapPath,clientMapSynchronized:!!publishedClient};
 };
+WorldStore.prototype.listVersions = function() { return WorldPublishTransaction.list(this.versionsDir); };
+
 WorldStore.prototype.getPublishedPath=function(){return fs.existsSync(this.publishedMapPath)?this.publishedMapPath:null;};
 
 exports.WorldStore=WorldStore;
@@ -510,3 +575,4 @@ exports.normalizeChestAreas=normalizeChestAreas;
 exports.requireValidChests=requireValidChests;
 exports.requireValidStaticItems=requireValidStaticItems;
 exports.requireValidDoorLinks=requireValidDoorLinks;
+exports.validateRawWorld=validateRawWorld;
