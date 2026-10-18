@@ -59,7 +59,7 @@ canvas{display:block;max-width:100%;border:1px solid #86734d;background:repeatin
 <div class="row"><button id="animAdd" type="button">Definir animação</button><button id="animRemove" type="button">Remover seleção</button></div>
 <div id="animList" class="hint" aria-live="polite">Nenhum sprite selecionado.</div>
 <div class="row"><div><label for="offsetX">Offset X</label><input type="number" id="offsetX" value="0" step="1"></div><div><label for="offsetY">Offset Y</label><input type="number" id="offsetY" value="0" step="1"></div></div>
-<div class="row"><button id="animSave" type="button" disabled>Salvar animações</button><button id="animPlay" type="button" disabled>Reproduzir preview</button></div>
+<div class="row"><button id="animSave" type="button" disabled>Salvar animações</button><button id="animPlay" type="button" disabled>Reproduzir preview</button></div><button id="publishSprite" type="button" disabled>Publicar sprite para uso em NPCs/mobs</button>
 <div id="animStatus" class="hint">Salve e selecione um PNG primeiro. Preview privado, não altera gameplay.</div>
 </div>
 <h2>Artes importadas</h2><button id="refresh" type="button">Atualizar lista</button>
@@ -189,8 +189,10 @@ async function selectImportedSprite(record){
   loaded.onload=()=>{if(selectedImport!==record)return;img=loaded;redraw();chooseAnimation()};
   loaded.onerror=()=>{if(selectedImport===record)$('animStatus').textContent='Falha na imagem privada.'};
   img=null;loaded.src='/admin/api/sprites/image?id='+encodeURIComponent(record.id);
-  $('animSave').disabled=false;$('animPlay').disabled=false;
-  $('animStatus').textContent='Editando '+record.label+' · ainda privado.';
+  $('animSave').disabled=!!record.published;$('animPlay').disabled=false;
+  $('publishSprite').disabled=!!record.published||!record.animations?.idle_down;
+  $('animStatus').textContent=record.published?'Sprite publicado — use uma nova importação para modificar animações.':'Sprite privado — configure idle_down e publique explicitamente.';
+  $('animStatus').textContent=record.published?'Sprite publicado e disponível para perfis.':'Editando '+record.label+' · ainda privado.';
 }
 $('animAction').onchange=()=>{stopAnimation();if($('animAction').value==='death')$('animDirection').value='down';chooseAnimation()};
 $('animDirection').onchange=()=>{stopAnimation();chooseAnimation()};
@@ -207,10 +209,11 @@ $('animSave').onclick=async()=>{
         offsetX:Number($('offsetX').value),offsetY:Number($('offsetY').value)})
     });
     selectedImport=updated;animationMap=JSON.parse(JSON.stringify(updated.animations||{}));
+    $('publishSprite').disabled=!updated.animations?.idle_down;
     $('animStatus').textContent='Animações salvas. Sprite ainda privado, não publicado no jogo.';
     await refresh();
   }catch(e){$('animStatus').textContent=e.message}
-  finally{$('animSave').disabled=false}
+  finally{$('animSave').disabled=selectedImport?.published===true}
 };
 
 async function refresh(){
@@ -223,7 +226,7 @@ async function refresh(){
       item.className='item';preview.alt='Prévia privada de '+sprite.label;
       preview.src='/admin/api/sprites/image?id='+encodeURIComponent(sprite.id);
       strong.textContent=sprite.label;
-      small.textContent=sprite.width+'×'+sprite.height+' · frame '+sprite.frameWidth+'×'+sprite.frameHeight+' · '+sprite.frames+' frames · privado';
+      small.textContent=sprite.width+'×'+sprite.height+' · frame '+sprite.frameWidth+'×'+sprite.frameHeight+' · '+sprite.frames+' frames · '+(sprite.published?'publicado':'privado');
       name.append(strong,small);item.append(preview,name);item.style.cursor='pointer';
       item.tabIndex=0;item.setAttribute('role','button');item.setAttribute('aria-label','Editar animações de '+sprite.label);
       item.onclick=()=>selectImportedSprite(sprite);item.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectImportedSprite(sprite)}};
@@ -231,6 +234,23 @@ async function refresh(){
     }
   }catch(error){$('list').textContent=error.message}
 }
+
+$('publishSprite').onclick=async()=>{
+  if(!selectedImport||!selectedImport.animations?.idle_down)return;
+  if(!confirm('Publicar esta arte para jogadores? A configuração ficará imutável; sprites nativos não serão substituídos.'))return;
+  $('publishSprite').disabled=true;stopAnimation();
+  try{
+    const published=await api('/admin/api/sprites/publish',{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({id:selectedImport.id})
+    });
+    selectedImport=published;
+    $('animSave').disabled=true;
+    $('animStatus').textContent='Publicado com segurança. Selecione este sprite nos perfis do World Editor e publique o mundo.';
+    await refresh();
+  }catch(error){$('animStatus').textContent=error.message;$('publishSprite').disabled=false}
+};
+
 $('refresh').onclick=refresh;
 $('form').onsubmit=async e=>{
   e.preventDefault();if(!file||!geometry())return;
