@@ -496,6 +496,18 @@ function createAdminHandler(options) {
             } catch(error) { json(response,error.statusCode||500,{error:error.statusCode?error.message:'Falha ao importar sprite.'}); }
             return;
         }
+        if(pathname === '/admin/api/sprites/animations' && request.method === 'POST') {
+            session=await requireAdmin(request,response,true);
+            if(!session) { return; }
+            try { body=await readJson(request); }
+            catch(error) { json(response,400,{error:'JSON de animações inválido.'}); return; }
+            try {
+                const updated=spriteImports.configure(body && body.id,body);
+                await audit(session,'sprite.animate',updated.id,{animations:Object.keys(updated.animations)},request);
+                json(response,200,updated);
+            }catch(error){json(response,error.statusCode||500,{error:error.statusCode?error.message:'Falha ao configurar animações.'});}
+            return;
+        }
         if(pathname === '/admin/api/sprites/image' && request.method === 'GET') {
             if(!await requireAdmin(request,response,true)) { return; }
             try {
