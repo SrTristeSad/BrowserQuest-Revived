@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:14px;background:#18242c;color:#eee;font:15px system-ui}
+canvas{display:block;width:100%;max-width:640px;height:auto;image-rendering:pixelated;background:#263946;border:1px solid #4d6673}
+</style></head><body>
+<h1>BrowserQuest Sprite Visual Acceptance</h1><canvas id="world" width="640" height="300"></canvas>
+<script>
+window.Class=function(){};
+Class.extend=function(properties){
+ const Parent=this;function Child(){if(this.init)this.init.apply(this,arguments)}
+ Child.prototype=Object.create(Parent.prototype);Child.prototype.constructor=Child;
+ Object.keys(properties).forEach(name=>{
+   const fn=properties[name],parent=Parent.prototype[name];
+   Child.prototype[name]=typeof fn==='function'&&typeof parent==='function'?function(){
+     const previous=this._super;this._super=parent.bind(this);
+     try{return fn.apply(this,arguments)}finally{this._super=previous}
+   }:fn;
+ });
+ Child.extend=Parent.extend;return Child;
+};
+window.Types={
+ Orientations:{DOWN:1,UP:2,LEFT:3,RIGHT:4},Entities:{CAKE:9999},
+ isMob:x=>x===21,isNpc:x=>x===22,isPlayer:x=>false,
+ getKindAsString:x=>x===21?'rat':'villager',
+ getOrientationAsString:x=>({1:'down',2:'up',3:'left',4:'right'})[x]
+};
+window._={indexOf:(a,x)=>a.indexOf(x),keys:Object.keys};
+window.log={error:()=>{},info:()=>{},debug:()=>{}};
+window.__modules={};window.__native={};
+window.define=(keys,factory)=>{
+ if(typeof keys==='function'){factory=keys;keys=[]}
+ const mapped=(keys||[]).map(k=>k.startsWith('text!')?window.__native[k.split('/').pop()]:
+   window.__modules[k]||({jquery:{},transition:function(){},timer:function(){},
+     camera:function(){},item:function(){},player:function(){}})[k]);
+ window.__modules[window.__loading]=factory.apply(null,mapped);
+};
+</script>
+<script src="/native-sprite-meta.js"></script>
+<script src="/game/sprites/catalog.js"></script>
+<script>window.__loading='sprites'</script><script src="/client/js/sprites.js"></script>
+<script>window.__loading='animation'</script><script src="/client/js/animation.js"></script>
+<script>window.__loading='entity'</script><script src="/client/js/entity.js"></script>
+<script>window.__loading='character'</script><script src="/client/js/character.js"></script>
+<script>window.__loading='sprite'</script><script src="/client/js/sprite.js"></script>
+<script>window.__loading='renderer'</script><script src="/client/js/renderer.js"></script>
+<script>window.__ready=true</script>
+</body></html>
