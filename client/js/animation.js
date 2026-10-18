@@ -2,8 +2,9 @@
 define(function() {
 
     var Animation = Class.extend({
-        init: function(name, length, row, width, height) {
+        init: function(name, length, row, width, height, start) {
             this.name = name;
+            this.start = start || 0;
         	this.length = length;
         	this.row = row;
         	this.width = width;
@@ -27,7 +28,7 @@ define(function() {
                 }
         	}
 	    
-        	this.currentFrame.x = this.width * i;
+        	this.currentFrame.x = this.width * (this.start + i);
         	this.currentFrame.y = this.height * this.row;
         	this.currentFrame.index = i;
         },
@@ -61,7 +62,7 @@ define(function() {
     
         reset: function() {
             this.lastTime = 0;
-            this.currentFrame = { index: 0, x: 0, y: this.row * this.height };
+            this.currentFrame = { index: 0, x: this.width * this.start, y: this.row * this.height };
         }
     });
 
