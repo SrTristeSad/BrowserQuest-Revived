@@ -26,7 +26,7 @@ window.Types={
  getKindAsString:x=>x===21?'rat':'villager',
  getOrientationAsString:x=>({1:'down',2:'up',3:'left',4:'right'})[x]
 };
-window._={indexOf:(a,x)=>a.indexOf(x),keys:Object.keys};
+window._={indexOf:(a,x)=>a.indexOf(x),keys:Object.keys,each:(items,callback)=>Array.from(items).forEach(callback)};
 window.log={error:()=>{},info:()=>{},debug:()=>{}};
 window.__modules={};window.__native={};
 window.define=(keys,factory)=>{
