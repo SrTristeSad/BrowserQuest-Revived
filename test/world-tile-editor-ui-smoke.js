@@ -57,8 +57,9 @@ assert(!source.slice(collisionClick, collisionClick + 650).includes('api('), 'si
 
 assert(source.includes("if(selected.type==='terrain'){selected=null;showSelection();draw();return}"), 'deleting a terrain selection must only clear selection, never remove a mob area');
 
-var saveStart = source.indexOf('function save(){');
+var saveStart = source.indexOf('function saveDraft(){');
 assert(saveStart >= 0 && source.slice(saveStart, saveStart + 400).includes('normalizeDraftCollisions()'), 'draft save should normalize collisions first');
 assert(source.slice(saveStart, saveStart + 400).includes('/admin/api/world'), 'draft save should keep using the existing World Editor API');
+assert(source.includes('function save(){if(previewMode)return;saveDraft()'), 'Save action should delegate to the validated draft writer');
 
 console.log('World Editor terrain, fill and collision selection UI smoke test passed.');
