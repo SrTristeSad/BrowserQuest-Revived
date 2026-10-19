@@ -941,6 +941,21 @@ function(Camera, Item, Character, Player, Timer) {
         },
     
         renderFrameMobile: function() {
+            if(this.cameraMoved) {
+                // Dirty rectangles are not valid after the camera shifts.
+                // Repaint all visible characters and animations exactly
+                // once for this camera position, not just changed sprites.
+                this.cameraMoved = false;
+                this.clearScreen(this.context);
+                this.context.save();
+                    this.setCameraView(this.context);
+                    this.drawAnimatedTiles();
+                    this.drawSelectedCell();
+                    this.drawEntities();
+                    this.drawCombatInfo();
+                this.context.restore();
+                return;
+            }
             this.clearDirtyRects();
             this.preventFlickeringBug();
 
