@@ -80,8 +80,25 @@ define(['character', 'timer'], function(Character, Timer) {
             }
         },
     
-        updateZoning: function() {
+        // Position can change every animation frame, but the visible tile
+        // grid only changes when the camera crosses a 16px cell boundary.
+        updateCameraView: function(x, y) {
             var g = this.game,
+                c = g.camera;
+            if(c.x === x && c.y === y) { return false; }
+            var previousGridX = c.gridX,
+                previousGridY = c.gridY;
+            c.setPosition(x, y);
+            if(c.gridX !== previousGridX || c.gridY !== previousGridY) {
+                g.initAnimatedTiles();
+            }
+            g.renderer.renderStaticCanvases();
+            return true;
+        },
+
+        updateZoning: function() {
+            var self = this,
+                g = this.game,
                 c = g.camera,
                 z = g.currentZoning,
                 s = 3,
@@ -99,9 +116,7 @@ define(['character', 'timer'], function(Character, Timer) {
                     startValue = (orientation === Types.Orientations.LEFT) ? c.x - ts : c.x + ts;
                     endValue = (orientation === Types.Orientations.LEFT) ? c.x - offset : c.x + offset;
                     updateFunc = function(x) {
-                        c.setPosition(x, c.y);
-                        g.initAnimatedTiles();
-                        g.renderer.renderStaticCanvases();
+                        self.updateCameraView(x, c.y);
                     }
                     endFunc = function() {
                         c.setPosition(z.endValue, c.y);
@@ -111,10 +126,8 @@ define(['character', 'timer'], function(Character, Timer) {
                     offset = (c.gridH - 2) * ts;
                     startValue = (orientation === Types.Orientations.UP) ? c.y - ts : c.y + ts;
                     endValue = (orientation === Types.Orientations.UP) ? c.y - offset : c.y + offset;
-                    updateFunc = function(y) { 
-                        c.setPosition(c.x, y);
-                        g.initAnimatedTiles();
-                        g.renderer.renderStaticCanvases();
+                    updateFunc = function(y) {
+                        self.updateCameraView(c.x, y);
                     }
                     endFunc = function() {
                         c.setPosition(c.x, z.endValue);

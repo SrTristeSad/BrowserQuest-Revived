@@ -506,20 +506,41 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
          */
         initAnimatedTiles: function() {
             var self = this,
-                m = this.map;
+                m = this.map,
+                previous = Object.create(null);
 
+            // Keep the animation frame/timer for tiles still visible while
+            // scrolling. The key also covers stacked animated tile variants.
+            // A newly published map is never allowed to reuse old tile state.
+            if(this.animatedTilesMap === m && this.animatedTilesData === m.data) {
+                _.each(this.animatedTiles || [], function(tile) {
+                    var key = tile.index + ':' + tile.startId;
+                    if(!previous[key]) { previous[key] = []; }
+                    previous[key].push(tile);
+                });
+            }
+            this.animatedTilesMap = m;
+            this.animatedTilesData = m.data;
             this.animatedTiles = [];
-            this.forEachVisibleTile(function (id, index) {
-                if(m.isAnimatedTile(id)) {
-                    var tile = new AnimatedTile(id, m.getTileAnimationLength(id), m.getTileAnimationDelay(id), index),
-                        pos = self.map.tileIndexToGridPosition(tile.index);
-                    
-                    tile.x = pos.x;
-                    tile.y = pos.y;
-                    self.animatedTiles.push(tile);
+            this.forEachVisibleTile(function(id, index) {
+                if(!m.isAnimatedTile(id)) { return; }
+                var key = index + ':' + id,
+                    pool = previous[key],
+                    tile = pool && pool.length ? pool.shift() :
+                        new AnimatedTile(id, m.getTileAnimationLength(id),
+                            m.getTileAnimationDelay(id), index),
+                    pos = m.tileIndexToGridPosition(tile.index);
+
+                tile.x = pos.x;
+                tile.y = pos.y;
+                // The mobile renderer only redraws dirty tiles. Mark the new
+                // view's animation pixels dirty, including reused frames.
+                if(self.renderer.mobile || self.renderer.tablet) {
+                    tile.isDirty = true;
+                    tile.dirtyRect = self.renderer.getTileBoundingRect(tile);
                 }
+                self.animatedTiles.push(tile);
             }, 1);
-            //log.info("Initialized animated tiles.");
         },
     
         addToRenderingGrid: function(entity, x, y) {
