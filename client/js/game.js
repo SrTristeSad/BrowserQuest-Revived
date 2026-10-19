@@ -1518,8 +1518,11 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 });
                 
                 self.client.onDisconnected(function(message) {
-                    if(self.player) {
-                        self.player.die();
+                    // Losing the WebSocket is NOT a player death. Preserve the
+                    // current character on screen and show the reconnect flow
+                    // instead of a fake death animation without HP loss.
+                    if(self.player && typeof self.player.stop === 'function') {
+                        self.player.stop();
                     }
                     if(self.disconnect_callback) {
                         self.disconnect_callback(message);
@@ -2109,7 +2112,18 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                             this.audioManager.playSound("hit"+Math.floor(Math.random()*2+1));
                         }
                         
-                        if(character.hasTarget() && character.target.id === this.playerId && this.player && !this.player.invincible) {
+                        // The client must never report a hit from a monster
+                        // it cannot actually render or that is no longer in
+                        // melee range. The server independently validates it.
+                        if(character instanceof Mob && character.hasTarget() &&
+                           character.target.id === this.playerId &&
+                           this.player && !this.player.invincible &&
+                           this.getEntityById(character.id) === character &&
+                           character.sprite && character.sprite.isLoaded &&
+                           !character.sprite.loadFailed && character.isVisible() &&
+                           this.camera && this.camera.isVisible(character) &&
+                           Math.max(Math.abs(character.gridX - this.player.gridX),
+                                    Math.abs(character.gridY - this.player.gridY)) <= 1) {
                             this.client.sendHurt(character);
                         }
                     }

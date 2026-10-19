@@ -29,6 +29,7 @@ const fails = (change,restore,message) => {
 };
 fails(()=>{mob.x=70},()=>{mob.x=16},'reject hits from mobs outside player view');
 fails(()=>{mob.y=18},()=>{mob.y=15},'reject out of range diagonal attack');
+fails(()=>{mob.x=17},()=>{mob.x=16},'reject two tiles away even when rendered in the same camera zone');
 fails(()=>{mob.isDead=true},()=>{mob.isDead=false},'reject dead mobs');
 fails(()=>{mob.hitPoints=0},()=>{mob.hitPoints=40},'reject mobs already killed');
 fails(()=>{mob.target='someone-else'},()=>{mob.target=player.id},'wrong attack target');
@@ -43,7 +44,7 @@ player.lastMobHurtTimes[mob.id] = now - 200;
 assert.equal(valid(),false,'no duplicate damage packets within attack rate');
 player.lastMobHurtTimes[mob.id] = now - CombatGuard.MIN_HIT_INTERVAL_MS;
 assert.equal(valid(),true,'legitimate later hit is permitted');
-assert.equal(CombatGuard.MAX_HIT_DISTANCE,2);
+assert.equal(CombatGuard.MAX_HIT_DISTANCE,1);
 
 const server = read('server/js/player.js'),
     worldSrc = read('server/js/worldserver.js'),
