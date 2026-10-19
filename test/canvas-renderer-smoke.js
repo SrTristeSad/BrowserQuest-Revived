@@ -265,6 +265,11 @@ MapClass.prototype._initMap.call({
 assert.equal(terrainRenderer.terrainChunkOrder.length,0,
     'map loads must invalidate the terrain cache');
 
+// Terrain may be requested before the first world has finished loading.
+terrainRenderer.game.map = null;
+assert.doesNotThrow(() => terrainRenderer.drawTerrain());
+terrainRenderer.game.map = terrainMap;
+
 // No offscreen Canvas2D support must preserve the original painter.
 terrainDocument.createElement = function(){return null;};
 terrainRenderer.camera.gridX = 0;
