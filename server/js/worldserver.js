@@ -53,11 +53,10 @@ module.exports = World = cls.Class.extend({
         
         this.onPlayerConnect(function(player) {
             player.onRequestPosition(function() {
-                if(player.lastCheckpoint) {
-                    return player.lastCheckpoint.getRandomPosition();
-                } else {
-                    return self.map.getRandomStartingPosition();
-                }
+                var origin = player.lastCheckpoint ?
+                    player.lastCheckpoint.getRandomPosition() :
+                    self.map.getRandomStartingPosition();
+                return self.findSafeSpawnPosition(origin, player.id, player.lastCheckpoint);
             });
         });
         
@@ -663,6 +662,58 @@ module.exports = World = cls.Class.extend({
                 self.addStaticItem(self.createItem(kind, pos.x + 1, pos.y));
             }
         });
+    },
+
+    // Keep new players and revives away from roaming mobs where possible.
+    // Search only reachable neighboring tiles so we do not place a player on
+    // the other side of a wall or outside their chosen checkpoint area.
+    findSafeSpawnPosition: function(origin, playerId, checkpoint) {
+        if(!origin || !this.isValidPosition(origin.x, origin.y)) {
+            return origin;
+        }
+
+        var self = this,
+            radius = 10,
+            minMobDistance = 6,
+            queue = [{x: origin.x, y: origin.y, distance: 0}],
+            visited = {},
+            index = 0;
+
+        function isOccupied(x, y) {
+            return _.some(self.entities, function(entity) {
+                return entity && entity.id !== playerId && !entity.isDead &&
+                    (entity.type === 'player' || entity.type === 'mob' || entity.type === 'npc') &&
+                    entity.x === x && entity.y === y;
+            });
+        }
+
+        function nearMob(x, y) {
+            return _.some(self.mobs, function(mob) {
+                return mob && !mob.isDead &&
+                    Math.max(Math.abs(mob.x - x), Math.abs(mob.y - y)) < minMobDistance;
+            });
+        }
+
+        visited[origin.x + ',' + origin.y] = true;
+        while(index < queue.length) {
+            var next = queue[index++];
+            if(!isOccupied(next.x, next.y) && !nearMob(next.x, next.y)) {
+                return {x: next.x, y: next.y};
+            }
+            if(next.distance >= radius) { continue; }
+            _.each([[0, -1], [1, 0], [0, 1], [-1, 0]], function(offset) {
+                var x = next.x + offset[0],
+                    y = next.y + offset[1],
+                    key = x + ',' + y;
+                if(!visited[key] && self.isValidPosition(x, y) &&
+                    (!checkpoint || checkpoint.containsPosition(x, y))) {
+                    visited[key] = true;
+                    queue.push({x: x, y: y, distance: next.distance + 1});
+                }
+            });
+        }
+        // On a crowded custom map, the server-side grace period still protects the player.
+        return origin;
     },
 
     isValidPosition: function(x, y) {

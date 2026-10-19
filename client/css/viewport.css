@@ -1,0 +1,21 @@
+/* Expand the original BrowserQuest viewport without stretching its aspect ratio.
+ * Works with every existing 480/980/1470px layout; art remains pixelated.
+ */
+body.game #container {
+    left: 50%;
+    top: 50%;
+    margin: 0;
+    transform: translate(-50%, -50%) scale(var(--bq-viewport-scale, 1));
+    transform-origin: center center;
+}
+
+body.game #container,
+body.game #canvas canvas {
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+}
+
+/* Keep the playing field clear when it expands to the screen edges. */
+body.game footer {
+    display: none;
+}
