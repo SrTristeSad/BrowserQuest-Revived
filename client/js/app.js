@@ -137,15 +137,35 @@ define(['jquery', 'storage'], function($, Storage) {
         },
 
         initHealthBar: function() {
-            var scale = this.game.renderer.getScaleFactor(),
-                healthMaxWidth = $("#healthbar").width() - (12 * scale);
+            var self = this;
 
-        	this.game.onPlayerHealthChange(function(hp, maxHp) {
-        	    var barWidth = Math.round((healthMaxWidth / maxHp) * (hp > 0 ? hp : 0));
-        	    $("#hitpoints").css('width', barWidth + "px");
-        	});
+            this.game.onPlayerHealthChange(function(hp, maxHp) {
+                var $healthbar = $("#healthbar"),
+                    $fill = $("#hitpoints"),
+                    scale = self.game.renderer.scale || self.game.renderer.getScaleFactor(),
+                    // On startup the HUD may still be hidden, so measuring it
+                    // once at initialization can permanently cache a zero width.
+                    measured = $healthbar.width(),
+                    fullWidth = measured > 12 * scale ?
+                        measured - (12 * scale) : 90 * scale,
+                    maximum = Number(maxHp),
+                    current = Number(hp),
+                    valid = Number.isFinite(maximum) && maximum > 0 &&
+                        Number.isFinite(current),
+                    fraction = valid ? Math.max(0, Math.min(1, current / maximum)) : 0,
+                    width = Math.max(0, Math.round(fullWidth * fraction));
 
-        	this.game.onPlayerHurt(this.blinkHealthBar.bind(this));
+                $fill.css('width', width + 'px');
+                // An always-current tooltip distinguishes missing HUD fill
+                // from actual server HP loss without redesigning the game.
+                $healthbar.attr('title', valid ?
+                    'Vida: ' + Math.max(0, Math.round(current)) + '/' +
+                        Math.round(maximum) : 'Vida: aguardando servidor');
+                $healthbar.attr('data-hp', valid ? Math.round(current) : '');
+                $healthbar.attr('data-max-hp', valid ? Math.round(maximum) : '');
+            });
+
+            this.game.onPlayerHurt(this.blinkHealthBar.bind(this));
         },
 
         blinkHealthBar: function() {
