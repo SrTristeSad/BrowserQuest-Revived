@@ -56,7 +56,7 @@ module.exports = World = cls.Class.extend({
                 var origin = player.lastCheckpoint ?
                     player.lastCheckpoint.getRandomPosition() :
                     self.map.getRandomStartingPosition();
-                return self.findSafeSpawnPosition(origin, player.id);
+                return self.findSafeSpawnPosition(origin, player.id, player.lastCheckpoint);
             });
         });
         
@@ -667,7 +667,7 @@ module.exports = World = cls.Class.extend({
     // Keep new players and revives away from roaming mobs where possible.
     // Search only reachable neighboring tiles so we do not place a player on
     // the other side of a wall or outside their chosen checkpoint area.
-    findSafeSpawnPosition: function(origin, playerId) {
+    findSafeSpawnPosition: function(origin, playerId, checkpoint) {
         if(!origin || !this.isValidPosition(origin.x, origin.y)) {
             return origin;
         }
@@ -705,7 +705,8 @@ module.exports = World = cls.Class.extend({
                 var x = next.x + offset[0],
                     y = next.y + offset[1],
                     key = x + ',' + y;
-                if(!visited[key] && self.isValidPosition(x, y)) {
+                if(!visited[key] && self.isValidPosition(x, y) &&
+                    (!checkpoint || checkpoint.containsPosition(x, y))) {
                     visited[key] = true;
                     queue.push({x: x, y: y, distance: next.distance + 1});
                 }
