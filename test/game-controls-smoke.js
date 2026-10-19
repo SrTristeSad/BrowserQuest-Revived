@@ -212,6 +212,49 @@ document.hidden=true;
 listeners.document.visibilitychange();
 assert.equal(controls.currentDirection(),null);
 
+// Continuous keyboard movement: holding a direction should select the
+// longest straight validated segment instead of stopping/restarting every tile.
+// The actual character.onStep still sends every tile to the server.
+document.hidden=false;
+game.ready=true;
+game.started=true;
+player.isDead=false;
+player.moving=false;
+player.gridX=5;player.gridY=5;
+game.findPath=(p,x,y)=>{
+ if(y!==p.gridY || x<p.gridX || x>9)return [];
+ const path=[];
+ for(let v=p.gridX;v<=x;v++)path.push([v,p.gridY]);
+ return path;
+};
+let previous=moves.length;
+assert.equal(keydown('KeyD').prevented,true);
+controls.update();
+assert.deepEqual(moves[previous],[9,5],
+ 'holding D must run across four clear tiles with one uninterrupted path');
+controls.update();
+assert.equal(moves.length,previous+1,'while moving do not restart walk animation');
+const stopsBeforeRelease=player.stopCalls;
+keyup('KeyD');
+assert.equal(player.stopCalls,stopsBeforeRelease+1,
+ 'releasing WASD interrupts a longer run at the next tile boundary');
+player.moving=false;
+map.isDoor=(x,y)=>x===7&&y===5;
+previous=moves.length;
+keydown('KeyD');controls.update();
+assert.deepEqual(moves[previous],[7,5],
+ 'continuous run must stop when encountering a portal');
+keyup('KeyD');player.moving=false;
+map.isDoor=()=>false;
+blocked.add('7,5');
+previous=moves.length;
+keydown('KeyD');controls.update();
+assert.deepEqual(moves[previous],[6,5],
+ 'continuous run must stop before a blocked tile, never detour through it');
+keyup('KeyD');player.moving=false;
+blocked.clear();
+game.findPath=originalFind;
+
 // Verify controls remain connected to the original game loop and click path.
 const main=read('client/js/main.js'),gameSrc=read('client/js/game.js');
 assert(main.includes("new Controls(game)"));
