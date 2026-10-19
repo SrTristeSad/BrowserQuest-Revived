@@ -1343,9 +1343,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                             if(self.player.isAttackedBy(entity)) {
                                 self.tryUnlockingAchievement("COWARD");
                             }
-                            entity.disengage();
-                            entity.idle();
-                            self.makeCharacterGoTo(entity, x, y);
+                            self.moveRemoteCharacter(entity, x, y);
                         }
                     }
                 });
@@ -1570,6 +1568,23 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
          * @param {Entity} attacker The attacker entity
          * @param {Entity} target The target entity
          */
+        // Moving mobs remain in combat. The old generic movement handler
+        // disengaged every entity, deleting its local attack relationship on
+        // each server MOVE. After that the AI could chase indefinitely while
+        // the client never sent a legitimate HURT packet.
+        moveRemoteCharacter: function(entity, x, y) {
+            if(!entity || entity.isDead) { return; }
+            var attackingMob = entity instanceof Mob &&
+                entity.isAttacking() && entity.hasTarget() &&
+                entity.target && !entity.target.isDead &&
+                this.getEntityById(entity.target.id) === entity.target;
+            if(!attackingMob) {
+                entity.disengage();
+            }
+            entity.idle();
+            this.makeCharacterGoTo(entity, x, y);
+        },
+
         createAttackLink: function(attacker, target) {
             if(attacker.hasTarget()) {
                 attacker.removeTarget();
