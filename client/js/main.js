@@ -275,7 +275,7 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
 	
             app.initHealthBar();
 	
-            $('#nameinput').attr('value', '');
+            // Preserve a name typed while the game assets were loading.
     		$('#chatbox').attr('value', '');
     		
         	if(game.renderer.mobile || game.renderer.tablet) {
