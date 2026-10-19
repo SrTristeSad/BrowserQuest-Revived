@@ -74,6 +74,7 @@ function start(config) {
     function selectWorldAndConnect(connection) {
         var world,
             connect = function() {
+                if(connection.closed) { return; }
                 if(world) {
                     world.connect_callback(new Player(connection, world));
                 } else {

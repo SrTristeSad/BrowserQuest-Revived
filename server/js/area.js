@@ -17,19 +17,23 @@ module.exports = Area = cls.Class.extend({
     },
     
     _getRandomPositionInsideArea: function() {
-        var pos = {},
-            valid = false;
-        
-        while(!valid) {
-            pos.x = this.x + Utils.random(this.width + 1);
-            pos.y = this.y + Utils.random(this.height + 1);
-            valid = this.world.isValidPosition(pos.x, pos.y);
+        // A blocked area must never spin the event loop forever.
+        var width = Math.max(0, Math.floor(this.width)),
+            height = Math.max(0, Math.floor(this.height)),
+            count = width * height,
+            start = count ? Utils.random(count) : 0;
+        for(var offset = 0; offset < count; offset += 1) {
+            var index = (start + offset) % count,
+                x = this.x + index % width,
+                y = this.y + Math.floor(index / width);
+            if(this.world.isValidPosition(x, y)) { return {x:x, y:y}; }
         }
-        return pos;
+        return null;
     },
     
     removeFromArea: function(entity) {
         var i = _.indexOf(_.pluck(this.entities, 'id'), entity.id);
+        if(i < 0) { return; }
         this.entities.splice(i, 1);
         
         if(this.isEmpty() && this.hasCompletelyRespawned && this.empty_callback) {

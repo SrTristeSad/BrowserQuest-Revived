@@ -6,6 +6,7 @@ function CharacterStore(options) {
     this.debounceMs = Number(options.debounceMs || 300);
     this.retryMs = Number(options.retryMs || 1000);
     this.pending = new Map();
+    this.inFlight = new Map();
     this.timers = new Map();
     if(!this.postgres) {
         throw new Error('CharacterStore requer o pool PostgreSQL.');
@@ -62,7 +63,7 @@ CharacterStore.prototype.restorePending = function(id, patch) {
     this.armFlush(id, this.retryMs);
 };
 
-CharacterStore.prototype.flush = async function(characterId) {
+CharacterStore.prototype.flushSnapshot = async function(characterId) {
     var id = Number(characterId), patch = this.pending.get(id), columns = [], values = [], index = 1;
     if(!patch) { return false; }
 
@@ -101,12 +102,29 @@ CharacterStore.prototype.flush = async function(characterId) {
     }
 };
 
+// Serialize writes per character so an older slow UPDATE cannot overwrite
+// a newer equipment/checkpoint snapshot that finished first.
+CharacterStore.prototype.flush = function(characterId) {
+    var id = Number(characterId), self = this,
+        previous = this.inFlight.get(id) || Promise.resolve(),
+        operation = previous.catch(function() {}).then(function() {
+            return self.flushSnapshot(id);
+        });
+    this.inFlight.set(id, operation);
+    return operation.finally(function() {
+        if(self.inFlight.get(id) === operation) { self.inFlight.delete(id); }
+    });
+};
+
 CharacterStore.prototype.flushAll = async function() {
-    var ids = Array.from(this.pending.keys()), results = [];
-    for(var i = 0; i < ids.length; i += 1) {
-        results.push(await this.flush(ids[i]));
+    var self = this,
+        ids = Array.from(new Set([...this.pending.keys(), ...this.inFlight.keys()])),
+        results = await Promise.allSettled(ids.map(function(id) { return self.flush(id); })),
+        errors = results.filter(function(result) { return result.status === 'rejected'; });
+    if(errors.length) {
+        throw new AggregateError(errors.map(function(result) { return result.reason; }), 'Falha ao persistir personagens.');
     }
-    return results;
+    return results.map(function(result) { return result.value; });
 };
 
 CharacterStore.prototype.getProgress = async function(characterId, namespace, key) {

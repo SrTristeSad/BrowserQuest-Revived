@@ -1,5 +1,6 @@
 var Area = require('./area'),
     _ = require('underscore'),
+    Utils = require('./utils'),
     Types = require("../../shared/js/gametypes"),
     Entity = require('./entity'),
     Character = require('./character'),
@@ -94,7 +95,7 @@ module.exports = MobArea = Area.extend({
             mob.y = pos.y;
             mob.isDead = false;
             self.addToArea(mob);
-            self.world.addMob(mob);
+
         }, delay);
     },
 
@@ -108,7 +109,7 @@ module.exports = MobArea = Area.extend({
             mob.y = pos.y;
             mob.isDead = false;
             self.addToArea(mob);
-            self.world.addMob(mob);
+
         }, 5000);
     },
 
@@ -119,7 +120,7 @@ module.exports = MobArea = Area.extend({
                 var canRoam = (Utils.random(20) === 1), pos;
                 if(canRoam && !entity.hasTarget() && !entity.isDead) {
                     pos = self._getRandomPositionInsideArea();
-                    entity.move(pos.x, pos.y);
+                    if(pos) { entity.move(pos.x, pos.y); }
                 }
             });
         }, 500);
@@ -127,6 +128,6 @@ module.exports = MobArea = Area.extend({
 
     createReward: function() {
         var pos = this._getRandomPositionInsideArea();
-        return { x: pos.x, y: pos.y, kind: Types.Entities.CHEST };
+        return pos ? { x: pos.x, y: pos.y, kind: Types.Entities.CHEST } : null;
     }
 });

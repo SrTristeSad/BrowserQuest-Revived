@@ -179,6 +179,7 @@ var Connection = cls.Class.extend({
         this._server = server;
         this._request = request;
         this.id = id;
+        this.closed = false;
         this.remoteAddress = request && request.socket ? request.socket.remoteAddress : undefined;
     },
 
@@ -205,7 +206,12 @@ var Connection = cls.Class.extend({
     close: function(reason) {
         logger().info('Closing connection to ' + (this.remoteAddress || 'unknown') + '. Error: ' + reason);
         if(this._connection.readyState === WebSocket.OPEN || this._connection.readyState === WebSocket.CONNECTING) {
-            this._connection.close(1008, String(reason || 'Connection closed').slice(0, 123));
+            var text = '';
+            for(var character of String(reason || 'Connection closed')) {
+                if(Buffer.byteLength(text + character, 'utf8') > 123) { break; }
+                text += character;
+            }
+            this._connection.close(1008, text);
         }
     }
 });
@@ -343,6 +349,7 @@ WS.WebSocketConnection = Connection.extend({
         });
 
         this._connection.on('close', function() {
+            self.closed = true;
             if(self.close_callback) {
                 self.close_callback();
             }

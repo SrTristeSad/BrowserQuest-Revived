@@ -62,14 +62,24 @@ function cookieFrom(response, name) {
     throw new Error('Cookie ' + name + ' was not returned');
 }
 
-function firstCheckpointId() {
-    var map = JSON.parse(fs.readFileSync(mapPath, 'utf8')),
-        checkpoints = Array.isArray(map.checkpoints) ? map.checkpoints : [],
-        checkpoint = checkpoints.find(function(value) {
-            return value && Number.isInteger(Number(value.id));
+function reachableCheckpoint(position) {
+    var map=JSON.parse(fs.readFileSync(mapPath,'utf8')), blocked=new Set(map.collisions),
+        queue=[{x:position[3],y:position[4],previous:null}], seen=new Set(), index=0;
+    seen.add(position[3]+','+position[4]);
+    while(index<queue.length) {
+        var point=queue[index++], checkpoint=(map.checkpoints||[]).find(cp=>
+            point.x>=cp.x&&point.x<cp.x+cp.w&&point.y>=cp.y&&point.y<cp.y+cp.h);
+        if(checkpoint) {
+            var route=[];while(point.previous){route.push(point);point=point.previous;}
+            return {id:Number(checkpoint.id),route:route.reverse()};
+        }
+        [[0,-1],[1,0],[0,1],[-1,0]].forEach(function(offset){
+            var x=point.x+offset[0],y=point.y+offset[1],key=x+','+y;
+            if(x<=0||y<=0||x>=map.width||y>=map.height||blocked.has(y*map.width+x)||seen.has(key))return;
+            seen.add(key);queue.push({x:x,y:y,previous:point});
         });
-    assert.ok(checkpoint, 'server map must contain at least one checkpoint');
-    return Number(checkpoint.id);
+    }
+    throw new Error('No reachable checkpoint from actual spawn');
 }
 
 function connectAuthenticated(cookie, expectedName) {
@@ -103,6 +113,7 @@ function connectAuthenticated(cookie, expectedName) {
                     assert.strictEqual(message[2], expectedName);
                     finished = true;
                     clearTimeout(timeout);
+                    socket.welcome = message;
                     resolve(socket);
                 } catch(error) { fail(error); }
             });
@@ -135,7 +146,7 @@ async function main() {
         username = 'kick_' + suffix,
         characterName = ('Kick' + suffix).slice(0, 15),
         password = 'StrongPassword123!',
-        checkpointId = firstCheckpointId(),
+        checkpointId = null,
         pool = new pg.Pool(pgConfig),
         playerSocket = null,
         playerCookie,
@@ -157,6 +168,12 @@ async function main() {
         adminCookie = cookieFrom(response, 'bq_admin_session');
 
         playerSocket = await connectAuthenticated(playerCookie, characterName);
+        var checkpoint = reachableCheckpoint(playerSocket.welcome);
+        checkpointId = checkpoint.id;
+        for(var step of checkpoint.route) {
+            await delay(130);
+            playerSocket.send(JSON.stringify([Types.Messages.MOVE, step.x, step.y]));
+        }
         response = await requestJson('/admin/api/players', 'GET', undefined, adminCookie);
         assert.strictEqual(response.status, 200);
         var player = (response.data.players || []).find(function(item) { return item.username === username; });
