@@ -1230,3 +1230,16 @@ footer, header, hgroup, menu, nav, section {
     .opera #achievements.active, .opera #instructions.active { z-index: 30000;}
     .opera #coinsparks {display:none;}
     .opera #death, .opera #about, .opera #credits, .opera #error, .opera #confirmation, .opera #loadcharacter { z-index: -30000; }
+
+/* Night never hides enemy sprites: shade only the environmental canvases. */
+body.game.started #background,
+body.game.started #foreground { transition: filter 12s linear; }
+body.game.started.bq-dusk #background,
+body.game.started.bq-dusk #foreground,
+body.game.started.bq-dawn #background,
+body.game.started.bq-dawn #foreground { filter: brightness(.88) saturate(.92); }
+body.game.started.bq-night #background,
+body.game.started.bq-night #foreground { filter: brightness(.72) saturate(.84); }
+@media(prefers-reduced-motion: reduce) {
+    body.game.started #background, body.game.started #foreground {transition:none}
+}
