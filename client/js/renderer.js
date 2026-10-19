@@ -47,7 +47,21 @@ function(Camera, Item, Character, Player, Timer) {
         },
     
         setTileset: function(tileset) {
-            this.tileset = tileset;
+            if(this.tileset !== tileset) {
+                this.tileset = tileset;
+                this.invalidateTerrainCache();
+            }
+        },
+
+        // Terrain is immutable between published map loads. Keep only a small
+        // least-recently-used window of rendered 8x8-tile regions in memory.
+        invalidateTerrainCache: function() {
+            this.terrainChunks = Object.create(null);
+            this.terrainChunkOrder = [];
+            this.terrainCacheMap = null;
+            this.terrainCacheData = null;
+            this.terrainCacheTileset = null;
+            this.terrainCacheScale = null;
         },
     
         getScaleFactor: function() {
@@ -74,19 +88,25 @@ function(Camera, Item, Character, Player, Timer) {
     
         // Modern Canvas2D uses imageSmoothingEnabled; legacy prefixed flags
         // are maintained for compatibility with older BrowserQuest browsers.
+        disableContextSmoothing: function(ctx) {
+            if(!ctx) { return; }
+            ctx.imageSmoothingEnabled = false;
+            ctx.mozImageSmoothingEnabled = false;
+            ctx.webkitImageSmoothingEnabled = false;
+            ctx.msImageSmoothingEnabled = false;
+        },
+
         disableSmoothing: function() {
+            var self = this;
             [this.context, this.background, this.foreground].forEach(function(ctx) {
-                if(!ctx) { return; }
-                ctx.imageSmoothingEnabled = false;
-                ctx.mozImageSmoothingEnabled = false;
-                ctx.webkitImageSmoothingEnabled = false;
-                ctx.msImageSmoothingEnabled = false;
+                self.disableContextSmoothing(ctx);
             });
         },
 
         rescale: function(factor) {
             this.scale = this.getScaleFactor();
-        
+            this.invalidateTerrainCache();
+
             this.createCamera();
         
             // Setting a canvas width/height resets the 2D context state.
@@ -583,16 +603,124 @@ function(Camera, Item, Character, Player, Timer) {
             this.context.restore();
         },
 
-        drawTerrain: function() {
+        // Keep the original visible-tile painter as a fallback for contexts
+        // where a secondary canvas cannot be created.
+        drawTerrainUncached: function() {
             var self = this,
                 m = this.game.map,
                 tilesetwidth = this.tileset.width / m.tilesize;
-        
-            this.game.forEachVisibleTile(function (id, index) {
-                if(!m.isHighTile(id) && !m.isAnimatedTile(id)) { // Don't draw unnecessary tiles
+
+            this.game.forEachVisibleTile(function(id, index) {
+                if(!m.isHighTile(id) && !m.isAnimatedTile(id)) {
                     self.drawTile(self.background, id, self.tileset, tilesetwidth, m.width, index);
                 }
             }, 1);
+        },
+
+        createTerrainChunk: function(m, chunkX, chunkY, tilesetwidth) {
+            var canvas, ctx,
+                size = 8,
+                startX = chunkX * size,
+                startY = chunkY * size,
+                self = this;
+
+            try {
+                canvas = document.createElement('canvas');
+                if(!canvas || !canvas.getContext) { return null; }
+                canvas.width = size * this.tilesize * this.scale;
+                canvas.height = size * this.tilesize * this.scale;
+                ctx = canvas.getContext('2d');
+            } catch(error) {
+                return null;
+            }
+            if(!ctx) { return null; }
+            this.disableContextSmoothing(ctx);
+
+            // Existing map cells may contain multiple stacked tile IDs.
+            // Preserve their order and leave high/animated tiles to their
+            // original render passes (including collision/doors unchanged).
+            ctx.save();
+            ctx.translate(-startX * this.tilesize * this.scale,
+                -startY * this.tilesize * this.scale);
+            function paint(id, tileIndex) {
+                var tile = Number(id) - 1;
+                if(!isFinite(tile) || tile === -1 ||
+                    m.isHighTile(tile) || m.isAnimatedTile(tile)) { return; }
+                self.drawTile(ctx, tile, self.tileset, tilesetwidth, m.width, tileIndex);
+            }
+            for(var y = startY; y < Math.min(m.height, startY + size); y += 1) {
+                for(var x = startX; x < Math.min(m.width, startX + size); x += 1) {
+                    var index = y * m.width + x,
+                        cell = m.data[index];
+                    if(Array.isArray(cell)) {
+                        cell.forEach(function(id) { paint(id, index); });
+                    } else {
+                        paint(cell, index);
+                    }
+                }
+            }
+            ctx.restore();
+            return canvas;
+        },
+
+        getTerrainChunk: function(m, chunkX, chunkY, tilesetwidth) {
+            var key = chunkX + ':' + chunkY,
+                chunk = this.terrainChunks[key],
+                order = this.terrainChunkOrder;
+            if(chunk) {
+                order.splice(order.indexOf(key), 1);
+                order.push(key);
+                return chunk;
+            }
+            chunk = this.createTerrainChunk(m, chunkX, chunkY, tilesetwidth);
+            if(!chunk) { return null; }
+            this.terrainChunks[key] = chunk;
+            order.push(key);
+            // 24 regions of 8x8 cells: bounded memory on phones/desktop.
+            if(order.length > 24) {
+                delete this.terrainChunks[order.shift()];
+            }
+            return chunk;
+        },
+
+        drawTerrain: function() {
+            var m = this.game.map;
+            // A not-yet-loaded map has no terrain to draw.
+            if(!m || !m.isLoaded || !this.tileset) { return; }
+            if(typeof document === 'undefined' || !document.createElement) {
+                this.drawTerrainUncached();
+                return;
+            }
+            if(this.terrainCacheMap !== m || this.terrainCacheData !== m.data ||
+                this.terrainCacheTileset !== this.tileset ||
+                this.terrainCacheScale !== this.scale) {
+                this.invalidateTerrainCache();
+                this.terrainCacheMap = m;
+                this.terrainCacheData = m.data;
+                this.terrainCacheTileset = this.tileset;
+                this.terrainCacheScale = this.scale;
+            }
+
+            var size = 8,
+                camera = this.camera,
+                firstX = Math.max(0, camera.gridX - 1),
+                firstY = Math.max(0, camera.gridY - 1),
+                lastX = Math.min(m.width - 1, camera.gridX + camera.gridW),
+                lastY = Math.min(m.height - 1, camera.gridY + camera.gridH),
+                tilesetwidth = this.tileset.width / m.tilesize;
+
+            for(var cy = Math.floor(firstY / size); cy <= Math.floor(lastY / size); cy += 1) {
+                for(var cx = Math.floor(firstX / size); cx <= Math.floor(lastX / size); cx += 1) {
+                    var chunk = this.getTerrainChunk(m, cx, cy, tilesetwidth);
+                    if(!chunk) {
+                        this.drawTerrainUncached();
+                        return;
+                    }
+                    this.background.drawImage(chunk,
+                        cx * size * this.tilesize * this.scale,
+                        cy * size * this.tilesize * this.scale);
+                }
+            }
         },
     
         drawAnimatedTiles: function(dirtyOnly) {

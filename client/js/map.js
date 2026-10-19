@@ -79,6 +79,11 @@ define(['jquery', 'area'], function($, Area) {
             this.height = map.height;
             this.tilesize = map.tilesize;
             this.data = map.data;
+            // Published world reloads may reuse the same Map instance.
+            // Rebuild cached terrain against the newly loaded tile data.
+            if(this.game.renderer && this.game.renderer.invalidateTerrainCache) {
+                this.game.renderer.invalidateTerrainCache();
+            }
             this.blocking = map.blocking || [];
             this.plateau = map.plateau || [];
             this.musicAreas = map.musicAreas || [];
