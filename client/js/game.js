@@ -722,6 +722,9 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 this.updateCursorLogic();
                 this.updater.update();
                 if(this.controls) { this.controls.update(); }
+                // Follow at the last possible moment before painting the
+                // frame, including movement started by held controls.
+                this.updater.updateCameraFollow();
                 this.renderer.renderFrame();
             }
 
