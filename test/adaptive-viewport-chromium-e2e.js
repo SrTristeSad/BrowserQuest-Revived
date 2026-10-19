@@ -53,11 +53,13 @@ async function main() {
    const canvas=document.getElementById('foreground');const r=canvas.getBoundingClientRect();
    const f=document.getElementById('container').getBoundingClientRect();
    return {width:canvas.width/32,height:canvas.height/32,left:f.left,right:f.right,top:f.top,bottom:f.bottom,
-    stageWidth:r.width,stageHeight:r.height,windowWidth:innerWidth,windowHeight:innerHeight,
+    stageWidth:r.width,stageHeight:r.height,stageTop:r.top,stageBottom:r.bottom,stageLeft:r.left,stageRight:r.right,windowWidth:innerWidth,windowHeight:innerHeight,
     joystick:getComputedStyle(document.getElementById('bq-joystick')).display,
     joystickHit:(function(){const j=document.getElementById('bq-joystick'),q=j.getBoundingClientRect();return j.contains(document.elementFromPoint(q.left+q.width/2,q.top+q.height/2));})()};
   });
   assert(view.stageWidth>0&&view.stageHeight>0);
+  assert(view.stageTop>=-2&&view.stageBottom<=view.windowHeight+2,'actual canvas must fit vertically: '+JSON.stringify(view));
+  assert(view.stageLeft>=-2&&view.stageRight<=view.windowWidth+2,'actual canvas must fit horizontally: '+JSON.stringify(view));
   assert(view.left>=-2&&view.right<=view.windowWidth+2,'frame must fit horizontally: '+JSON.stringify(view));
   assert(view.top>=-2&&view.bottom<=view.windowHeight+2,'frame must fit vertically: '+JSON.stringify(view));
   if(config.mobile){assert.equal(view.joystick,'block');assert(view.joystickHit,'joystick must receive touches above the game frame');}

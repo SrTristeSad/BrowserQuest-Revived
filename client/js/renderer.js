@@ -165,6 +165,16 @@ function(Camera, Item, Character, Player, Timer) {
                     frame.style.width = (this.canvas.width + this.scale * 10) + 'px';
                     stage.style.height = this.canvas.height + 'px';
                     if(border) { border.style.padding = (this.scale * 5) + 'px'; }
+                    if(frame.style.setProperty) {
+                        frame.style.setProperty('--bq-playercount-display', this.canvas.width < 700 ? 'none' : 'block');
+                    }
+                    var bubbles = document.getElementById('bubbles');
+                    if(bubbles) {
+                        bubbles.style.width = this.canvas.width + 'px';
+                        bubbles.style.height = this.canvas.height + 'px';
+                        bubbles.style.top = -this.canvas.height + 'px';
+                        bubbles.style.marginBottom = -this.canvas.height + 'px';
+                    }
                 }
             }
             if(typeof window !== 'undefined' && window.fitGameViewport) { window.fitGameViewport(); }

@@ -2,6 +2,8 @@
  * Works with every existing 480/980/1470px layout; art remains pixelated.
  */
 body.game #container {
+    position: absolute;
+    height: auto;
     left: 50%;
     top: 50%;
     margin: 0;
@@ -59,3 +61,27 @@ body.game { overscroll-behavior: none; }
     cursor: pointer;
 }
 body.game #bq-fullscreen { display: block; }
+
+/* HUD dimensions follow the renderer, independently of old media-query sprites. */
+body.game #bar-container { height: 38px; top: 0; background: #29282b; }
+body.game #healthbar {
+    background-image: url('../img/2/barsheet.png');
+    background-size: 960px;
+    background-position: 0 -34px;
+    width: 204px; height: 26px; left: 0; top: 6px;
+}
+body.game #hitpoints { left: 22px; top: 8px; height: 22px; }
+body.game #weapon, body.game #armor {
+    width: 32px; height: 32px; top: 2px;
+    background-size: 192px; background-position: -64px;
+}
+body.game #weapon { left: 208px; }
+body.game #armor { left: 242px; }
+body.game #barbuttons { position: absolute; right: 4px; top: 2px; display: flex; gap: 2px; }
+body.game #barbuttons .barbutton { position: relative; left: auto; top: 0; }
+body.game #playercount {
+    display: var(--bq-playercount-display, block);
+    left: auto; right: 128px; top: 10px; width: 90px; font-size: 12px;
+}
+body.game #chatbox { visibility: hidden; pointer-events: none; }
+body.game #chatbox.active { visibility: visible; pointer-events: auto; bottom: 46px; }
