@@ -47,7 +47,7 @@ const stubWorld={
 const allSafe=new MobArea(1,3,'rat',start.x,start.y,3,2,stubWorld);
 allSafe.spawnMobs();
 assert.equal(allSafe.entities.length,0,'no mob may be born over initial checkpoint');
-assert.equal(allSafe.nbEntities,0,'disabled area must not be marked perpetually underfilled');
+assert.equal(allSafe.nbEntities,3,'protected areas retain their population target for future safe respawns');
 const wild=new MobArea(2,2,'rat',95,100,3,3,stubWorld);
 wild.spawnMobs();
 assert.equal(wild.entities.length,2,'regular mob spawns remain enabled outside protected zone');
