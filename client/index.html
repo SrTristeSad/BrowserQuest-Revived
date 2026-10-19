@@ -273,8 +273,15 @@ Mozilla presents an HTML5 mini-MMORPG by Little Workshop http://www.littleworksh
 					</div>
 					<div id="hitpoints">
 					</div>
-					<div id="weapon"></div>
-					<div id="armor"></div>
+					<button id="weapon" type="button" aria-label="Consultar arma equipada" aria-expanded="false" aria-controls="bq-equipment-panel"></button>
+					<button id="armor" type="button" aria-label="Consultar armadura equipada" aria-expanded="false" aria-controls="bq-equipment-panel"></button>
+                    <section id="bq-equipment-panel" role="dialog" aria-label="Equipamento atual" hidden>
+                        <button id="bq-equipment-close" type="button" aria-label="Fechar detalhes do equipamento">×</button>
+                        <strong id="bq-equipment-heading">Equipamento atual</strong>
+                        <p id="bq-equipment-name"></p>
+                        <p id="bq-equipment-level"></p>
+                        <p class="bq-equipment-hint">Itens encontrados no mapa são equipados automaticamente. Este painel mostra o equipamento atual.</p>
+                    </section>
 					<div id="notifications">
 					    <div>
 					       <span id="message1"></span>

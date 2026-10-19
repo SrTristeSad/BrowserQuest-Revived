@@ -253,10 +253,68 @@ define(['jquery', 'storage'], function($, Storage) {
                 weaponPath = getIconPath(weapon),
                 armorPath = getIconPath(armor);
 
-            $('#weapon').css('background-image', 'url("' + weaponPath + '")');
+            $('#weapon').css('background-image', 'url("' + weaponPath + '")')
+                .attr('title', 'Arma equipada: ' + (weapon || 'nenhuma'));
             if(armor !== 'firefox') {
                 $('#armor').css('background-image', 'url("' + armorPath + '")');
             }
+            $('#armor').attr('title', 'Armadura equipada: ' + (armor || 'nenhuma'));
+            var $panel = $('#bq-equipment-panel');
+            if($panel.length && !$panel.prop('hidden')) {
+                this.showEquipmentDetails($panel.attr('data-slot') || 'weapon');
+            }
+        },
+
+        initEquipmentPanel: function() {
+            var self = this;
+            function toggle(slot) {
+                var $panel = $('#bq-equipment-panel');
+                if(!$panel.prop('hidden') && $panel.attr('data-slot') === slot) {
+                    self.closeEquipmentPanel();
+                } else {
+                    self.showEquipmentDetails(slot);
+                }
+            }
+            $('#weapon').bind('click', function(event) {
+                if(event && event.stopPropagation) { event.stopPropagation(); }
+                toggle('weapon');
+            });
+            $('#armor').bind('click', function(event) {
+                if(event && event.stopPropagation) { event.stopPropagation(); }
+                toggle('armor');
+            });
+            $('#bq-equipment-close').bind('click', function(event) {
+                if(event && event.stopPropagation) { event.stopPropagation(); }
+                self.closeEquipmentPanel();
+            });
+            $(document).bind('keydown', function(event) {
+                if(event.key === 'Escape') { self.closeEquipmentPanel(); }
+            });
+        },
+
+        showEquipmentDetails: function(slot) {
+            if(!this.game || !this.game.player) { return; }
+            slot = slot === 'armor' ? 'armor' : 'weapon';
+            var name = slot === 'weapon' ? this.game.player.getWeaponName() :
+                this.game.player.getSpriteName(),
+                kind = name ? Types.getKindFromString(name) : null,
+                rank = kind === null || kind === undefined ? -1 :
+                    slot === 'weapon' ? Types.getWeaponRank(kind) : Types.getArmorRank(kind),
+                displayName = String(name || 'Nenhum').replace(/([a-z])([0-9])/gi, '$1 $2'),
+                level = rank >= 0 ? 'Nível ' + (rank + 1) :
+                    (name === 'firefox' ? 'Proteção temporária' : 'Sem nível disponível'),
+                $panel = $('#bq-equipment-panel');
+            $('#bq-equipment-heading').text(slot === 'weapon' ? 'Arma equipada' : 'Armadura equipada');
+            $('#bq-equipment-name').text(displayName);
+            $('#bq-equipment-level').text(level);
+            $panel.attr('data-slot', slot).prop('hidden', false);
+            $('#weapon').attr('aria-expanded', slot === 'weapon' ? 'true' : 'false');
+            $('#armor').attr('aria-expanded', slot === 'armor' ? 'true' : 'false');
+        },
+
+        closeEquipmentPanel: function() {
+            $('#bq-equipment-panel').prop('hidden', true);
+            $('#weapon, #armor').attr('aria-expanded', 'false');
         },
 
         hideWindows: function() {
