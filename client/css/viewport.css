@@ -9,7 +9,13 @@ body.game #container {
     transform-origin: center center;
 }
 
+body.game #container,
 body.game #canvas canvas {
-    image-rendering: pixelated;
     image-rendering: crisp-edges;
+    image-rendering: pixelated;
+}
+
+/* Keep the playing field clear when it expands to the screen edges. */
+body.game footer {
+    display: none;
 }
