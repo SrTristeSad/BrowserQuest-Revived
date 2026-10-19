@@ -140,7 +140,10 @@ module.exports = Player = Character.extend({
             }
             else if(action === Types.Messages.HURT) {
                 var mob = self.server.getEntityById(message[1]);
-                if(mob && !self.isDead && self.hitPoints > 0 && Date.now() >= self.spawnProtectedUntil) {
+                if(mob && !self.isDead && self.hitPoints > 0 &&
+                    Date.now() >= self.spawnProtectedUntil &&
+                    !(self.server.map && self.server.map.isProtectedSpawnTile &&
+                      self.server.map.isProtectedSpawnTile(self.x, self.y))) {
                     self.hitPoints -= Formulas.dmg(mob.weaponLevel, self.armorLevel);
                     self.server.handleHurtEntity(self);
                     
