@@ -12,6 +12,7 @@ define(['character', 'timer'], function(Character, Timer) {
             this.updateCharacters();
             this.updatePlayerAggro();
             this.updateTransitions();
+            this.updateCameraFollow();
             this.updateAnimations();
             this.updateAnimatedTiles();
             this.updateChatBubbles();
@@ -80,6 +81,18 @@ define(['character', 'timer'], function(Character, Timer) {
             }
         },
     
+        // Track the actual interpolated player position after movement.step()
+        // each frame. Stationary characters do not trigger background redraws.
+        updateCameraFollow: function() {
+            var g = this.game,
+                player = g.player,
+                c = g.camera;
+            if(!g.started || !player || player.isDead || !c ||
+               typeof c.getCenteredPosition !== 'function') { return false; }
+            var next = c.getCenteredPosition(player);
+            return this.updateCameraView(next.x, next.y);
+        },
+
         // Position can change every animation frame, but the visible tile
         // grid only changes when the camera crosses a 16px cell boundary.
         updateCameraView: function(x, y) {
@@ -93,6 +106,12 @@ define(['character', 'timer'], function(Character, Timer) {
                 g.initAnimatedTiles();
             }
             g.renderer.renderStaticCanvases();
+            // Mobile normally uses dirty-rectangle rendering. Any camera
+            // shift invalidates the whole foreground viewport in screen
+            // coordinates, so request one full entity redraw this frame.
+            if(g.renderer.mobile || g.renderer.tablet) {
+                g.renderer.cameraMoved = true;
+            }
             return true;
         },
 

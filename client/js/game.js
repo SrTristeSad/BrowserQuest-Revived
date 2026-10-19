@@ -422,7 +422,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
         },
     
         focusPlayer: function() {
-            this.renderer.camera.lookAt(this.player);
+            this.renderer.camera.focusEntity(this.player);
         },
 
         addEntity: function(entity) {
@@ -895,9 +895,9 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                         self.registerEntityDualPosition(self.player);
                     }
                 
-                    if(self.isZoningTile(self.player.gridX, self.player.gridY)) {
-                        self.enqueueZoningFrom(self.player.gridX, self.player.gridY);
-                    }
+                    // The continuous follow-camera replaces the legacy
+                    // page transition. Server membership is refreshed on
+                    // each authoritative MOVE, independent of camera pixels.
                 
                     self.player.forEachAttacker(function(attacker) {
                         if(attacker.isAdjacent(attacker.target)) {
