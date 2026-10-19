@@ -12,6 +12,7 @@
 - Coleta de itens e abertura de baús exigem distância máxima de um bloco nas coordenadas do servidor.
 - Renascimento não permite um segundo HELLO durante a validação pendente.
 - Atualizações de HP inválidas são ignoradas pelo cliente. Meta tag atual de suporte a aplicativo móvel adicionada.
+- HUD, chat e balões usam as dimensões atuais do canvas; removida a altura fixa de 258 px que cortava o campo em retrato. Nome digitado durante o carregamento inicial é preservado.
 - Mantidas as oito correções iniciais descritas em REVISAO-ESTABILIDADE-2026-10-19.md.
 
 ## Projetos examinados
@@ -28,7 +29,7 @@ A implementação desta revisão é própria. Não foram importados código, dep
 - test/spawn-entry-combat-smoke.js: HP calculado em Node sem globals, proteção/limpeza de alvo, golpes remotos/repetidos, ações de mortos, números inválidos, coleta remota e HELLO duplicado no renascimento.
 - test/mobile-controls-chromium-e2e.js: expectativa atualizada para joystick também em retrato.
 - test/adaptive-viewport-chromium-e2e.js: servidor real com visitante, entrada pelo cliente público, HP válido, sobrevivência por 11 segundos, desktop/paisagem/retrato, rotação, ausência de erros de execução e screenshots. Integrado ao workflow Sprite Chromium Visual E2E.
-- O Chromium não estava instalado neste ambiente; o download falhou com ZIP truncado. O teste visual deve ser confirmado no workflow do PR; não foi apresentado como aprovado localmente.
+- O Chromium local estava indisponível (download truncado). A execução em Chrome real foi realizada pelo GitHub Actions, incluindo screenshots inspecionadas. A validação exige o canvas inteiro dentro da janela, além do frame, e confirma entrada, vida e toque no joystick.
 
 ## Limites atuais
 

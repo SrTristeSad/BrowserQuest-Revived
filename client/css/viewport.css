@@ -85,3 +85,19 @@ body.game #playercount {
 }
 body.game #chatbox { visibility: hidden; pointer-events: none; }
 body.game #chatbox.active { visibility: visible; pointer-events: auto; bottom: 46px; }
+body.game #barbuttons .barbutton {
+    width: 28px; height: 30px;
+    background-image: url('../img/2/barsheet.png'); background-size: 960px;
+}
+body.game #chatbutton { background-position: -204px -34px; }
+body.game #chatbutton:hover { background-position: -232px -34px; }
+body.game #chatbutton.active { background-position: -260px -34px; }
+body.game #achievementsbutton { background-position: -288px -34px; }
+body.game #achievementsbutton:hover, body.game #achievementsbutton.blink { background-position: -316px -34px; }
+body.game #achievementsbutton.active { background-position: -344px -34px; }
+body.game #helpbutton { background-position: -372px -34px; }
+body.game #helpbutton:hover { background-position: -400px -34px; }
+body.game #helpbutton.active { background-position: -428px -34px; }
+body.game #mutebutton { background-position: -456px -34px; }
+body.game #mutebutton:hover { background-position: -484px -34px; }
+body.game #mutebutton.active { background-position: -512px -34px; }
