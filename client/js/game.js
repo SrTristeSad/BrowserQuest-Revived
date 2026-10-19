@@ -1518,8 +1518,11 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 });
                 
                 self.client.onDisconnected(function(message) {
-                    if(self.player) {
-                        self.player.die();
+                    // Losing the WebSocket is NOT a player death. Preserve the
+                    // current character on screen and show the reconnect flow
+                    // instead of a fake death animation without HP loss.
+                    if(self.player && typeof self.player.stop === 'function') {
+                        self.player.stop();
                     }
                     if(self.disconnect_callback) {
                         self.disconnect_callback(message);
