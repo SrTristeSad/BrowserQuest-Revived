@@ -293,9 +293,10 @@ module.exports = World = cls.Class.extend({
     pushSpawnsToPlayer: function(player, ids) {
         var self = this;
         
-        _.each(ids, function(id) {
+        _.each(_.uniq(ids), function(id) {
             var entity = self.getEntityById(id);
-            if(entity) {
+            if(entity && self.groups[player.group] &&
+               self.groups[player.group].entities[id] === entity) {
                 self.pushToPlayer(player, new Messages.Spawn(entity));
             }
         });
@@ -823,14 +824,12 @@ module.exports = World = cls.Class.extend({
     },
     
     findPositionNextTo: function(entity, target) {
-        var valid = false,
-            pos;
-        
-        while(!valid) {
-            pos = entity.getPositionNextTo(target);
-            valid = this.isValidPosition(pos.x, pos.y);
+        var offsets = [[0,-1],[1,0],[0,1],[-1,0]];
+        for(var i = 0; i < offsets.length; i += 1) {
+            var pos = {x:target.x + offsets[i][0], y:target.y + offsets[i][1]};
+            if(this.isValidPosition(pos.x, pos.y)) { return pos; }
         }
-        return pos;
+        return null;
     },
     
     initZoneGroups: function() {

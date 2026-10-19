@@ -850,9 +850,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                     if(self.player.isMovingToLoot()) {
                         self.player.isLootMoving = false;
                     }
-                    else if(!self.player.isAttacking()) {
-                        self.client.sendMove(x, y);
-                    }
+
                 
                     // Target cursor position
                     self.selectedX = x;
@@ -892,6 +890,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 });
             
                 self.player.onStep(function() {
+                    self.client.sendMove(self.player.gridX, self.player.gridY);
                     if(self.player.hasNextStep()) {
                         self.registerEntityDualPosition(self.player);
                     }
@@ -936,6 +935,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 });
             
                 self.player.onStopPathing(function(x, y) {
+                    self.client.sendMove(x, y);
                     if(self.player.hasTarget()) {
                         self.player.lookAtTarget();
                     }
@@ -1322,7 +1322,21 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 self.client.onEntityMove(function(id, x, y) {
                     var entity = null;
 
-                    if(id !== self.playerId) {
+                    if(id === self.playerId) {
+                        entity = self.player;
+                        entity.path = null;
+                        entity.newDestination = null;
+                        entity.interrupted = false;
+                        if(entity.movement) { entity.movement.inProgress = false; }
+                        self.makeCharacterTeleportTo(entity, x, y);
+                        entity.nextGridX = x;
+                        entity.nextGridY = y;
+                        entity.idle();
+                        self.selectedCellVisible = false;
+                        self.camera.focusEntity(entity);
+                        self.resetZone();
+                        self.client.sendZone();
+                    } else {
                         entity = self.getEntityById(id);
                 
                         if(entity) {

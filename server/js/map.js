@@ -49,7 +49,8 @@ module.exports = cls.Class.extend({
         this.groupWidth = Math.ceil(this.width / this.zoneWidth);
         this.groupHeight = Math.ceil(this.height / this.zoneHeight);
 
-        this.initConnectedGroups(map.doors);
+        this.doors = map.doors || [];
+        this.initConnectedGroups(this.doors);
         this.initCheckpoints(map.checkpoints);
 
         if(this.ready_func) {
@@ -80,11 +81,11 @@ module.exports = cls.Class.extend({
     generateCollisionGrid: function() {
         this.grid = [];
         if(this.isLoaded) {
-            var tileIndex = 0, j, i;
+            var tileIndex = 0, j, i, blocked = new Set(this.collisions || []);
             for(i = 0; i < this.height; i += 1) {
                 this.grid[i] = [];
                 for(j = 0; j < this.width; j += 1) {
-                    this.grid[i][j] = _.include(this.collisions, tileIndex) ? 1 : 0;
+                    this.grid[i][j] = blocked.has(tileIndex) ? 1 : 0;
                     tileIndex += 1;
                 }
             }
@@ -185,6 +186,12 @@ module.exports = cls.Class.extend({
                 self.startingAreas.push(checkpoint);
                 self.startingCheckpointRects.push({x:cp.x, y:cp.y, w:cp.w, h:cp.h, s:1});
             }
+        });
+    },
+
+    canTeleportFrom: function(x, y, targetX, targetY) {
+        return (this.doors || []).some(function(door) {
+            return door.x === x && door.y === y && door.tx === targetX && door.ty === targetY;
         });
     },
 

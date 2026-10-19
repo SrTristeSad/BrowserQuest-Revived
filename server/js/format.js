@@ -26,7 +26,7 @@ var FormatChecker = cls.Class.extend({
     },
 
     check: function(msg) {
-        if(!Array.isArray(msg) || !Number.isInteger(msg[0])) { return false; }
+        if(!Array.isArray(msg) || msg.length > 4097 || !Number.isInteger(msg[0])) { return false; }
         var message = msg.slice(0),
             type = message[0],
             format = this.formats[type],
@@ -44,7 +44,7 @@ var FormatChecker = cls.Class.extend({
                 if(format[i] === 'n' && !Number.isSafeInteger(message[i])) {
                     return false;
                 }
-                if(format[i] === 's' && !_.isString(message[i])) {
+                if(format[i] === 's' && (!_.isString(message[i]) || message[i].length > 2048)) {
                     return false;
                 }
             }

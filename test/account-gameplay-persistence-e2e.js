@@ -76,6 +76,27 @@ function findStaticWeapon() {
     return chosen;
 }
 
+function routeToItem(start, target) {
+    var map = JSON.parse(fs.readFileSync(mapPath, 'utf8')),
+        blocked = new Set(map.collisions),
+        queue = [{x:start[3],y:start[4],previous:null}], seen = new Set(), index = 0;
+    seen.add(start[3]+','+start[4]);
+    while(index < queue.length) {
+        var point = queue[index++];
+        if(Math.abs(point.x-target.x)+Math.abs(point.y-target.y) <= 1) {
+            var route = [];
+            while(point.previous) { route.push(point); point=point.previous; }
+            return route.reverse();
+        }
+        [[0,-1],[1,0],[0,1],[-1,0]].forEach(function(offset) {
+            var x=point.x+offset[0], y=point.y+offset[1], key=x+','+y;
+            if(x<=0||y<=0||x>=map.width||y>=map.height||blocked.has(y*map.width+x)||seen.has(key))return;
+            seen.add(key);queue.push({x:x,y:y,previous:point});
+        });
+    }
+    throw new Error('No walkable route to test weapon');
+}
+
 function delay(ms) {
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
@@ -186,6 +207,13 @@ async function main() {
 
         // Move to the static item through the normal BrowserQuest protocol, then loot it.
         first.socket.send(JSON.stringify([Types.Messages.LOOTMOVE, target.x, target.y, Number(target.id)]));
+        // LOOTMOVE is intent, not a position update. Traverse real adjacent
+        // steps at the normal movement rate before attempting collection.
+        var route = routeToItem(first.welcome, target);
+        for(var step of route) {
+            await delay(130);
+            first.socket.send(JSON.stringify([Types.Messages.MOVE, step.x, step.y]));
+        }
         await delay(60);
         first.socket.send(JSON.stringify([Types.Messages.LOOT, Number(target.id)]));
 

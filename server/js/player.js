@@ -8,6 +8,7 @@ var cls = require("./lib/class"),
     check = require("./format").check,
     MissionService = require("../story/mission-service"),
     CombatGuard = require("./combat-guard"),
+    MovementGuard = require("./movement-guard"),
     Types = require("../../shared/js/gametypes");
 
 module.exports = Player = Character.extend({
@@ -24,6 +25,7 @@ module.exports = Player = Character.extend({
 
         this.hasEnteredGame = false;
         this.handshakePending = false;
+        this.connectionClosed = false;
         this.isDead = false;
         // Ignore damage during initial spawn and immediately after a revive.
         this.spawnProtectedUntil = 0;
@@ -41,7 +43,7 @@ module.exports = Player = Character.extend({
         this.muteReason = '';
         
         this.connection.listen(function(message) {
-            var action = parseInt(message[0]);
+            var action = Array.isArray(message) ? message[0] : undefined;
             
             log.debug("Received: "+message);
             if(!check(message)) {
@@ -94,12 +96,15 @@ module.exports = Player = Character.extend({
                     var x = message[1],
                         y = message[2];
                     
-                    if(self.server.isValidPosition(x, y)) {
+                    if(x === self.x && y === self.y) { return; }
+                    if(MovementGuard.acceptStep(self.server, self, x, y)) {
                         self.setPosition(x, y);
                         self.clearTarget();
                         
                         self.broadcast(new Messages.Move(self));
                         self.move_callback(self.x, self.y);
+                    } else {
+                        self.send(new Messages.Teleport(self).serialize());
                     }
                 }
             }
@@ -108,11 +113,13 @@ module.exports = Player = Character.extend({
                     
                     var item = self.server.getEntityById(message[3]);
                     if(item && item.type === 'item') {
-                        self.setPosition(message[1], message[2]);
+                        // This is only a loot intent. MOVE reports completed
+                        // adjacent steps; never jump to an item's destination.
+                        if(item.x !== message[1] || item.y !== message[2]) { return; }
                         self.clearTarget();
 
                         self.broadcast(new Messages.LootMove(self, item));
-                        self.lootmove_callback(self.x, self.y);
+                        // No movement callback before a real step occurs.
                     }
                 }
             }
@@ -179,6 +186,7 @@ module.exports = Player = Character.extend({
                         if(kind === Types.Entities.FIREPOTION) {
                             self.updateHitPoints();
                             self.broadcast(self.equip(Types.Entities.FIREFOX));
+                            if(self.firepotionTimeout) { clearTimeout(self.firepotionTimeout); }
                             self.firepotionTimeout = setTimeout(function() {
                                 self.broadcast(self.equip(self.armor));
                                 self.firepotionTimeout = null;
@@ -211,7 +219,8 @@ module.exports = Player = Character.extend({
                 var x = message[1],
                     y = message[2];
                 
-                if(self.server.isValidPosition(x, y)) {
+                if(self.server.isValidPosition(x, y) && self.server.map.canTeleportFrom &&
+                   self.server.map.canTeleportFrom(self.x, self.y, x, y)) {
                     self.setPosition(x, y);
                     self.clearTarget();
                     
@@ -219,6 +228,8 @@ module.exports = Player = Character.extend({
                     
                     self.server.handlePlayerVanish(self);
                     self.server.pushRelevantEntityListTo(self);
+                } else {
+                    self.send(new Messages.Teleport(self).serialize());
                 }
             }
             else if(action === Types.Messages.OPEN) {
@@ -230,7 +241,7 @@ module.exports = Player = Character.extend({
             }
             else if(action === Types.Messages.CHECK) {
                 var checkpoint = self.server.map.getCheckpoint(message[1]);
-                if(checkpoint) {
+                if(checkpoint && checkpoint.containsPosition(self.x, self.y)) {
                     self.lastCheckpoint = checkpoint;
                     self.schedulePersistence({checkpointId: checkpoint.id});
                 }
@@ -260,6 +271,7 @@ module.exports = Player = Character.extend({
         });
         
         this.connection.onClose(function() {
+            self.connectionClosed = true;
             if(self.firepotionTimeout) {
                 clearTimeout(self.firepotionTimeout);
             }
@@ -332,6 +344,10 @@ module.exports = Player = Character.extend({
             weapon = message[3];
         }
 
+        if(this.connectionClosed) { return; }
+        if(!Types.isArmor(armor)) { armor = Types.Entities.CLOTHARMOR; }
+        if(!Types.isWeapon(weapon)) { weapon = Types.Entities.SWORD1; }
+
         // A respawn uses the same socket/player. Discard old mob targets before
         // relocating; otherwise attackers can hit the revived character instantly.
         if(this.hasEnteredGame && this.isDead) {
@@ -349,6 +365,8 @@ module.exports = Player = Character.extend({
         this.spawnProtectedUntil = Date.now() + 10000;
         this.lastMobHurtTimes = Object.create(null);
         this.nextHitAt = 0;
+        this.lastStepAt = Date.now();
+        this.stepCreditMs = MovementGuard.STEP_MS;
         
         this.server.addPlayer(this);
         this.server.enter_callback(this);

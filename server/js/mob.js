@@ -1,5 +1,6 @@
 var cls = require("./lib/class"),
     _ = require("underscore"),
+    Utils = require("./utils"),
     Messages = require("./message"),
     Properties = require("./properties"),
     Types = require("../../shared/js/gametypes");
@@ -34,6 +35,7 @@ module.exports = Mob = Character.extend({
     },
 
     destroy: function() {
+        if(this.returnTimeout) { clearTimeout(this.returnTimeout); this.returnTimeout = null; }
         this.isDead = true;
         this.hatelist = [];
         this.clearTarget();
@@ -111,7 +113,8 @@ module.exports = Mob = Character.extend({
             if(this.area && this.area instanceof ChestArea) {
                 this.area.removeFromArea(this);
             }
-            setTimeout(function() {
+            this.respawnTimeout = setTimeout(function() {
+                self.respawnTimeout = null;
                 if(self.respawn_callback) {
                     self.respawn_callback();
                 }
@@ -132,7 +135,10 @@ module.exports = Mob = Character.extend({
             delay = waitDuration || 4000;
 
         this.clearTarget();
+        if(this.returnTimeout) { clearTimeout(this.returnTimeout); }
         this.returnTimeout = setTimeout(function() {
+            self.returnTimeout = null;
+            if(self.isDead) { return; }
             self.resetPosition();
             self.move(self.x, self.y);
         }, delay);

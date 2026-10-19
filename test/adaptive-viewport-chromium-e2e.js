@@ -8,6 +8,9 @@ const http = require('node:http');
 const net = require('node:net');
 const {spawn} = require('node:child_process');
 const {chromium} = require('playwright-core');
+const Types = require('../shared/js/gametypes');
+const worldMap = JSON.parse(fs.readFileSync(path.join(__dirname,'../server/maps/world_server.json'),'utf8'));
+const blocked = new Set(worldMap.collisions);
 const root = path.resolve(__dirname,'..');
 const out = process.env.SPRITE_SCREENSHOT_DIR || fs.mkdtempSync(path.join(os.tmpdir(),'bq-adaptive-'));
 const delay = ms => new Promise(resolve=>setTimeout(resolve,ms));
@@ -37,6 +40,11 @@ async function main() {
  ]) {
   const page=await browser.newPage({viewport:{width:config.width,height:config.height},isMobile:config.mobile,hasTouch:config.mobile});
   page.on('pageerror',e=>errors.push(config.name+': '+e.message));
+  const sent=[], received=[];
+  page.on('websocket',socket=>{
+   socket.on('framesent',frame=>{try{sent.push(JSON.parse(frame.payload));}catch{}});
+   socket.on('framereceived',frame=>{try{const data=JSON.parse(frame.payload);received.push(...(Array.isArray(data[0])?data:[data]));}catch{}});
+  });
   console.log('Opening viewport:',config.name);
   await page.goto(url);
   await page.waitForFunction(()=>document.getElementById('foreground').width>300); 
@@ -49,6 +57,24 @@ async function main() {
   await page.waitForFunction(()=>/^Vida: [1-9]/.test(document.getElementById('healthbar').title));
   await page.waitForTimeout(11000);
   assert.equal(await page.locator('body.death').count(),0,'must survive the end of spawn grace');
+  if(config.name==='desktop') {
+   const welcome=received.find(data=>data[0]===Types.Messages.WELCOME);
+   assert(welcome,'real client must receive WELCOME');
+   const choices=[['ArrowRight',1,0],['ArrowLeft',-1,0],['ArrowDown',0,1],['ArrowUp',0,-1]];
+   const direction=choices.find(([,dx,dy])=>[1,2,3].every(step=>{
+    const x=welcome[3]+dx*step,y=welcome[4]+dy*step;
+    return x>0&&y>0&&x<worldMap.width&&y<worldMap.height&&!blocked.has(y*worldMap.width+x)&&
+      !worldMap.doors.some(door=>door.x===x&&door.y===y);
+   }));
+   assert(direction,'spawn should have a walkable movement test direction');
+   await page.keyboard.down(direction[0]);await page.waitForTimeout(180);await page.keyboard.up(direction[0]);
+   await page.waitForTimeout(400);
+   const moves=sent.filter(data=>data[0]===Types.Messages.MOVE);
+   let x=welcome[3],y=welcome[4],count=0;
+   for(const move of moves){const distance=Math.abs(move[1]-x)+Math.abs(move[2]-y);assert(distance<=1,'client must report steps, never a distant destination');if(distance)count++;x=move[1];y=move[2];}
+   assert(count>0,'keyboard walking must produce completed steps');
+   assert(!received.some(data=>data[0]===Types.Messages.TELEPORT&&data[1]===welcome[1]),'legitimate walking must not be rejected by server');
+  }
   const view=await page.evaluate(()=>{
    const canvas=document.getElementById('foreground');const r=canvas.getBoundingClientRect();
    const f=document.getElementById('container').getBoundingClientRect();
