@@ -154,9 +154,12 @@ game.isZoning=()=>false;
 player.isDead=true;
 assert.equal(keydown('KeyD').prevented,false);
 player.isDead=false;
-document.querySelector=()=>({className:'active'});
+document.querySelector=selector=>{
+    assert(selector.includes('#chatbox.active'));
+    return {className:'active'};
+};
 assert.equal(keydown('KeyD').prevented,false,
-    'movement must be blocked while tutorial or achievements overlay is open');
+    'movement must be blocked while chat, tutorial or achievements is open');
 document.querySelector=()=>null;
 
 // Touch joystick has a dead zone, pointer capture and native event isolation.
