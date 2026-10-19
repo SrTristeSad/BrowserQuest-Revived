@@ -13,8 +13,8 @@ const Brain = require('../server/js/brain').Brain;
 const WorldStore = require('../server/admin/world-store').WorldStore;
 
 const initial = [{id:1,x:10,y:10,w:3,h:3,s:1},{id:2,x:27,y:27,w:2,h:2,s:0}];
-assert.equal(SpawnSafety.normalizeRadius(undefined),8);
-assert.equal(SpawnSafety.normalizeRadius(21),8);
+assert.equal(SpawnSafety.normalizeRadius(undefined),2);
+assert.equal(SpawnSafety.normalizeRadius(21),2);
 assert.equal(SpawnSafety.normalizeRadius(0),0);
 assert.equal(SpawnSafety.isSafeStartingTile(initial,10,10,8),true);
 assert.equal(SpawnSafety.isSafeStartingTile(initial,2,10,8),true);
@@ -28,13 +28,32 @@ const original=JSON.parse(fs.readFileSync(path.join(__dirname,'../server/maps/wo
 const serverMap=Object.create(GameMap.prototype);
 serverMap.initMap(original);
 serverMap.generateCollisionGrid();
-assert.equal(serverMap.spawnSafeRadius,8,'legacy original map gets safe default');
+assert.equal(serverMap.spawnSafeRadius,2,'original map now preserves nearby mob habitats');
 assert(serverMap.startingAreas.length>0,'original map must have starting checkpoints');
 const start=original.checkpoints.find(cp=>cp.s===1);
 assert(serverMap.isProtectedSpawnTile(start.x,start.y),'player entry tiles must be safe');
 const firstRats=original.roamingAreas[0];
-assert(serverMap.isProtectedSpawnTile(firstRats.x, firstRats.y+1),
-  'original roaming rat area overlaps the beginner-safe zone');
+assert(serverMap.isProtectedSpawnTile(start.x,start.y),
+  'starting checkpoint remains permanently safe');
+const spawnBudget = require('../server/js/mob-budget');
+const legacyMap = Object.create(GameMap.prototype);
+legacyMap.initMap({...original, spawnSafeRadius: 8});
+legacyMap.generateCollisionGrid();
+// Verify the actual original game's rat spawning area, not just mocked tiles.
+// A 2-tile zone restores rat habitats; the former 8-tile default erased them.
+function ratCandidates(map,area) {
+ let positions=[];
+ for(let y=area.y;y<area.y+area.height;y++)for(let x=area.x;x<area.x+area.width;x++){
+  if(x>0 && y>0 && x<map.width && y<map.height &&
+     !map.isColliding(x,y) && !map.isProtectedSpawnTile(x,y))positions.push([x,y]);
+ }
+ return positions;
+}
+assert.equal(ratCandidates(legacyMap,firstRats).length,0,
+ 'regression reproduction: old eight-tile protection erased first rat patrol');
+assert(ratCandidates(serverMap,firstRats).length>=10,
+ 'new default must leave visible enemy positions around the safe checkpoint');
+
 assert(!serverMap.isProtectedSpawnTile(50,260),'other areas must remain available');
 
 const registered=[];
@@ -99,7 +118,7 @@ try{
    publishedClientJsonPath:path.join(dir,'client-pub.json'),publishedClientJsPath:path.join(dir,'client-pub.js'),
    versionsDir:path.join(dir,'versions')});
  let state=store.load();
- assert.equal(state.map.spawnSafeRadius,8);
+ assert.equal(state.map.spawnSafeRadius,2);
  state.map.spawnSafeRadius=14;
  store.save(state);
  assert.equal(store.load().map.spawnSafeRadius,14);
