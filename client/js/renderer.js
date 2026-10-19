@@ -618,15 +618,21 @@ function(Camera, Item, Character, Player, Timer) {
         },
 
         createTerrainChunk: function(m, chunkX, chunkY, tilesetwidth) {
-            var canvas = document.createElement('canvas'),
+            var canvas, ctx,
                 size = 8,
                 startX = chunkX * size,
                 startY = chunkY * size,
-                ctx, self = this;
+                self = this;
 
-            canvas.width = size * this.tilesize * this.scale;
-            canvas.height = size * this.tilesize * this.scale;
-            ctx = canvas.getContext && canvas.getContext('2d');
+            try {
+                canvas = document.createElement('canvas');
+                if(!canvas || !canvas.getContext) { return null; }
+                canvas.width = size * this.tilesize * this.scale;
+                canvas.height = size * this.tilesize * this.scale;
+                ctx = canvas.getContext('2d');
+            } catch(error) {
+                return null;
+            }
             if(!ctx) { return null; }
             this.disableContextSmoothing(ctx);
 
