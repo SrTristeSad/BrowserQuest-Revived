@@ -62,8 +62,20 @@ body.game { overscroll-behavior: none; }
 }
 body.game #bq-fullscreen { display: block; }
 
-/* HUD dimensions follow the renderer, independently of old media-query sprites. */
-body.game #bar-container { height: 38px; top: 0; background: #29282b; }
+/* Restore the classic pixel-art bar. The plain grey background added
+ * by the adaptive viewport hid the detailed barsheet used by BrowserQuest.
+ * Keep the source pixels and repeat only the neutral background beyond it. */
+body.game #bar-container {
+    height: 34px;
+    top: -2px;
+    background-color: #29282b;
+    background-image: url('../img/2/barsheet.png'),
+        repeating-linear-gradient(180deg, #35343a 0, #35343a 2px, #29282b 2px, #29282b 5px);
+    background-repeat: no-repeat, repeat;
+    background-position: 0 -96px, 0 0;
+    background-size: 960px auto, auto;
+    image-rendering: pixelated;
+}
 body.game #healthbar {
     background-image: url('../img/2/barsheet.png');
     background-size: 960px;
