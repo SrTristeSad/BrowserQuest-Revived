@@ -91,7 +91,7 @@ const home=fs.readFileSync(path.join(__dirname,'../client/js/main.js'),'utf8');
 const game=fs.readFileSync(path.join(__dirname,'../client/js/game.js'),'utf8');
 const css=fs.readFileSync(path.join(__dirname,'../client/css/main.css'),'utf8');
 const editor=fs.readFileSync(path.join(__dirname,'../server/admin/public/world-editor.html'),'utf8');
-const scripts=[...editor.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)];
+const scripts=[...editor.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
 assert.equal(scripts.length,2,'editor scripts must still parse');
 scripts.forEach(s=>new vm.Script(s[1],{filename:'world-editor.js'}));
 for(const text of ['id="enableDayNight"','id="dayMinutes"','id="nightMinutes"',
