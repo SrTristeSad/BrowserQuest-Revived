@@ -328,12 +328,26 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
     
         setSpriteScale: function(scale) {
             var self = this;
-            
+
+            // Resizing the browser (including opening DevTools) can call
+            // Renderer.rescale before Game.run initializes sprite sets.
+            // There is nothing to rescale yet: Game.run will explicitly call
+            // setSpriteScale once the sprite catalogs have been created.
+            if(!this.spritesets || !this.spritesets.length) {
+                return;
+            }
+
             if(this.renderer.upscaledRendering) {
                 this.sprites = this.spritesets[0];
             } else {
                 this.sprites = this.spritesets[scale - 1];
-                
+
+                // Game.run calls setSpriteScale right after loadSprites,
+                // before image onload callbacks. Just select the catalog
+                // during loading; Game.run initializes hurt sprites/cursors
+                // after all images finish. Resizes may happen in between.
+                if(!this.ready) { return; }
+
                 _.each(this.entities, function(entity) {
                     entity.sprite = null;
                     var preferred = self.sprites[entity.getSpriteName()],
