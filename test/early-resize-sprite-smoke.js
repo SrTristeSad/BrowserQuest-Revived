@@ -67,8 +67,14 @@ for(const upscaled of [false,true]) {
 
     const sprite={name:'rat',isLoaded:true};
     game.spritesets = [{rat:sprite},{rat:sprite},{rat:sprite}];
+    // The catalogs exist, but Game.run has not finished image loading.
+    game.ready=false;
     assert.doesNotThrow(()=>game.setSpriteScale(2),
-        'once catalog exists resizing should continue to rebind visible mobs');
+        'resizes while sprites are still loading must not initialize hurt sprites');
+    assert.equal(game.hurtCalls,undefined);
+    game.ready=true;
+    assert.doesNotThrow(()=>game.setSpriteScale(2),
+        'after images load, resizing should continue to rebind visible mobs');
     assert.equal(game.sprites.rat,sprite);
     if(!upscaled) {
         assert.equal(mob.sprite,sprite,'existing mob must not disappear on rescale');
