@@ -2,7 +2,8 @@ var cls = require('./lib/class'),
     fs = require('fs'),
     _ = require('underscore'),
     Utils = require('./utils'),
-    Checkpoint = require('./checkpoint');
+    Checkpoint = require('./checkpoint'),
+    SpawnSafety = require('./spawn-safety');
 
 module.exports = cls.Class.extend({
     init: function(filepath) {
@@ -30,6 +31,7 @@ module.exports = cls.Class.extend({
         this.height = map.height;
         this.collisions = map.collisions;
         this.mobAreas = map.roamingAreas;
+        this.spawnSafeRadius = SpawnSafety.normalizeRadius(map.spawnSafeRadius);
         this.chestAreas = map.chestAreas;
         this.staticChests = map.staticChests;
         this.staticEntities = map.staticEntities;
@@ -162,12 +164,20 @@ module.exports = cls.Class.extend({
         this.checkpoints = {};
         this.checkpointList = [];
         this.startingAreas = [];
+        this.startingCheckpointRects = [];
         _.each(cpList, function(cp) {
             var checkpoint = new Checkpoint(cp.id, cp.x, cp.y, cp.w, cp.h);
             self.checkpoints[checkpoint.id] = checkpoint;
             self.checkpointList.push(checkpoint);
-            if(cp.s === 1) { self.startingAreas.push(checkpoint); }
+            if(cp.s === 1) {
+                self.startingAreas.push(checkpoint);
+                self.startingCheckpointRects.push({x:cp.x, y:cp.y, w:cp.w, h:cp.h, s:1});
+            }
         });
+    },
+
+    isProtectedSpawnTile: function(x, y) {
+        return SpawnSafety.isSafeStartingTile(this.startingCheckpointRects, x, y, this.spawnSafeRadius);
     },
 
     getCheckpoint: function(id) {
