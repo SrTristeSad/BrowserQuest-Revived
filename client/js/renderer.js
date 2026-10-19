@@ -685,8 +685,9 @@ function(Camera, Item, Character, Player, Timer) {
 
         drawTerrain: function() {
             var m = this.game.map;
-            if(!m || !m.isLoaded || !this.tileset ||
-                typeof document === 'undefined' || !document.createElement) {
+            // A not-yet-loaded map has no terrain to draw.
+            if(!m || !m.isLoaded || !this.tileset) { return; }
+            if(typeof document === 'undefined' || !document.createElement) {
                 this.drawTerrainUncached();
                 return;
             }
