@@ -133,6 +133,8 @@ async function main(){
             await page.touchscreen.tap(config.viewport.width/2,config.viewport.height/2);
             await page.waitForFunction(()=>window.__events.taps>0);
             await page.locator('#chatbox').evaluate(el=>el.classList.add('active'));
+            assert.equal(await page.evaluate(()=>window.__controls.canMove()),false,
+                'chat overlay must disable directional movement, not only hide joystick');
             await page.waitForFunction(()=>getComputedStyle(document.querySelector('#bq-joystick')).opacity==='0');
             assert.equal(await page.locator('#bq-joystick').evaluate(
                 el=>getComputedStyle(el).pointerEvents),'none',
