@@ -186,11 +186,19 @@ define(['jquery', 'app'], function($, App) {
     		});
     		
     		game.onDisconnect(function(message) {
-    		    $('#death').find('p').html(message+"<em>Please reload the page.</em>");
-    		    $('#respawn').hide();
+                // A closed socket cannot be revived with another HELLO.
+                // Leave the existing button accessible as a safe reconnect action.
+                $('#respawn').data('connectionLost', true).show();
+                $('#death').find('p').text(message || 'Connection lost.')
+                    .append($('<em>').text('Click the button to reconnect.'));
+                $('body').addClass('death');
     		});
 	
     		game.onPlayerDeath(function() {
+                if(!$('#respawn').data('connectionLost')) {
+                    $('#death').find('p').text('You are dead...');
+                    $('#respawn').show();
+                }
     		    if($('body').hasClass('credits')) {
     		        $('body').removeClass('credits');
     		    }
@@ -291,6 +299,16 @@ define(['jquery', 'app'], function($, App) {
             });
             
             $('#respawn').click(function(event) {
+                event.stopPropagation();
+                if($('#respawn').data('connectionLost') ||
+                    !game.client || !game.client.connection ||
+                    game.client.connection.readyState !== WebSocket.OPEN) {
+                    window.location.reload();
+                    return;
+                }
+                // The death animation must finish before the new player is created.
+                if(game.player) { return; }
+                $('#respawn').data('connectionLost', false);
                 game.audioManager.playSound("revive");
                 game.restart();
                 $('body').removeClass('death');
