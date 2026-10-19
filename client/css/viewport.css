@@ -101,3 +101,56 @@ body.game #helpbutton.active { background-position: -428px -34px; }
 body.game #mutebutton { background-position: -456px -34px; }
 body.game #mutebutton:hover { background-position: -484px -34px; }
 body.game #mutebutton.active { background-position: -512px -34px; }
+
+
+/* Interactive, non-destructive equipment readout. The two classic HUD icons
+ * are not an inventory; this displays the actual equipped items. */
+body.game #weapon, body.game #armor {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    cursor: pointer;
+    background-repeat: no-repeat;
+    background-color: transparent;
+}
+body.game #weapon:hover, body.game #armor:hover,
+body.game #weapon:focus-visible, body.game #armor:focus-visible {
+    outline: 2px solid #f5d27e;
+    outline-offset: -2px;
+}
+body.game #bq-equipment-panel[hidden] { display: none !important; }
+body.game #bq-equipment-panel {
+    display: block;
+    position: absolute;
+    left: 208px;
+    bottom: 43px;
+    z-index: 140;
+    box-sizing: border-box;
+    width: 250px;
+    max-width: calc(100% - 215px);
+    min-width: 175px;
+    padding: 12px 30px 10px 12px;
+    border: 2px solid #ad9362;
+    border-radius: 4px;
+    background: rgba(28, 26, 24, .97);
+    color: #f5eed8;
+    box-shadow: 0 5px 16px rgba(0, 0, 0, .65);
+    font: 14px/1.4 sans-serif;
+    white-space: normal;
+}
+body.game #bq-equipment-panel p { margin: 6px 0 0; }
+body.game #bq-equipment-panel .bq-equipment-hint { color: #c6c2b4; font-size: 12px; }
+body.game #bq-equipment-close {
+    position: absolute; right: 5px; top: 4px;
+    width: 24px; height: 24px;
+    padding: 0; border: 0; background: transparent;
+    color: #fff; font-size: 22px; line-height: 24px;
+    cursor: pointer;
+}
+@media (max-width: 560px) {
+    body.game #bq-equipment-panel {
+        left: 6px;
+        max-width: min(270px, calc(100% - 12px));
+    }
+}
