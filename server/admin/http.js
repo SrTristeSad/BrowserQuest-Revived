@@ -159,10 +159,24 @@ function createAdminHandler(options) {
     }
 
     function originAllowed(request) {
-        var origin = request.headers.origin, host = request.headers.host;
-        if(!origin || !host) { return true; }
-        try { return new URL(origin).host === host; }
-        catch(error) { return false; }
+        var origin = request.headers.origin, host = request.headers.host,
+            publicOrigin = String(process.env.BROWSERQUEST_PUBLIC_ORIGIN || '').trim();
+        if(!origin) { return true; }
+        try {
+            var incoming = new URL(origin);
+            if(publicOrigin) { return incoming.origin === new URL(publicOrigin).origin; }
+            if(host && incoming.host === host) { return true; }
+            // Trust forwarded host only from a local reverse proxy (aaPanel Apache).
+            // The last header value is the one added by the trusted local proxy.
+            var remote = request.socket && request.socket.remoteAddress || '',
+                local = remote === '127.0.0.1' || remote === '::1' ||
+                    remote === '::ffff:127.0.0.1',
+                forwardedHost = String(request.headers['x-forwarded-host'] || '').split(',').pop().trim(),
+                forwardedProto = String(request.headers['x-forwarded-proto'] || '').split(',').pop().trim();
+            return Boolean(local && forwardedHost && incoming.host === forwardedHost &&
+                (forwardedProto === 'https' || forwardedProto === 'http') &&
+                incoming.protocol === forwardedProto + ':');
+        } catch(error) { return false; }
     }
 
     async function checkLoginRate(ip) {
