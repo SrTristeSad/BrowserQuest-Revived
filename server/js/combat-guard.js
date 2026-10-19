@@ -3,7 +3,7 @@
 /** Server-side validation for legacy client HURT messages. A client-provided
  * mob ID by itself is NOT evidence of a valid enemy attack.
  */
-const MAX_HIT_DISTANCE = 2; // Chebyshev tiles; tolerates movement interpolation.
+const MAX_HIT_DISTANCE = 1; // Only an actually adjacent mob can hit a player.
 const MIN_HIT_INTERVAL_MS = 450;
 
 function canMobDamagePlayer(world, mob, player, now) {
