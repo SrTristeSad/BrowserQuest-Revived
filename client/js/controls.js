@@ -37,7 +37,7 @@ define(function() {
                 player = game.player;
             // Tutorial and achievement dialogs should not move the character.
             if(document.querySelector &&
-                document.querySelector('#instructions.active, #achievements.active')) {
+                document.querySelector('#chatbox.active, #instructions.active, #achievements.active')) {
                 return false;
             }
             return Boolean(game.started && game.ready && game.playerId !== undefined &&
