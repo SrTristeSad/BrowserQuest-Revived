@@ -6,6 +6,8 @@ var fs = require('fs'),
     ReferenceValidator = require('./story-reference-validator'),
     WorldPublishTransaction = require('./world-publish-transaction'),
     SpawnSafety = require('../js/spawn-safety'),
+    MobBudget = require('../js/mob-budget'),
+    DayCycle = require('../../shared/js/daycycle'),
     Types = require('../../shared/js/gametypes');
 
 var NPC_KINDS = ['guard','king','octocat','villagegirl','villager','priest','scientist','agent','rick','nyan','sorcerer','beachnpc','forestnpc','desertnpc','lavanpc','coder'];
@@ -155,6 +157,8 @@ function buildEditableMap(base, baseClient, maxTileId) {
         staticChests: clone(base.staticChests || []),
         roamingAreas: clone(base.roamingAreas || []),
         spawnSafeRadius: SpawnSafety.normalizeRadius(base.spawnSafeRadius),
+        maxNearbyMobs: MobBudget.normalizeLimit(base.maxNearbyMobs),
+        dayNight: DayCycle.normalize(base.dayNight),
         entities: entities
     };
 }
@@ -184,6 +188,17 @@ function validateRawWorld(raw, width, height, maxTileId, migrateLegacy) {
             (!Number.isInteger(map.spawnSafeRadius) || map.spawnSafeRadius < 0 ||
              map.spawnSafeRadius > SpawnSafety.MAX_RADIUS)) {
             add('map.spawnSafeRadius', 'Distância segura deve estar entre 0 e 20 tiles.');
+        }
+        if(map.maxNearbyMobs != null && (!Number.isInteger(map.maxNearbyMobs) ||
+            map.maxNearbyMobs < 1 || map.maxNearbyMobs > MobBudget.MAX_NEARBY_MAX)) {
+            add('map.maxNearbyMobs', 'Limite de mobs próximos deve estar entre 1 e 24.');
+        }
+        if(map.dayNight != null && (!map.dayNight || typeof map.dayNight !== 'object' ||
+            Array.isArray(map.dayNight) || typeof map.dayNight.enabled !== 'boolean' ||
+            !Number.isInteger(map.dayNight.dayMinutes) || map.dayNight.dayMinutes < 5 ||
+            map.dayNight.dayMinutes > 60 || !Number.isInteger(map.dayNight.nightMinutes) ||
+            map.dayNight.nightMinutes < 5 || map.dayNight.nightMinutes > 30)) {
+            add('map.dayNight', 'Configuração do ciclo de dia e noite inválida.');
         }
         if(map.data != null) {
             if(!Array.isArray(map.data)) {
@@ -455,6 +470,7 @@ function normalizeMobAreas(list, width, height, mobProfiles) {
             id = area.id, x = area.x, y = area.y, nb = area.nb,
             profileId = area.profileId == null ? '' : area.profileId,
             kind = area.type;
+        if(area.period != null && !['always','day','night'].includes(area.period)) { return; }
         if(![id, x, y, areaWidth, areaHeight, nb].every(Number.isSafeInteger) ||
            id < 0 || id > 999999 || seen.has(id) || x < 1 || y < 1 ||
            areaWidth < 1 || areaHeight < 1 || x + areaWidth >= width ||
@@ -464,7 +480,8 @@ function normalizeMobAreas(list, width, height, mobProfiles) {
            !MOB_KINDS.includes(kind) || (profileId && byId[profileId] !== kind)) { return; }
         seen.add(id);
         result.push({id:id, x:x, y:y, width:areaWidth, height:areaHeight, nb:nb,
-                     type:kind, profileId:profileId});
+                     type:kind, profileId:profileId,
+                     ...(area.period === 'night' || area.period === 'day' ? {period:area.period} : {})});
     });
     return result;
 }
@@ -523,6 +540,8 @@ WorldStore.prototype.normalize = function(state) {
     npcs.forEach(function(p){npcIds[p.id]=true;}); mobs.forEach(function(p){mobIds[p.id]=true;});
     map.width=baseWidth; map.height=baseHeight;
     map.spawnSafeRadius=SpawnSafety.normalizeRadius(map.spawnSafeRadius);
+    map.maxNearbyMobs=MobBudget.normalizeLimit(map.maxNearbyMobs);
+    map.dayNight=DayCycle.normalize(map.dayNight);
     map.data=normalizeTileData(map.data,baseTileData,baseWidth*baseHeight,this.tileCatalog.maxTileId);
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
     map.blocking=normalizeLayerIndices(map.blocking,this.baseClient && this.baseClient.blocking,baseWidth*baseHeight,0);
@@ -559,7 +578,7 @@ WorldStore.prototype.buildServerMap = function(state) {
         else if(entity.profileType==='mob'&&mobById[entity.profileId]){kind=mobById[entity.profileId].baseKind;metadata={type:'mob',profileId:entity.profileId};}
         staticEntities[String(tile)]=kind; if(metadata){editorMetadata[String(tile)]=metadata;}
     });
-    published.width=map.width; published.height=map.height; published.spawnSafeRadius=map.spawnSafeRadius; published.collisions=map.collisions.slice(); published.doors=clone(map.doors);
+    published.width=map.width; published.height=map.height; published.spawnSafeRadius=map.spawnSafeRadius; published.maxNearbyMobs=map.maxNearbyMobs; published.dayNight=map.dayNight; published.collisions=map.collisions.slice(); published.doors=clone(map.doors);
     published.checkpoints=clone(map.checkpoints); published.chestAreas=clone(map.chestAreas); published.staticChests=clone(map.staticChests); published.staticEntities=staticEntities;
     published.roamingAreas=map.roamingAreas.map(function(area){var out=clone(area);if(out.profileId&&mobById[out.profileId]){out.type=mobById[out.profileId].baseKind;}return out;});
     published.editorMetadata=editorMetadata; published.editorProfiles={npcs:npcById,mobs:mobById}; published.editorRevision=state.revision;
@@ -571,6 +590,7 @@ WorldStore.prototype.buildClientMap = function(state) {
     var client=clone(this.baseClient);
     client.width=state.map.width; client.height=state.map.height; client.data=state.map.data.slice(); client.collisions=state.map.collisions.slice();
     client.doors=clone(state.map.doors); client.checkpoints=clone(state.map.checkpoints);
+    client.dayNight=state.map.dayNight;
     client.blocking=state.map.blocking.slice();client.plateau=state.map.plateau.slice();client.high=state.map.high.slice(); client.editorRevision=state.revision;
     return client;
 };
