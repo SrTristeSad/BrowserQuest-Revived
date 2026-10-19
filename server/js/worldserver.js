@@ -16,7 +16,8 @@ var cls = require("./lib/class"),
     Properties = require("./properties"),
     Utils = require("./utils"),
     Types = require("../../shared/js/gametypes"),
-    Brain = require("./brain").Brain;
+    Brain = require("./brain").Brain,
+    MobBudget = require('./mob-budget');
 
 // ======= GAME SERVER ========
 
@@ -177,7 +178,7 @@ module.exports = World = cls.Class.extend({
             // Populate all mob "roaming" areas
             _.each(self.map.mobAreas, function(a) {
                 var profile = a.profileId && self.map.editorProfiles && self.map.editorProfiles.mobs ? self.map.editorProfiles.mobs[a.profileId] : null,
-                    area = new MobArea(a.id, a.nb, a.type, a.x, a.y, a.width, a.height, self, profile);
+                    area = new MobArea(a.id, a.nb, a.type, a.x, a.y, a.width, a.height, self, profile, a.period);
                 area.spawnMobs();
                 area.onEmpty(self.handleEmptyMobArea.bind(self, area));
                 
@@ -206,6 +207,12 @@ module.exports = World = cls.Class.extend({
             });
         });
         
+        // Reconcile time-restricted mob areas and locally capped spawns.
+        // Existing legacy worlds remain active without additional configuration.
+        setInterval(function() {
+            self.mobAreas.forEach(function(area) { area.syncPeriod(); });
+        }, 15000);
+
         var regenCount = this.ups * 2;
         var updateCount = 0;
         setInterval(function() {
@@ -649,8 +656,7 @@ module.exports = World = cls.Class.extend({
             if(Types.isNpc(kind)) {
                 self.addNpc(kind, pos.x + 1, pos.y, editorData);
             }
-            if(Types.isMob(kind) &&
-                !(self.map.isProtectedSpawnTile && self.map.isProtectedSpawnTile(pos.x + 1, pos.y))) {
+            if(Types.isMob(kind) && MobBudget.canSpawn(self, pos.x + 1, pos.y)) {
                 var mob = new Mob('7' + kind + count++, kind, pos.x + 1, pos.y, editorData);
                 mob.onRespawn(function() {
                     mob.isDead = false;
