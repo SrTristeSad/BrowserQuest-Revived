@@ -83,8 +83,13 @@ module.exports = World = cls.Class.extend({
                             mob.clearTarget();
                             mob.forgetEveryone();
                             player.removeAttacker(mob);
-                        } else {
-                            self.moveEntity(mob, pos.x, pos.y);
+                        } else if(self.brains[mob.id] &&
+                                  typeof self.brains[mob.id].stepToward === 'function' &&
+                                  Math.max(Math.abs(mob.x - target.x), Math.abs(mob.y - target.y)) > 1) {
+                            // Advance one map tile and emit the existing MOVE
+                            // protocol. Never teleport a hidden attacker next
+                            // to a player without updating the client.
+                            self.brains[mob.id].stepToward(target.x, target.y);
                         }
                     }
                 });
@@ -145,10 +150,14 @@ module.exports = World = cls.Class.extend({
         
         // Called when an entity is attacked by another entity
         this.onEntityAttack(function(attacker) {
-            var target = self.getEntityById(attacker.target);
-            if(target && attacker.type === "mob") {
-                var pos = self.findPositionNextTo(attacker, target);
-                self.moveEntity(attacker, pos.x, pos.y);
+            var target = self.getEntityById(attacker.target),
+                brain = self.brains[attacker.id];
+            if(target && attacker.type === "mob" && brain &&
+               typeof brain.stepToward === 'function' &&
+               Math.max(Math.abs(attacker.x - target.x), Math.abs(attacker.y - target.y)) > 1) {
+                // The AI moves normally and broadcasts MOVE, instead of
+                // silently jumping from another position into melee range.
+                brain.stepToward(target.x, target.y);
             }
         });
         
