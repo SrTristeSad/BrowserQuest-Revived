@@ -77,6 +77,7 @@ define(['jquery', 'area'], function($, Area) {
         _initMap: function(map) {
             this.width = map.width;
             this.height = map.height;
+            this.dayNight = map.dayNight || null;
             this.tilesize = map.tilesize;
             this.data = map.data;
             // Published world reloads may reuse the same Map instance.

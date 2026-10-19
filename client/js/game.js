@@ -336,7 +336,14 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 
                 _.each(this.entities, function(entity) {
                     entity.sprite = null;
-                    entity.setSprite(self.sprites[entity.getSpriteName()] && !self.sprites[entity.getSpriteName()].loadFailed ? self.sprites[entity.getSpriteName()] : self.sprites[Types.getKindAsString(entity.kind)]);
+                    var preferred = self.sprites[entity.getSpriteName()],
+                        nativeSprite = self.sprites[Types.getKindAsString(entity.kind)],
+                        fallback = self.sprites[entity instanceof Mob ? 'rat' :
+                            entity instanceof Player ? 'clotharmor' : 'villager'],
+                        sprite = preferred && !preferred.loadFailed ? preferred :
+                            nativeSprite && !nativeSprite.loadFailed ? nativeSprite : fallback;
+                    if(sprite && !sprite.loadFailed) { entity.setSprite(sprite); }
+                    else { log.error('Entity sprite unavailable: ' + entity.id); }
                 });
                 this.initHurtSprites();
                 this.initShadows();
@@ -1117,7 +1124,17 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                     if(!self.entityIdExists(entity.id)) {
                         try {
                             if(entity.id !== self.playerId) {
-                                entity.setSprite(self.sprites[entity.getSpriteName()] && !self.sprites[entity.getSpriteName()].loadFailed ? self.sprites[entity.getSpriteName()] : self.sprites[Types.getKindAsString(entity.kind)]);
+                                var preferred = self.sprites[entity.getSpriteName()],
+                                    nativeSprite = self.sprites[Types.getKindAsString(entity.kind)],
+                                    fallback = self.sprites[entity instanceof Mob ? 'rat' :
+                                        entity instanceof Player ? 'clotharmor' : 'villager'],
+                                    sprite = preferred && !preferred.loadFailed ? preferred :
+                                        nativeSprite && !nativeSprite.loadFailed ? nativeSprite : fallback;
+                                if(!sprite || sprite.loadFailed) {
+                                    log.error('No visible sprite available for entity ' + entity.id);
+                                    return;
+                                }
+                                entity.setSprite(sprite);
                                 entity.setGridPosition(x, y);
                                 entity.setOrientation(orientation);
                                 entity.idle();

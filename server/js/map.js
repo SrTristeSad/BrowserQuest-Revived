@@ -3,7 +3,9 @@ var cls = require('./lib/class'),
     _ = require('underscore'),
     Utils = require('./utils'),
     Checkpoint = require('./checkpoint'),
-    SpawnSafety = require('./spawn-safety');
+    SpawnSafety = require('./spawn-safety'),
+    MobBudget = require('./mob-budget'),
+    DayCycle = require('../../shared/js/daycycle');
 
 module.exports = cls.Class.extend({
     init: function(filepath) {
@@ -32,6 +34,8 @@ module.exports = cls.Class.extend({
         this.collisions = map.collisions;
         this.mobAreas = map.roamingAreas;
         this.spawnSafeRadius = SpawnSafety.normalizeRadius(map.spawnSafeRadius);
+        this.maxNearbyMobs = MobBudget.normalizeLimit(map.maxNearbyMobs);
+        this.dayNight = DayCycle.normalize(map.dayNight);
         this.chestAreas = map.chestAreas;
         this.staticChests = map.staticChests;
         this.staticEntities = map.staticEntities;
