@@ -68,14 +68,25 @@ function(Camera, Item, Character, Player, Timer) {
             return scale;
         },
     
+        // Modern Canvas2D uses imageSmoothingEnabled; legacy prefixed flags
+        // are maintained for compatibility with older BrowserQuest browsers.
+        disableSmoothing: function() {
+            [this.context, this.background, this.foreground].forEach(function(ctx) {
+                if(!ctx) { return; }
+                ctx.imageSmoothingEnabled = false;
+                ctx.mozImageSmoothingEnabled = false;
+                ctx.webkitImageSmoothingEnabled = false;
+                ctx.msImageSmoothingEnabled = false;
+            });
+        },
+
         rescale: function(factor) {
             this.scale = this.getScaleFactor();
         
             this.createCamera();
         
-            this.context.mozImageSmoothingEnabled = false;
-            this.background.mozImageSmoothingEnabled = false;
-            this.foreground.mozImageSmoothingEnabled = false;
+            // Setting a canvas width/height resets the 2D context state.
+            this.disableSmoothing();
         
             this.initFont();
             this.initFPS();
@@ -103,6 +114,10 @@ function(Camera, Item, Character, Player, Timer) {
             this.forecanvas.width = this.canvas.width;
             this.forecanvas.height = this.canvas.height;
             log.debug("#foreground set to "+this.forecanvas.width+" x "+this.forecanvas.height);
+
+            [this.canvas, this.backcanvas, this.forecanvas].forEach(function(canvas) {
+                canvas.style.imageRendering = 'pixelated';
+            });
         },
     
         initFPS: function() {
