@@ -52,7 +52,7 @@ function archiveEntries(zipPath) {
 function zipEntry(zipPath, entry) {
     try {
         return child.execFileSync('unzip', ['-p', zipPath, entry], {
-            encoding: 'buffer', timeout: 10000, maxBuffer: MAX_FILE + 1
+            timeout: 10000, maxBuffer: MAX_FILE + 1
         });
     } catch(error) {
         throw problem('Não foi possível ler arquivo do ZIP: ' + entry, 422);
