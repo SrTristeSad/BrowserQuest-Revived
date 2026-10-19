@@ -20,8 +20,8 @@ body.game footer {
     display: none;
 }
 
-/* The adaptive field of view has its own dimensions; tile the frame texture. */
-body.game #canvasborder { background-repeat: repeat; }
+/* A simple inset frame follows every aspect ratio without stretching the art. */
+body.game #canvasborder { background: #241f1b; box-shadow: inset 0 0 0 3px #80613a; }
 body.game #canvas { position: relative; overflow: hidden; }
 body.game #canvas canvas { max-width: none; }
 body.game #instructions, body.game #achievements {

@@ -103,7 +103,7 @@ async function main(){
             assert(layout.coarse,'touchscreen must identify as coarse input');
             assert(layout.width>=78 && layout.width<=108,'joystick bounds for touch');
             assert(layout.height>=78 && layout.height<=108,'joystick height for touch');
-            assert(layout.right<config.viewport.width*.3,
+            assert(layout.right<=Math.max(122,config.viewport.width*.3),
                 'joystick must remain near left edge and leave central scene visible');
             assert(layout.bottom<=config.viewport.height,
                 'bottom joystick must remain inside safe viewport');

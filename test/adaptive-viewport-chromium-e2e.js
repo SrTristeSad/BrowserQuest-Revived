@@ -51,12 +51,13 @@ async function main() {
    const f=document.getElementById('container').getBoundingClientRect();
    return {width:canvas.width/32,height:canvas.height/32,left:f.left,right:f.right,top:f.top,bottom:f.bottom,
     stageWidth:r.width,stageHeight:r.height,windowWidth:innerWidth,windowHeight:innerHeight,
-    joystick:getComputedStyle(document.getElementById('bq-joystick')).display};
+    joystick:getComputedStyle(document.getElementById('bq-joystick')).display,
+    joystickHit:(function(){const j=document.getElementById('bq-joystick'),q=j.getBoundingClientRect();return j.contains(document.elementFromPoint(q.left+q.width/2,q.top+q.height/2));})()};
   });
   assert(view.stageWidth>0&&view.stageHeight>0);
   assert(view.left>=-2&&view.right<=view.windowWidth+2,'frame must fit horizontally: '+JSON.stringify(view));
   assert(view.top>=-2&&view.bottom<=view.windowHeight+2,'frame must fit vertically: '+JSON.stringify(view));
-  if(config.mobile)assert.equal(view.joystick,'block');
+  if(config.mobile){assert.equal(view.joystick,'block');assert(view.joystickHit,'joystick must receive touches above the game frame');}
   if(config.name==='portrait')assert(view.height>view.width);
   if(config.name==='landscape')assert(view.width>=28);
   await page.screenshot({path:path.join(out,'adaptive-'+config.name+'.png')});

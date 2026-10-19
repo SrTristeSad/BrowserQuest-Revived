@@ -159,10 +159,12 @@ function(Camera, Item, Character, Player, Timer) {
             // media-query height. fitGameViewport handles the final CSS scale.
             if(typeof document !== 'undefined' && document.getElementById) {
                 var frame = document.getElementById('container'),
-                    stage = document.getElementById('canvas');
+                    stage = document.getElementById('canvas'),
+                    border = document.getElementById('canvasborder');
                 if(frame && stage) {
                     frame.style.width = (this.canvas.width + this.scale * 10) + 'px';
                     stage.style.height = this.canvas.height + 'px';
+                    if(border) { border.style.padding = (this.scale * 5) + 'px'; }
                 }
             }
             if(typeof window !== 'undefined' && window.fitGameViewport) { window.fitGameViewport(); }
