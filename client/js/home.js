@@ -1,5 +1,6 @@
 
-define(['lib/class', 'lib/underscore.min', 'lib/stacktrace', 'util'], function() {
+define(['lib/class', 'lib/underscore.min', 'lib/stacktrace', 'util',
+        '../../shared/js/gametypes'], function() {
     var css = document.createElement('link'),
         script = document.createElement('script');
 
