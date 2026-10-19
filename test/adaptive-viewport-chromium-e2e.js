@@ -55,6 +55,17 @@ async function main() {
   // First-entry tutorial deliberately pauses controls.
   await page.evaluate(()=>document.getElementById('instructions').classList.remove('active'));
   await page.waitForFunction(()=>/^Vida: [1-9]/.test(document.getElementById('healthbar').title));
+  // The sword/armor HUD slots are now actual buttons with an accessible
+  // equipment readout. Verify the real browser can open and close both.
+  await page.locator('#weapon').click();
+  assert.equal(await page.locator('#bq-equipment-panel').isVisible(),true,
+    'weapon button must open equipment information');
+  assert((await page.locator('#bq-equipment-heading').innerText()).includes('Arma'));
+  await page.locator('#armor').click();
+  assert((await page.locator('#bq-equipment-heading').innerText()).includes('Armadura'));
+  await page.locator('#bq-equipment-close').click();
+  assert.equal(await page.locator('#bq-equipment-panel').isVisible(),false,
+    'panel must close and release keyboard movement focus');
   await page.waitForTimeout(11000);
   assert.equal(await page.locator('body.death').count(),0,'must survive the end of spawn grace');
   if(config.name==='desktop') {
