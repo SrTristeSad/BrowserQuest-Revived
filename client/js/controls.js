@@ -2,6 +2,10 @@
 define(function() {
     'use strict';
 
+    // A held direction follows a short straight path. Four connected tiles
+    // avoid restarting the walk animation every single tile; the existing
+    // Game.onStep still reports each completed step to the server.
+    var RUN_TILES = 4;
     var DIRECTION = {
         KeyW: [0, -1], ArrowUp: [0, -1],
         KeyS: [0, 1], ArrowDown: [0, 1],
@@ -28,6 +32,7 @@ define(function() {
             this.pointerId = null;
             this.joystick = null;
             this.thumb = null;
+            this.autoRunActive = false;
             this.installKeyboard();
             this.installJoystick();
         },
@@ -55,7 +60,9 @@ define(function() {
                 event.preventDefault();
                 if(self.pressed.indexOf(code) !== -1) { return; }
                 // Keyboard direction overrides click-to-move at the next tile.
-                if(self.pressed.length === 0 && self.game.player.isMoving()) {
+                if(self.game.player.isMoving()) {
+                    // Interrupt the old route at the next tile for responsive
+                    // changes of direction, not mid-tile teleports.
                     self.game.player.stop();
                 }
                 self.pressed.push(code);
@@ -64,13 +71,18 @@ define(function() {
                 var code = event.code || ('Key' + String.fromCharCode(event.which || 0)),
                     index = self.pressed.indexOf(code);
                 if(index !== -1) {
+                    var wasActive = index === self.pressed.length - 1;
                     self.pressed.splice(index, 1);
+                    if(wasActive && self.game.player && self.game.player.isMoving() &&
+                       self.autoRunActive) {
+                        self.game.player.stop();
+                    }
                     event.preventDefault();
                 }
             }, true);
-            window.addEventListener('blur', function() { self.reset(); });
+            window.addEventListener('blur', function() { self.reset(true); });
             document.addEventListener('visibilitychange', function() {
-                if(document.hidden) { self.reset(); }
+                if(document.hidden) { self.reset(true); }
             });
         },
 
@@ -153,15 +165,24 @@ define(function() {
         },
 
         releaseJoystick: function() {
+            if(this.pointerId !== null && this.autoRunActive &&
+               this.game.player && this.game.player.isMoving()) {
+                this.game.player.stop();
+            }
             this.pointerId = null;
             this.touchDirection = null;
             if(this.joystick) { this.joystick.classList.remove('is-active'); }
             if(this.thumb) { this.thumb.style.transform = 'translate(0px, 0px)'; }
         },
 
-        reset: function() {
+        reset: function(stopMotion) {
+            if(stopMotion && this.autoRunActive && this.game.player &&
+               this.game.player.isMoving()) {
+                this.game.player.stop();
+            }
             this.pressed.length = 0;
             this.releaseJoystick();
+            this.autoRunActive = false;
         },
 
         currentDirection: function() {
@@ -183,20 +204,44 @@ define(function() {
                 game = this.game,
                 player = game.player;
             if(!direction || player.isMoving()) { return; }
-            var x = player.gridX + direction[0],
-                y = player.gridY + direction[1],
-                map = game.map;
-            if(map.isOutOfBounds(x, y) || map.isColliding(x, y)) { return; }
-            if(map.isPlateau && (player.isOnPlateau ? !map.isPlateau(x, y) : map.isPlateau(x, y))) {
-                return;
+            var map = game.map,
+                x0 = player.gridX,
+                y0 = player.gridY,
+                furthest = 0,
+                i, x, y, n, path, straight;
+
+            // Stop at the first obstacle. In particular, never ask A* to
+            // detour around a wall when a direction key is being held.
+            for(i = 1; i <= RUN_TILES; i += 1) {
+                x = x0 + direction[0] * i;
+                y = y0 + direction[1] * i;
+                if(map.isOutOfBounds(x, y) || map.isColliding(x, y) ||
+                   (map.isPlateau && (player.isOnPlateau ?
+                       !map.isPlateau(x, y) : map.isPlateau(x, y)))) {
+                    break;
+                }
+                furthest = i;
+                // Portals are processed on step boundaries; never plan to
+                // walk *past* the door in one straight keyboard segment.
+                if(map.isDoor && map.isDoor(x, y)) { break; }
             }
-            // Never replace click interactions with an unintended attack,
-            // and never let A* route around a blocked adjacent direction.
-            var path = game.findPath(player, x, y);
-            if(!path || path.length !== 2 || path[1][0] !== x || path[1][1] !== y) {
-                return;
+            for(n = furthest; n >= 1; n -= 1) {
+                x = x0 + direction[0] * n;
+                y = y0 + direction[1] * n;
+                path = game.findPath(player, x, y);
+                straight = path && path.length === n + 1;
+                for(i = 1; straight && i <= n; i += 1) {
+                    if(path[i][0] !== x0 + direction[0] * i ||
+                       path[i][1] !== y0 + direction[1] * i) {
+                        straight = false;
+                    }
+                }
+                if(straight) {
+                    this.autoRunActive = true;
+                    game.makePlayerGoTo(x, y);
+                    return;
+                }
             }
-            game.makePlayerGoTo(x, y);
         }
     });
 
