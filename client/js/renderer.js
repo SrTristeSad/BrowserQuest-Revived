@@ -16,7 +16,12 @@ function(Camera, Item, Character, Player, Timer) {
             this.initFPS();
             this.tilesize = 16;
         
-            this.upscaledRendering = this.context.mozImageSmoothingEnabled !== undefined;
+            // Prefer the standard Canvas2D API. Older browsers may expose only a
+            // vendor-prefixed smoothing control; both paths support crisp 1x art.
+            this.upscaledRendering = typeof this.context.imageSmoothingEnabled === "boolean" ||
+                typeof this.context.mozImageSmoothingEnabled === "boolean" ||
+                typeof this.context.webkitImageSmoothingEnabled === "boolean" ||
+                typeof this.context.msImageSmoothingEnabled === "boolean";
             this.supportsSilhouettes = this.upscaledRendering;
         
             this.rescale(this.getScaleFactor());
@@ -30,8 +35,6 @@ function(Camera, Item, Character, Player, Timer) {
             this.animatedTileCount = 0;
             this.highTileCount = 0;
         
-            this.tablet = Detect.isTablet(window.innerWidth);
-            
             this.fixFlickeringTimer = new Timer(100);
         },
     
@@ -53,7 +56,8 @@ function(Camera, Item, Character, Player, Timer) {
                 scale;
         
             this.mobile = false;
-        
+            this.tablet = Detect.isTablet(w);
+
             if(w <= 1000) {
                 scale = 2;
                 this.mobile = true;
@@ -718,6 +722,9 @@ function(Camera, Item, Character, Player, Timer) {
         },
     
         renderStaticCanvases: function() {
+            // The camera can move into areas with transparent/missing terrain.
+            // Always invalidate the old static layer before painting its view.
+            this.clearScreen(this.background);
             this.background.save();
                 this.setCameraView(this.background);
                 this.drawTerrain();
