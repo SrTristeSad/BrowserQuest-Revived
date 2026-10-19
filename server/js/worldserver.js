@@ -543,7 +543,8 @@ module.exports = World = cls.Class.extend({
             player = this.getEntityById(playerId),
             mostHated;
         
-        if(player && mob && !player.isDead &&
+        if(player && mob && mob.type === 'mob' && player.type === 'player' && !player.isDead &&
+            Date.now() >= (player.spawnProtectedUntil || 0) &&
             !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y))) {
             mob.increaseHateFor(playerId, hatePoints);
             player.addHater(mob);
@@ -558,7 +559,7 @@ module.exports = World = cls.Class.extend({
         var player = this.getEntityById(mob.getHatedPlayerId(hateRank));
         
         // If the mob is not already attacking the player, create an attack link between them.
-        if(player && !player.isDead &&
+        if(player && !player.isDead && Date.now() >= (player.spawnProtectedUntil || 0) &&
             !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y)) &&
             !(mob.id in player.attackers)) {
             this.clearMobAggroLink(mob);

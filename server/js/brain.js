@@ -305,7 +305,7 @@ Brain.prototype.tickMob = function() {
 
     if(entity.hasTarget && entity.hasTarget()) {
         var target = this.world.getEntityById(entity.target);
-        if(target && !target.isDead &&
+        if(target && !target.isDead && Date.now() >= (target.spawnProtectedUntil || 0) &&
             !(target.type === 'player' && this.world.map && this.world.map.isProtectedSpawnTile &&
               this.world.map.isProtectedSpawnTile(target.x, target.y))) {
             this.memory.lastSeenPlayerId = target.id;
@@ -316,6 +316,9 @@ Brain.prototype.tickMob = function() {
             }
             return;
         }
+        if(typeof this.world.clearMobAggroLink === 'function') { this.world.clearMobAggroLink(entity); }
+        if(typeof this.world.clearMobHateLinks === 'function') { this.world.clearMobHateLinks(entity); }
+        if(typeof entity.forgetEveryone === 'function') { entity.forgetEveryone(); }
         entity.clearTarget();
     }
 
@@ -456,6 +459,7 @@ Brain.prototype.findNearest = function(type, radius) {
         if(!candidate || candidate.id === entity.id || candidate.type !== type || candidate.isDead) {
             return;
         }
+        if(type === 'player' && entity.type === 'mob' && Date.now() < (candidate.spawnProtectedUntil || 0)) { return; }
         if(type === 'player' && entity.type === 'mob' && safeMap &&
             safeMap.isProtectedSpawnTile &&
             safeMap.isProtectedSpawnTile(candidate.x, candidate.y)) {

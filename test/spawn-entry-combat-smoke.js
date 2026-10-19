@@ -1,0 +1,55 @@
+'use strict';
+const assert = require('node:assert/strict');
+global.log = {debug(){}, info(){}, error(){}};
+require('../server/js/entity');
+require('../server/js/character');
+const PlayerClass = require('../server/js/player');
+const WorldClass = require('../server/js/worldserver');
+const {Brain} = require('../server/js/brain');
+const {check} = require('../server/js/format');
+const Types = require('../shared/js/gametypes');
+const world = new WorldClass('regression', 10, {});
+world.map = {isProtectedSpawnTile(){return false;}};
+let listen;
+const connection = {id:1, listen(fn){listen=fn;}, onClose(){}, sendUTF8(){}, close(){throw Error('unexpected close');}};
+const player = new PlayerClass(connection, world);
+player.hasEnteredGame = true;
+player.equipArmor(Types.Entities.CLOTHARMOR);
+player.equipWeapon(Types.Entities.SWORD1);
+player.updateHitPoints();
+assert.equal(player.hitPoints,80,'fresh Node process must calculate finite initial HP without global underscore');
+assert.equal(player.weaponLevel,1);
+player.hitPoints = 100;
+player.x = 10; player.y = 10;
+player.resetTimeout = () => {};
+player.spawnProtectedUntil = Date.now() + 10000;
+const mob = {id:2,type:'mob',kind:Types.Entities.GOBLIN,x:12,y:10,hitPoints:100,maxHitPoints:100,isDead:false,target:null,hatelist:[],
+ hasTarget(){return this.target !== null;},clearTarget(){this.target=null;},hates(){return false;},
+ increaseHateFor(){throw Error('protected player must not acquire hate');},forgetEveryone(){this.hatelist=[];}};
+world.entities = {1:player,2:mob}; world.players = {1:player};world.mobs={2:mob};
+const brain = new Brain(mob,world,{moveChance:0});
+assert.equal(brain.findNearest('player',8),null,'protected player is invisible to hostile target acquisition');
+world.handleMobHate(2,1,5);
+assert.equal(mob.target,null);
+mob.target=1;player.attackers[2]=mob;
+brain.tickMob();
+assert.equal(mob.target,null,'stale target is cleared during grace');
+assert.equal(player.attackers[2],undefined,'stale attacker link is removed');
+player.spawnProtectedUntil=0;
+assert.equal(brain.findNearest('player',8),player,'normal targeting resumes after grace');
+let hits=0;
+mob.receiveDamage=()=>{hits++;};
+world.handleMobHate=()=>{};world.handleHurtEntity=()=>{};
+player.weaponLevel=1;mob.armorLevel=1;
+listen([Types.Messages.HIT,2]);assert.equal(hits,0,'remote HIT rejected');
+mob.x=11;
+listen([Types.Messages.HIT,2]);assert.equal(hits,1,'adjacent hit accepted');
+listen([Types.Messages.HIT,2]);assert.equal(hits,1,'duplicate hit rate limited');
+player.isDead=true;player.nextHitAt=0;
+listen([Types.Messages.HIT,2]);assert.equal(hits,1,'dead player cannot attack');
+for(const value of [NaN,Infinity,1.5,Number.MAX_SAFE_INTEGER+1]) {
+ assert.equal(check([Types.Messages.MOVE,value,2]),false);
+}
+assert.equal(check(null),false);assert.equal(check({}),false);
+assert.equal(check([Types.Messages.MOVE,10,20]),true);
+console.log('Entry grace prevents hostile acquisition and stale chase; HIT and numeric protocol checks passed.');

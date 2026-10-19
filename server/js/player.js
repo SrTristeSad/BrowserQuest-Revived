@@ -68,6 +68,7 @@ module.exports = Player = Character.extend({
                 });
                 return;
             }
+            else if(self.isDead || self.handshakePending) { return; }
             else if(action === Types.Messages.WHO) {
                 message.shift();
                 self.server.pushSpawnsToPlayer(self, message);
@@ -103,11 +104,11 @@ module.exports = Player = Character.extend({
                 }
             }
             else if(action === Types.Messages.LOOTMOVE) {
-                if(self.lootmove_callback) {
-                    self.setPosition(message[1], message[2]);
+                if(self.lootmove_callback && self.server.isValidPosition(message[1], message[2])) {
                     
                     var item = self.server.getEntityById(message[3]);
-                    if(item) {
+                    if(item && item.type === 'item') {
+                        self.setPosition(message[1], message[2]);
                         self.clearTarget();
 
                         self.broadcast(new Messages.LootMove(self, item));
@@ -123,14 +124,17 @@ module.exports = Player = Character.extend({
             else if(action === Types.Messages.ATTACK) {
                 var mob = self.server.getEntityById(message[1]);
                 
-                if(mob) {
+                if(mob && mob.type === 'mob' && !mob.isDead && mob.hitPoints > 0) {
                     self.setTarget(mob);
                     self.server.broadcastAttacker(self);
                 }
             }
             else if(action === Types.Messages.HIT) {
                 var mob = self.server.getEntityById(message[1]);
-                if(mob) {
+                if(mob && mob.type === 'mob' && !mob.isDead && mob.hitPoints > 0 &&
+                   Math.max(Math.abs(mob.x - self.x), Math.abs(mob.y - self.y)) <= 1 &&
+                   Date.now() >= (self.nextHitAt || 0)) {
+                    self.nextHitAt = Date.now() + 450;
                     var dmg = Formulas.dmg(self.weaponLevel, mob.armorLevel);
                     
                     if(dmg > 0) {
