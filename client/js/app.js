@@ -119,26 +119,21 @@ define(['jquery', 'storage'], function($, Storage) {
         },
 
         setMouseCoordinates: function(event) {
-            var gamePos = $('#container').offset(),
-                scale = this.game.renderer.getScaleFactor(),
+            // Read the visible canvas rectangle, not the unscaled container
+            // offset: the viewport expands with CSS and must not shift clicks.
+            var canvas = document.getElementById('foreground'),
+                rect = canvas.getBoundingClientRect(),
                 width = this.game.renderer.getWidth(),
                 height = this.game.renderer.getHeight(),
-                mouse = this.game.mouse;
+                mouse = this.game.mouse,
+                clientX = event.clientX !== undefined ? event.clientX : event.pageX - window.pageXOffset,
+                clientY = event.clientY !== undefined ? event.clientY : event.pageY - window.pageYOffset;
 
-            mouse.x = event.pageX - gamePos.left - (this.isMobile ? 0 : 5 * scale);
-        	mouse.y = event.pageY - gamePos.top - (this.isMobile ? 0 : 7 * scale);
-
-        	if(mouse.x <= 0) {
-        	    mouse.x = 0;
-        	} else if(mouse.x >= width) {
-        	    mouse.x = width - 1;
-        	}
-
-        	if(mouse.y <= 0) {
-        	    mouse.y = 0;
-        	} else if(mouse.y >= height) {
-        	    mouse.y = height - 1;
-        	}
+            if(!rect.width || !rect.height) { return; }
+            mouse.x = Math.max(0, Math.min(width - 1,
+                Math.floor((clientX - rect.left) * width / rect.width)));
+            mouse.y = Math.max(0, Math.min(height - 1,
+                Math.floor((clientY - rect.top) * height / rect.height)));
         },
 
         initHealthBar: function() {
