@@ -39,7 +39,7 @@ async function main() {
   page.on('pageerror',e=>errors.push(config.name+': '+e.message));
   await page.goto(url);
   await page.locator('#nameinput').fill('View'+config.name);
-  await page.locator('#parchment.createcharacter .play div').click();
+  await page.locator('#createcharacter .play div').click();
   await page.waitForSelector('body.game.started',{timeout:30000});
   // First-entry tutorial deliberately pauses controls.
   await page.evaluate(()=>document.getElementById('instructions').classList.remove('active'));
