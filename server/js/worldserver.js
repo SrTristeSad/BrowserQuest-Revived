@@ -413,7 +413,8 @@ module.exports = World = cls.Class.extend({
     },
 
     moveBrainEntity: function(entity, x, y) {
-        if(!entity || !this.isValidPosition(x, y)) { return false; }
+        if(!entity || !this.isValidPosition(x, y) ||
+            (entity.type === 'mob' && this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(x, y))) { return false; }
         if(entity.type === 'mob' && typeof entity.move === 'function') {
             entity.move(x, y);
         } else {
@@ -524,7 +525,8 @@ module.exports = World = cls.Class.extend({
             player = this.getEntityById(playerId),
             mostHated;
         
-        if(player && mob) {
+        if(player && mob && !player.isDead &&
+            !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y))) {
             mob.increaseHateFor(playerId, hatePoints);
             player.addHater(mob);
             
@@ -538,7 +540,9 @@ module.exports = World = cls.Class.extend({
         var player = this.getEntityById(mob.getHatedPlayerId(hateRank));
         
         // If the mob is not already attacking the player, create an attack link between them.
-        if(player && !(mob.id in player.attackers)) {
+        if(player && !player.isDead &&
+            !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y)) &&
+            !(mob.id in player.attackers)) {
             this.clearMobAggroLink(mob);
             
             player.addAttacker(mob);
@@ -645,7 +649,8 @@ module.exports = World = cls.Class.extend({
             if(Types.isNpc(kind)) {
                 self.addNpc(kind, pos.x + 1, pos.y, editorData);
             }
-            if(Types.isMob(kind)) {
+            if(Types.isMob(kind) &&
+                !(self.map.isProtectedSpawnTile && self.map.isProtectedSpawnTile(pos.x + 1, pos.y))) {
                 var mob = new Mob('7' + kind + count++, kind, pos.x + 1, pos.y, editorData);
                 mob.onRespawn(function() {
                     mob.isDead = false;
@@ -927,6 +932,8 @@ module.exports = World = cls.Class.extend({
     },
     
     moveEntity: function(entity, x, y) {
+        if(entity && entity.type === 'mob' && this.map && this.map.isProtectedSpawnTile &&
+            this.map.isProtectedSpawnTile(x, y)) { return; }
         if(entity) {
             entity.setPosition(x, y);
             this.handleEntityGroupMembership(entity);
