@@ -24,6 +24,8 @@ module.exports = Player = Character.extend({
         this.hasEnteredGame = false;
         this.handshakePending = false;
         this.isDead = false;
+        // Ignore damage during initial spawn and immediately after a revive.
+        this.spawnProtectedUntil = 0;
         this.haters = {};
         this.lastCheckpoint = null;
         this.formatChecker = new FormatChecker();
@@ -138,7 +140,7 @@ module.exports = Player = Character.extend({
             }
             else if(action === Types.Messages.HURT) {
                 var mob = self.server.getEntityById(message[1]);
-                if(mob && self.hitPoints > 0) {
+                if(mob && !self.isDead && self.hitPoints > 0 && Date.now() >= self.spawnProtectedUntil) {
                     self.hitPoints -= Formulas.dmg(mob.weaponLevel, self.armorLevel);
                     self.server.handleHurtEntity(self);
                     
@@ -318,6 +320,13 @@ module.exports = Player = Character.extend({
             weapon = message[3];
         }
 
+        // A respawn uses the same socket/player. Discard old mob targets before
+        // relocating; otherwise attackers can hit the revived character instantly.
+        if(this.hasEnteredGame && this.isDead) {
+            this.server.handlePlayerVanish(this);
+            this.destroy();
+        }
+
         this.name = name;
         this.kind = Types.Entities.WARRIOR;
         this.equipArmor(armor);
@@ -325,6 +334,7 @@ module.exports = Player = Character.extend({
         this.orientation = Utils.randomOrientation();
         this.updateHitPoints();
         this.updatePosition();
+        this.spawnProtectedUntil = Date.now() + 10000;
         
         this.server.addPlayer(this);
         this.server.enter_callback(this);
