@@ -275,19 +275,19 @@ define(['jquery', 'storage'], function($, Storage) {
                     self.showEquipmentDetails(slot);
                 }
             }
-            $('#weapon').on('click', function(event) {
+            $('#weapon').bind('click', function(event) {
                 if(event && event.stopPropagation) { event.stopPropagation(); }
                 toggle('weapon');
             });
-            $('#armor').on('click', function(event) {
+            $('#armor').bind('click', function(event) {
                 if(event && event.stopPropagation) { event.stopPropagation(); }
                 toggle('armor');
             });
-            $('#bq-equipment-close').on('click', function(event) {
+            $('#bq-equipment-close').bind('click', function(event) {
                 if(event && event.stopPropagation) { event.stopPropagation(); }
                 self.closeEquipmentPanel();
             });
-            $(document).on('keydown', function(event) {
+            $(document).bind('keydown', function(event) {
                 if(event.key === 'Escape') { self.closeEquipmentPanel(); }
             });
         },
