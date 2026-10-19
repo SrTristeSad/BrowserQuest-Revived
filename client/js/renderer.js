@@ -86,6 +86,22 @@ function(Camera, Item, Character, Player, Timer) {
             return scale;
         },
     
+        // Adapt the field of view to the display, bounded by the existing
+        // adjacent-group subscription (28 x 12 tiles per server group).
+        getCameraGrid: function() {
+            var width = Math.max(1, window.innerWidth || 960),
+                height = Math.max(1, (window.visualViewport ? window.visualViewport.height : window.innerHeight) || 540),
+                aspect = width / Math.max(1, height - 52),
+                gridW = 30,
+                gridH = Math.round(gridW / aspect);
+            if(gridH > 22) {
+                gridH = 22;
+                gridW = Math.round(gridH * aspect);
+            }
+            return {width: Math.max(14, Math.min(30, gridW)),
+                    height: Math.max(10, Math.min(22, gridH))};
+        },
+
         // Modern Canvas2D uses imageSmoothingEnabled; legacy prefixed flags
         // are maintained for compatibility with older BrowserQuest browsers.
         disableContextSmoothing: function(ctx) {
@@ -138,6 +154,30 @@ function(Camera, Item, Character, Player, Timer) {
             this.forecanvas.width = this.canvas.width;
             this.forecanvas.height = this.canvas.height;
             log.debug("#foreground set to "+this.forecanvas.width+" x "+this.forecanvas.height);
+
+            // Match the DOM frame to the actual canvas, rather than a legacy
+            // media-query height. fitGameViewport handles the final CSS scale.
+            if(typeof document !== 'undefined' && document.getElementById) {
+                var frame = document.getElementById('container'),
+                    stage = document.getElementById('canvas'),
+                    border = document.getElementById('canvasborder');
+                if(frame && stage) {
+                    frame.style.width = (this.canvas.width + this.scale * 10) + 'px';
+                    stage.style.height = this.canvas.height + 'px';
+                    if(border) { border.style.padding = (this.scale * 5) + 'px'; }
+                    if(frame.style.setProperty) {
+                        frame.style.setProperty('--bq-playercount-display', this.canvas.width < 700 ? 'none' : 'block');
+                    }
+                    var bubbles = document.getElementById('bubbles');
+                    if(bubbles) {
+                        bubbles.style.width = this.canvas.width + 'px';
+                        bubbles.style.height = this.canvas.height + 'px';
+                        bubbles.style.top = -this.canvas.height + 'px';
+                        bubbles.style.marginBottom = -this.canvas.height + 'px';
+                    }
+                }
+            }
+            if(typeof window !== 'undefined' && window.fitGameViewport) { window.fitGameViewport(); }
 
             [this.canvas, this.backcanvas, this.forecanvas].forEach(function(canvas) {
                 canvas.style.imageRendering = 'pixelated';

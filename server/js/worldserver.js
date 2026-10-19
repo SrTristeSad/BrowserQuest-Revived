@@ -75,6 +75,12 @@ module.exports = World = cls.Class.extend({
             var move_callback = function(x, y) {
                 log.debug(player.name + " is moving to (" + x + ", " + y + ").");
                 
+                // Movement can cross a server group before a camera transition.
+                // Refresh subscriptions immediately for adaptive aspect ratios.
+                if(self.handleEntityGroupMembership(player)) {
+                    self.pushToPreviousGroups(player, new Messages.Destroy(player));
+                    self.pushRelevantEntityListTo(player);
+                }
                 player.forEachAttacker(function(mob) {
                     var target = self.getEntityById(mob.target);
                     if(target) {
@@ -543,7 +549,8 @@ module.exports = World = cls.Class.extend({
             player = this.getEntityById(playerId),
             mostHated;
         
-        if(player && mob && !player.isDead &&
+        if(player && mob && mob.type === 'mob' && player.type === 'player' && !player.isDead &&
+            Date.now() >= (player.spawnProtectedUntil || 0) &&
             !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y))) {
             mob.increaseHateFor(playerId, hatePoints);
             player.addHater(mob);
@@ -558,7 +565,7 @@ module.exports = World = cls.Class.extend({
         var player = this.getEntityById(mob.getHatedPlayerId(hateRank));
         
         // If the mob is not already attacking the player, create an attack link between them.
-        if(player && !player.isDead &&
+        if(player && !player.isDead && Date.now() >= (player.spawnProtectedUntil || 0) &&
             !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y)) &&
             !(mob.id in player.attackers)) {
             this.clearMobAggroLink(mob);

@@ -142,12 +142,10 @@ define(['jquery', 'storage'], function($, Storage) {
             this.game.onPlayerHealthChange(function(hp, maxHp) {
                 var $healthbar = $("#healthbar"),
                     $fill = $("#hitpoints"),
-                    scale = self.game.renderer.scale || self.game.renderer.getScaleFactor(),
                     // On startup the HUD may still be hidden, so measuring it
                     // once at initialization can permanently cache a zero width.
                     measured = $healthbar.width(),
-                    fullWidth = measured > 12 * scale ?
-                        measured - (12 * scale) : 90 * scale,
+                    fullWidth = measured > 24 ? measured - 24 : 180,
                     maximum = Number(maxHp),
                     current = Number(hp),
                     valid = Number.isFinite(maximum) && maximum > 0 &&

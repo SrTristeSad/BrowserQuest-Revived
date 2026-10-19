@@ -1,3 +1,7 @@
+// Node modules must import their own dependency; the browser loads underscore globally.
+if(typeof module !== 'undefined' && module.exports) {
+    var _ = require('underscore');
+}
 
 Types = {
     Messages: {

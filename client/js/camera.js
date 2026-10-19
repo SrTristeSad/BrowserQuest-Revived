@@ -15,8 +15,9 @@ define(function() {
         rescale: function() {
             var factor = this.renderer.mobile ? 1 : 2;
         
-            this.gridW = 15 * factor;
-            this.gridH = 7 * factor;
+            var grid = this.renderer.getCameraGrid ? this.renderer.getCameraGrid() : null;
+            this.gridW = grid ? grid.width : 15 * factor;
+            this.gridH = grid ? grid.height : 7 * factor;
         
             log.debug("---------");
             log.debug("Factor:"+factor);

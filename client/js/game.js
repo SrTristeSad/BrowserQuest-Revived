@@ -996,18 +996,14 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                         self.player.turnTo(dest.orientation);
                         self.client.sendTeleport(dest.x, dest.y);
                         
-                        if(self.renderer.mobile && dest.cameraX && dest.cameraY) {
-                            self.camera.setGridPosition(dest.cameraX, dest.cameraY);
-                            self.resetZone();
-                        } else {
-                            if(dest.portal) {
-                                self.assignBubbleTo(self.player);
-                            } else {
-                                self.camera.focusEntity(self.player);
-                                self.resetZone();
-                            }
+                        if(dest.portal) {
+                            self.assignBubbleTo(self.player);
                         }
-                        
+                        // Door camera offsets were authored for the old 15x7
+                        // mobile view. Focus using the current field of view.
+                        self.camera.focusEntity(self.player);
+                        self.resetZone();
+
                         if(_.size(self.player.attackers) > 0) {
                             setTimeout(function() { self.tryUnlockingAchievement("COWARD"); }, 500);
                         }
@@ -1437,7 +1433,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                         diff,
                         isHurt;
                 
-                    if(player && !player.isDead && !player.invincible) {
+                    if(Number.isFinite(points) && points >= 0 && player && !player.isDead && !player.invincible) {
                         // Equal HP updates and regen syncs are not attacks.
                         isHurt = points < player.hitPoints;
                         diff = points - player.hitPoints;
@@ -1463,6 +1459,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 });
             
                 self.client.onPlayerChangeMaxHitPoints(function(hp) {
+                    if(!Number.isFinite(hp) || hp <= 0) { return; }
                     self.player.maxHitPoints = hp;
                     self.player.hitPoints = hp;
                     self.updateBars();
@@ -2374,7 +2371,14 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
     
                 this.renderer.rescale(newScale);
                 this.camera = this.renderer.camera;
-                this.camera.setPosition(x, y);
+                if(this.started && this.player) {
+                    this.camera.focusEntity(this.player);
+                    this.currentZoning = null;
+                    this.zoningQueue = [];
+                    if(this.client) { this.client.sendZone(); }
+                } else {
+                    this.camera.setPosition(x, y);
+                }
 
                 this.renderer.renderStaticCanvases();
         },
