@@ -89,7 +89,7 @@ const $ = selector => {
         attr(k,v){if(v===undefined)return o.attributes[k];o.attributes[k]=v;return this},
         prop(k,v){if(v===undefined)return o.properties[k];o.properties[k]=v;return this},
         text(v){if(v===undefined)return o.text;o.text=v;return this},
-        on(name,handler){o.handlers[name]=handler;return this}
+        bind(name,handler){o.handlers[name]=handler;return this}
     };
 };
 vm.runInNewContext(read('client/js/app.js'), {
