@@ -896,7 +896,9 @@ function(Camera, Item, Character, Player, Timer) {
             // Centering on the player at the edge of the finite map can
             // expose off-map pixels. Give them a quiet natural backdrop
             // instead of black/transparent strips around the world.
-            this.drawBackground(this.background, '#263c30');
+            if(this.background && typeof this.background.fillRect === 'function') {
+                this.drawBackground(this.background, '#263c30');
+            }
             this.background.save();
                 this.setCameraView(this.background);
                 this.drawTerrain();
