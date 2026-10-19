@@ -25,9 +25,15 @@ assert(Math.max(Math.abs(safe.x - 15), Math.abs(safe.y - 15)) >= 6,
 assert(Math.abs(safe.x - 15) + Math.abs(safe.y - 15) <= 10,
     'safe spawn must remain near selected starting position');
 world.mobs = {};
+world.entities = {};
 assert.deepEqual(World.prototype.findSafeSpawnPosition.call(world, {x: 15, y: 15}, 'player'),
     {x: 15, y: 15}, 'normal spawn should remain unchanged without nearby mobs');
 world.mobs = {rat1: {id: 'rat1', type: 'mob', x: 15, y: 15}};
+const checkpoint = {containsPosition(x, y) { return x >= 14 && x <= 16 && y >= 14 && y <= 16; }};
+const withinCheckpoint = World.prototype.findSafeSpawnPosition.call(
+    world, {x: 15, y: 15}, 'player', checkpoint);
+assert(checkpoint.containsPosition(withinCheckpoint.x, withinCheckpoint.y),
+    'saved checkpoints must constrain safe spawn positions');
 world.isValidPosition = (x, y) => x === 15 && y === 15;
 assert.deepEqual(World.prototype.findSafeSpawnPosition.call(world, {x: 15, y: 15}, 'player'),
     {x: 15, y: 15}, 'blocked maps must not invent unreachable spawn positions');
