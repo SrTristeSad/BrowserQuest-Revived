@@ -46,8 +46,8 @@ module.exports = cls.Class.extend({
 
         this.zoneWidth = 28;
         this.zoneHeight = 12;
-        this.groupWidth = Math.floor(this.width / this.zoneWidth);
-        this.groupHeight = Math.floor(this.height / this.zoneHeight);
+        this.groupWidth = Math.ceil(this.width / this.zoneWidth);
+        this.groupHeight = Math.ceil(this.height / this.zoneHeight);
 
         this.initConnectedGroups(map.doors);
         this.initCheckpoints(map.checkpoints);
@@ -125,9 +125,17 @@ module.exports = cls.Class.extend({
             position = this.GroupIdToGroupPosition(id),
             x = position.x,
             y = position.y,
-            list = [pos(x - 1, y - 1), pos(x, y - 1), pos(x + 1, y - 1),
-                    pos(x - 1, y), pos(x, y), pos(x + 1, y),
-                    pos(x - 1, y + 1), pos(x, y + 1), pos(x + 1, y + 1)];
+            list = [];
+
+        // The adaptive camera can show up to 30x22 tiles. Two surrounding
+        // groups in each direction keep that whole view subscribed even when
+        // the character stands at an edge, not at the centre of the screen.
+        // This is bounded to 25 groups, independent of client input.
+        for(var dy = -2; dy <= 2; dy += 1) {
+            for(var dx = -2; dx <= 2; dx += 1) {
+                list.push(pos(x + dx, y + dy));
+            }
+        }
 
         _.each(this.connectedGroups[id], function(connectedPosition) {
             if(!_.any(list, function(groupPos) { return equalPositions(groupPos, connectedPosition); })) {

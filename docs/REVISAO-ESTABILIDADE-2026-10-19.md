@@ -26,6 +26,6 @@ Base examinada: 8a9e22ac09487b3313850bbb2b55b60cbffa14af.
 - A VPS, seus logs e o mapa publicado pelo editor não foram acessados. A configuração publicada pode diferir do mapa versionado. É necessário validar o caso relatado após aplicar o PR.
 - Os testes de PostgreSQL/Redis, reinício de persistência e navegador real não foram executados nesta revisão. A suíte geral usa seus testes locais disponíveis.
 - O combate ainda usa mensagens HIT/HURT do cliente. As validações adicionais não substituem uma simulação completa de combate pelo servidor.
-- MOVE e LOOTMOVE ainda não possuem validação de velocidade/caminho, e coleta ainda precisa de uma revisão própria de distância/autorização. Não considerar o protocolo integralmente protegido contra clientes modificados.
+- MOVE e LOOTMOVE ainda não possuem validação de velocidade/caminho. Na continuação desta revisão foram adicionados limites de distância para coleta e baús, sujeitos à posição antecipada do protocolo legado. Não considerar o protocolo integralmente protegido contra clientes modificados.
 - Nenhuma atualização indiscriminada de dependências foi feita: a instalação e os testes passaram com as versões fixadas atuais.
 - Esta revisão não garante ausência de todos os bugs. Publicação na VPS e merge não foram realizados.

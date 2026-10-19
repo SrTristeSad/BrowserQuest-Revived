@@ -52,4 +52,14 @@ for(const value of [NaN,Infinity,1.5,Number.MAX_SAFE_INTEGER+1]) {
 }
 assert.equal(check(null),false);assert.equal(check({}),false);
 assert.equal(check([Types.Messages.MOVE,10,20]),true);
+player.isDead=false;
+let removed=0;
+world.removeEntity=()=>{removed++;};
+world.entities[3]={id:3,type:'item',x:100,y:100,kind:Types.Entities.BURGER};
+listen([Types.Messages.LOOT,3]);
+assert.equal(removed,0,'remote item cannot be stolen');
+player.handshakePending=true;player.isDead=true;
+connection.close=()=>{closed++;};let closed=0;
+listen([Types.Messages.HELLO,'Respawn',21,60]);
+assert.equal(closed,1,'pending respawn cannot start a second handshake');
 console.log('Entry grace prevents hostile acquisition and stale chase; HIT and numeric protocol checks passed.');

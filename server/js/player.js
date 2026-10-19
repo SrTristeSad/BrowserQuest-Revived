@@ -53,7 +53,7 @@ module.exports = Player = Character.extend({
                 self.connection.close("Invalid handshake message: "+message);
                 return;
             }
-            if((self.hasEnteredGame || self.handshakePending) && !self.isDead && action === Types.Messages.HELLO) {
+            if((self.handshakePending || (self.hasEnteredGame && !self.isDead)) && action === Types.Messages.HELLO) {
                 self.connection.close("Cannot initiate handshake twice: "+message);
                 return;
             }
@@ -165,7 +165,8 @@ module.exports = Player = Character.extend({
             else if(action === Types.Messages.LOOT) {
                 var item = self.server.getEntityById(message[1]);
                 
-                if(item) {
+                if(item && item.type === 'item' &&
+                   Math.max(Math.abs(item.x - self.x), Math.abs(item.y - self.y)) <= 1) {
                     var kind = item.kind;
                     
                     if(Types.isItem(kind)) {
@@ -222,7 +223,8 @@ module.exports = Player = Character.extend({
             }
             else if(action === Types.Messages.OPEN) {
                 var chest = self.server.getEntityById(message[1]);
-                if(chest && chest instanceof Chest) {
+                if(chest && chest instanceof Chest &&
+                   Math.max(Math.abs(chest.x - self.x), Math.abs(chest.y - self.y)) <= 1) {
                     self.server.handleOpenedChest(chest, self);
                 }
             }
@@ -346,6 +348,7 @@ module.exports = Player = Character.extend({
         this.updatePosition();
         this.spawnProtectedUntil = Date.now() + 10000;
         this.lastMobHurtTimes = Object.create(null);
+        this.nextHitAt = 0;
         
         this.server.addPlayer(this);
         this.server.enter_callback(this);

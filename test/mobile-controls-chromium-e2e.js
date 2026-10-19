@@ -80,7 +80,7 @@ async function main(){
     const configurations=[
         {name:'phone-landscape',viewport:{width:844,height:390},mobile:true,visible:true},
         {name:'small-landscape',viewport:{width:667,height:375},mobile:true,visible:true},
-        {name:'phone-portrait',viewport:{width:390,height:844},mobile:true,visible:false},
+        {name:'phone-portrait',viewport:{width:390,height:844},mobile:true,visible:true},
         {name:'desktop',viewport:{width:1280,height:800},mobile:false,visible:false}
     ];
     for(const config of configurations){

@@ -19,3 +19,43 @@ body.game #canvas canvas {
 body.game footer {
     display: none;
 }
+
+/* The adaptive field of view has its own dimensions; tile the frame texture. */
+body.game #canvasborder { background-repeat: repeat; }
+body.game #canvas { position: relative; overflow: hidden; }
+body.game #canvas canvas { max-width: none; }
+body.game #instructions, body.game #achievements {
+    max-width: 100%;
+    max-height: 90%;
+    overflow: auto;
+    box-sizing: border-box;
+}
+body.game #chatbox { max-width: 94%; margin-left: 0; transform: translateX(-50%); }
+body.game { overscroll-behavior: none; }
+/* Replace the legacy rotate-device wall with a playable portrait layout. */
+@media (max-width: 800px) and (orientation: portrait) {
+    #portrait { display: none; }
+    body.game #container { display: block; }
+    body.intro #parchment { display: block; }
+    body.game.death #parchment { display: block; }
+    body.game.death #parchment {
+        max-width: 96vw;
+        margin-left: 0;
+        transform: translateX(-50%);
+    }
+}
+#bq-fullscreen {
+    display: none;
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    z-index: 120;
+    padding: 8px 12px;
+    border: 1px solid #b99559;
+    border-radius: 6px;
+    background: rgba(25, 24, 28, .85);
+    color: #f5e6bb;
+    font: 13px sans-serif;
+    cursor: pointer;
+}
+body.game #bq-fullscreen { display: block; }

@@ -75,6 +75,12 @@ module.exports = World = cls.Class.extend({
             var move_callback = function(x, y) {
                 log.debug(player.name + " is moving to (" + x + ", " + y + ").");
                 
+                // Movement can cross a server group before a camera transition.
+                // Refresh subscriptions immediately for adaptive aspect ratios.
+                if(self.handleEntityGroupMembership(player)) {
+                    self.pushToPreviousGroups(player, new Messages.Destroy(player));
+                    self.pushRelevantEntityListTo(player);
+                }
                 player.forEachAttacker(function(mob) {
                     var target = self.getEntityById(mob.target);
                     if(target) {

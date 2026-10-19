@@ -36,10 +36,8 @@
     pointer-events: none;
     box-shadow: 0 2px 5px rgba(0,0,0,.3);
 }
-/* A landscape touch screen has a physical pointer; on a desktop the original
- * clickable game viewport remains unobstructed. Portrait is unsupported by
- * the existing BrowserQuest mobile layout and never shows a stray joystick. */
-@media (pointer: coarse) and (orientation: landscape) {
+/* Touch controls remain available in both screen orientations. */
+@media (pointer: coarse) {
     body.game.started:not(.death) #bq-joystick {
         display: block;
     }
