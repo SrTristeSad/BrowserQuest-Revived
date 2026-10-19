@@ -27,8 +27,8 @@
 <div class="row"><div class="field"><label>Zoom do mapa</label><select id="zoom"><option value="2">2 px/tile</option><option value="4">4 px/tile</option><option value="8" selected>8 px/tile</option><option value="16">16 px/tile · nativo</option></select></div><div class="field"><label>Grade</label><select id="grid"><option value="1" selected>Mostrar</option><option value="0">Ocultar</option></select></div></div>
 <button id="deleteSelection" class="btn danger full">Excluir/limpar seleção</button>
 <hr class="hr"><div class="subhead">Nascimento seguro do jogador</div>
-<div class="field"><label for="spawnSafeRadius">Zona sem monstros em torno dos checkpoints iniciais (tiles; recomendado: 2)</label><input id="spawnSafeRadius" type="number" min="0" max="20" step="1" value="8"></div>
-<div class="small">Padrão: 8 tiles. Impede nascimento, aproximação e ataques de mobs dentro da zona. Valor 0 desativa a zona permanente; a imunidade temporária de entrada continua. Áreas de mobs podem ser movidas ou editadas abaixo.</div>
+<div class="field"><label for="spawnSafeRadius">Zona sem monstros em torno dos checkpoints iniciais (tiles; recomendado: 2)</label><input id="spawnSafeRadius" type="number" min="0" max="20" step="1" value="2"></div>
+<div class="small">Padrão novo: 2 tiles. A configuração publicada anteriormente é preservada. Se os inimigos sumiram depois de uma atualização, confira se esta opção continua em 8 ou mais: valores altos podem eliminar áreas inteiras de nascimento. Mude para 2, salve e publique o mapa para restaurar os inimigos próximos, sem remover a imunidade temporária de entrada.</div>
 <hr class="hr"><div class="subhead">Ciclo do mundo e densidade</div>
 <div class="field"><label><input id="enableDayNight" type="checkbox" checked> Ativar dia e noite</label></div>
 <div class="row"><div class="field"><label for="dayMinutes">Dia (minutos reais)</label><input id="dayMinutes" type="number" min="5" max="60" value="20"></div>
