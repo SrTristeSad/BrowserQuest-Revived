@@ -44,8 +44,8 @@ define(function() {
         // not an old 15x7-page boundary. Clamp the viewport to map edges so
         // its background never scrolls into empty, off-map space.
         getCenteredPosition: function(entity) {
-            var ts = this.renderer.tilesize || 16,
-                map = this.renderer.game && this.renderer.game.map,
+            var ts = (this.renderer && this.renderer.tilesize) || 16,
+                map = this.renderer && this.renderer.game && this.renderer.game.map,
                 px = Number.isFinite(entity.x) ? entity.x : entity.gridX * ts,
                 py = Number.isFinite(entity.y) ? entity.y : entity.gridY * ts,
                 x = px + ts / 2 - this.gridW * ts / 2,
