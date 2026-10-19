@@ -51,10 +51,10 @@ function requestJson(pathname, method, body, cookie) {
     });
 }
 
-function findStaticWeapon() {
+function findStaticWeapons() {
     var map = JSON.parse(fs.readFileSync(mapPath, 'utf8')),
         nextItem = Array.isArray(map.staticChests) ? map.staticChests.length : 0,
-        chosen = null;
+        candidates = [];
 
     Object.keys(map.staticEntities || {}).forEach(function(tileId) {
         var kind = Types.getKindFromString(map.staticEntities[tileId]),
@@ -65,28 +65,35 @@ function findStaticWeapon() {
         if(!Types.isItem(kind)) { return; }
         itemId = '9' + nextItem;
         nextItem += 1;
-        if(chosen || !Types.isWeapon(kind) || kind === Types.Entities.SWORD1) { return; }
+        if(!Types.isWeapon(kind) || kind === Types.Entities.SWORD1) { return; }
         tile = Number(tileId) - 1;
         x = (tile % map.width) + 1;
         y = Math.floor(tile / map.width);
-        chosen = {id: itemId, kind: kind, x: x, y: y};
+        candidates.push({id: itemId, kind: kind, x: x, y: y});
     });
 
-    assert.ok(chosen, 'world map must contain a static non-default weapon for the gameplay persistence E2E');
-    return chosen;
+    assert.ok(candidates.length, 'world map must contain a static non-default weapon for the gameplay persistence E2E');
+    return candidates;
 }
 
-function routeToItem(start, target) {
+function routeToItem(start, targets) {
     var map = JSON.parse(fs.readFileSync(mapPath, 'utf8')),
         blocked = new Set(map.collisions),
         queue = [{x:start[3],y:start[4],previous:null}], seen = new Set(), index = 0;
     seen.add(start[3]+','+start[4]);
     while(index < queue.length) {
         var point = queue[index++];
-        if(Math.abs(point.x-target.x)+Math.abs(point.y-target.y) <= 1) {
+        var target = targets.find(item => Math.abs(point.x-item.x)+Math.abs(point.y-item.y) <= 1);
+        if(target) {
             var route = [];
             while(point.previous) { route.push(point); point=point.previous; }
-            return route.reverse();
+            return {route:route.reverse(),target:target};
+        }
+        var door = (map.doors || []).find(d => d.x===point.x && d.y===point.y);
+        if(door) {
+            var key=door.tx+','+door.ty;
+            if(!seen.has(key)) {seen.add(key);queue.push({x:door.tx,y:door.ty,previous:point,teleport:true});}
+            continue;
         }
         [[0,-1],[1,0],[0,1],[-1,0]].forEach(function(offset) {
             var x=point.x+offset[0], y=point.y+offset[1], key=x+','+y;
@@ -184,7 +191,8 @@ async function main() {
         username = 'equip_' + suffix,
         characterName = 'Equip' + suffix.slice(-7),
         password = 'StrongPassword123!',
-        target = findStaticWeapon(),
+        targets = findStaticWeapons(),
+        target = targets[0],
         registration = await requestJson('/api/auth/register', 'POST', {
             username: username,
             password: password,
@@ -205,14 +213,16 @@ async function main() {
     try {
         first = await connectAndHandshake(cookie, characterName, initialWeapon, armor);
 
-        // Move to the static item through the normal BrowserQuest protocol, then loot it.
+        // Select a reachable item from this randomized starting area.
+        var reachable = routeToItem(first.welcome, targets);
+        target = reachable.target;
         first.socket.send(JSON.stringify([Types.Messages.LOOTMOVE, target.x, target.y, Number(target.id)]));
         // LOOTMOVE is intent, not a position update. Traverse real adjacent
         // steps at the normal movement rate before attempting collection.
-        var route = routeToItem(first.welcome, target);
+        var route = reachable.route;
         for(var step of route) {
             await delay(130);
-            first.socket.send(JSON.stringify([Types.Messages.MOVE, step.x, step.y]));
+            first.socket.send(JSON.stringify([step.teleport ? Types.Messages.TELEPORT : Types.Messages.MOVE, step.x, step.y]));
         }
         await delay(60);
         first.socket.send(JSON.stringify([Types.Messages.LOOT, Number(target.id)]));
