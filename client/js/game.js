@@ -722,6 +722,9 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 this.updateCursorLogic();
                 this.updater.update();
                 if(this.controls) { this.controls.update(); }
+                // Follow at the last possible moment before painting the
+                // frame, including movement started by held controls.
+                this.updater.updateCameraFollow();
                 this.renderer.renderFrame();
             }
 
@@ -1578,11 +1581,21 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 entity.isAttacking() && entity.hasTarget() &&
                 entity.target && !entity.target.isDead &&
                 this.getEntityById(entity.target.id) === entity.target;
-            if(!attackingMob) {
+            if(attackingMob) {
+                // Character.go() calls disengage() internally, even when the
+                // MOVE handler avoided doing so. Use the underlying path
+                // movement without clearing an active mob target/attackers.
+                // For an authoritative mob MOVE, follow the exact server
+                // tile instead of popping the final tile as "follow" does.
+                entity.followingMode = false;
+                if(!this.map.isOutOfBounds(x, y)) {
+                    entity.moveTo_(x, y);
+                }
+            } else {
                 entity.disengage();
+                entity.idle();
+                this.makeCharacterGoTo(entity, x, y);
             }
-            entity.idle();
-            this.makeCharacterGoTo(entity, x, y);
         },
 
         createAttackLink: function(attacker, target) {

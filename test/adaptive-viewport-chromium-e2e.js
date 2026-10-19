@@ -67,6 +67,29 @@ async function main() {
   // First-entry tutorial deliberately pauses controls.
   await page.evaluate(()=>document.getElementById('instructions').classList.remove('active'));
   await page.waitForFunction(()=>/^Vida: [1-9]/.test(document.getElementById('healthbar').title));
+  // Observe the real running renderer, not only isolated camera math.
+  // Position is measured in world pixels immediately before each paint.
+  await page.evaluate(()=>new Promise((resolve,reject)=>{
+   require(['renderer'],function(Renderer) {
+    const original=Renderer.prototype.renderFrame;
+    Renderer.prototype.renderFrame=function() {
+     if(this.game && this.game.started && this.game.player && this.camera) {
+      const player=this.game.player,camera=this.camera;
+      window.__bqFollowCheck={
+       dx:(player.x+8-camera.x)-camera.gridW*8,
+       dy:(player.y+8-camera.y)-camera.gridH*8,
+       playerX:player.x,playerY:player.y
+      };
+     }
+     return original.apply(this,arguments);
+    };
+    resolve();
+   },reject);
+  }));
+  await page.waitForFunction(()=>Boolean(window.__bqFollowCheck));
+  const cameraPosition=await page.evaluate(()=>window.__bqFollowCheck);
+  assert(Math.abs(cameraPosition.dx)<=1&&Math.abs(cameraPosition.dy)<=1,
+    'actual rendered player must be at camera center: '+JSON.stringify(cameraPosition));
   // The sword/armor HUD slots are now actual buttons with an accessible
   // equipment readout. Verify the real browser can open and close both.
   await page.locator('#weapon').click();
@@ -96,6 +119,9 @@ async function main() {
    let x=welcome[3],y=welcome[4],count=0;
    for(const move of moves){const distance=Math.abs(move[1]-x)+Math.abs(move[2]-y);assert(distance<=1,'client must report steps, never a distant destination');if(distance)count++;x=move[1];y=move[2];}
    assert(count>0,'keyboard walking must produce completed steps');
+   const following=await page.evaluate(()=>window.__bqFollowCheck);
+   assert(Math.abs(following.dx)<=1&&Math.abs(following.dy)<=1,
+    'after WASD walking the real rendered hero must remain centered: '+JSON.stringify(following));
    assert(!received.some(data=>data[0]===Types.Messages.TELEPORT&&data[1]===welcome[1]),'legitimate walking must not be rejected by server');
   }
   const view=await page.evaluate(()=>{

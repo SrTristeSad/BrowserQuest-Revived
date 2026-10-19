@@ -17,7 +17,8 @@ var cls = require("./lib/class"),
     Utils = require("./utils"),
     Types = require("../../shared/js/gametypes"),
     Brain = require("./brain").Brain,
-    MobBudget = require('./mob-budget');
+    MobBudget = require('./mob-budget'),
+    RegenPolicy = require('./regen-policy');
 
 // ======= GAME SERVER ========
 
@@ -170,13 +171,12 @@ module.exports = World = cls.Class.extend({
         });
         
         this.onRegenTick(function() {
+            var now = Date.now();
             self.forEachCharacter(function(character) {
-                if(!character.hasFullHealth()) {
-                    character.regenHealthBy(Math.floor(character.maxHitPoints / 25));
-            
-                    if(character.type === 'player') {
-                        self.pushToPlayer(character, character.regen());
-                    }
+                // No automatic healing while taking hits, attacking or being
+                // chased. Outside combat, heal a small amount at long intervals.
+                if(RegenPolicy.recover(character, now) > 0 && character.type === 'player') {
+                    self.pushToPlayer(character, character.regen());
                 }
             });
         });

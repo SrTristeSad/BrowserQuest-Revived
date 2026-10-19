@@ -9,6 +9,7 @@ var cls = require("./lib/class"),
     MissionService = require("../story/mission-service"),
     CombatGuard = require("./combat-guard"),
     MovementGuard = require("./movement-guard"),
+    RegenPolicy = require("./regen-policy"),
     Types = require("../../shared/js/gametypes");
 
 module.exports = Player = Character.extend({
@@ -30,6 +31,8 @@ module.exports = Player = Character.extend({
         // Ignore damage during initial spawn and immediately after a revive.
         this.spawnProtectedUntil = 0;
         this.lastMobHurtTimes = Object.create(null);
+        this.lastDamagedAt = 0;
+        this.lastRegenAt = 0;
         this.haters = {};
         this.lastCheckpoint = null;
         this.formatChecker = new FormatChecker();
@@ -158,6 +161,7 @@ module.exports = Player = Character.extend({
                     var damage = Formulas.dmg(mob.weaponLevel, self.armorLevel);
                     if(Number.isFinite(damage) && damage > 0) {
                         self.lastMobHurtTimes[mob.id] = hitTime;
+                        RegenPolicy.noteDamage(self, hitTime);
                         self.hitPoints = Math.max(0, self.hitPoints - damage);
                         self.server.handleHurtEntity(self);
                         if(self.hitPoints <= 0) {
@@ -364,6 +368,8 @@ module.exports = Player = Character.extend({
         this.updatePosition();
         this.spawnProtectedUntil = Date.now() + 10000;
         this.lastMobHurtTimes = Object.create(null);
+        this.lastDamagedAt = 0;
+        this.lastRegenAt = 0;
         this.nextHitAt = 0;
         this.lastStepAt = Date.now();
         this.stepCreditMs = MovementGuard.STEP_MS;

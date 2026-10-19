@@ -50,15 +50,18 @@ assert.equal(player.x+8-c.x,240,'pixel follow remains centered through full tile
 assert.equal(redraw.animations,1,'tile crossing invalidates animated tile region once');
 assert.equal(redraw.zones,0,'camera scrolling never spams network ZONE messages');
 
-// Clamp at each of the four world edges. Character cannot be centered
-// closer than half a screen to the end of finite terrain.
+// Traditional follow-camera never lets the character walk off-center,
+// even when there is less than half a screen of terrain beyond the edge.
 player.x=0;player.y=0;
 follow.call(updater);
-assert.equal(c.x,0);assert.equal(c.y,0);
+assert.equal(player.x+8-c.x,240);
+assert.equal(player.y+8-c.y,144);
+assert(c.x<0 && c.y<0,'edge positions must allow a centered overscroll');
 player.x=171*16;player.y=313*16;
 follow.call(updater);
-assert.equal(c.x,(172-30)*16);
-assert.equal(c.y,(314-18)*16);
+assert.equal(player.x+8-c.x,240);
+assert.equal(player.y+8-c.y,144);
+assert(c.x>(172-30)*16 && c.y>(314-18)*16);
 
 // Portrait/multiple canvas sizes retain the same follow algorithm.
 c.gridW=14;c.gridH=22;
@@ -77,10 +80,15 @@ const onStep=source.slice(source.indexOf('self.player.onStep(function() {'),
     source.indexOf('self.player.onStopPathing(',source.indexOf('self.player.onStep(function() {')));
 assert(onStep.includes('self.client.sendMove(self.player.gridX, self.player.gridY)'),
     'server still receives every completed movement tile');
+assert(source.includes('this.updater.updateCameraFollow();') &&
+       source.indexOf('this.updater.updateCameraFollow();') < source.indexOf('this.renderer.renderFrame();'),
+       'camera must synchronize immediately before every painted frame');
 assert(!onStep.includes('self.enqueueZoningFrom('),
     'original page transitions must never fire while a player walks');
 
 const rendererSource=read('client/js/renderer.js');
+assert(rendererSource.includes("this.drawBackground(this.background, '#263c30')"),
+    'overscrolling off-map must paint a consistent backdrop instead of black strips');
 assert(rendererSource.includes('if(this.cameraMoved)') &&
     rendererSource.includes('this.drawEntities();') &&
     rendererSource.includes('this.cameraMoved = false'),

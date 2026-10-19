@@ -893,6 +893,12 @@ function(Camera, Item, Character, Player, Timer) {
             // The camera can move into areas with transparent/missing terrain.
             // Always invalidate the old static layer before painting its view.
             this.clearScreen(this.background);
+            // Centering on the player at the edge of the finite map can
+            // expose off-map pixels. Give them a quiet natural backdrop
+            // instead of black/transparent strips around the world.
+            if(this.background && typeof this.background.fillRect === 'function') {
+                this.drawBackground(this.background, '#263c30');
+            }
             this.background.save();
                 this.setCameraView(this.background);
                 this.drawTerrain();

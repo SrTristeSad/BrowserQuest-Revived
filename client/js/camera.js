@@ -40,22 +40,16 @@ define(function() {
             this.y = this.gridY * 16;
         },
 
-        // Keep the character centered by tracking its current pixel position,
-        // not an old 15x7-page boundary. Clamp the viewport to map edges so
-        // its background never scrolls into empty, off-map space.
+        // A fixed-on-player camera: the center is the player's rendered tile
+        // center at all world positions, including near map boundaries.
         getCenteredPosition: function(entity) {
             var ts = (this.renderer && this.renderer.tilesize) || 16,
-                map = this.renderer && this.renderer.game && this.renderer.game.map,
                 px = Number.isFinite(entity.x) ? entity.x : entity.gridX * ts,
-                py = Number.isFinite(entity.y) ? entity.y : entity.gridY * ts,
-                x = px + ts / 2 - this.gridW * ts / 2,
-                y = py + ts / 2 - this.gridH * ts / 2;
-            if(map && Number.isFinite(map.width) && Number.isFinite(map.height) &&
-               map.width > 0 && map.height > 0) {
-                x = Math.max(0, Math.min(x, Math.max(0, (map.width - this.gridW) * ts)));
-                y = Math.max(0, Math.min(y, Math.max(0, (map.height - this.gridH) * ts)));
-            }
-            return {x: Math.round(x), y: Math.round(y)};
+                py = Number.isFinite(entity.y) ? entity.y : entity.gridY * ts;
+            return {
+                x: Math.round(px + ts / 2 - this.gridW * ts / 2),
+                y: Math.round(py + ts / 2 - this.gridH * ts / 2)
+            };
         },
 
         lookAt: function(entity) {

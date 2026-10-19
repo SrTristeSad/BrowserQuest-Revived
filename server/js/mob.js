@@ -3,7 +3,8 @@ var cls = require("./lib/class"),
     Utils = require("./utils"),
     Messages = require("./message"),
     Properties = require("./properties"),
-    Types = require("../../shared/js/gametypes");
+    Types = require("../../shared/js/gametypes"),
+    RegenPolicy = require("./regen-policy");
 
 module.exports = Mob = Character.extend({
     init: function(id, kind, x, y, editorData) {
@@ -45,7 +46,10 @@ module.exports = Mob = Character.extend({
     },
 
     receiveDamage: function(points, playerId) {
-        this.hitPoints -= points;
+        if(Number.isFinite(points) && points > 0) {
+            RegenPolicy.noteDamage(this);
+            this.hitPoints = Math.max(0, this.hitPoints - points);
+        }
     },
 
     hates: function(playerId) {
