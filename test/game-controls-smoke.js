@@ -12,6 +12,11 @@ function node(tag) {
     const events = {};
     return {
         tagName:tag.toUpperCase(),style:{},events,children:[],
+        classes:new Set(),
+        get classList(){
+            return {add:(name)=>this.classes.add(name),remove:(name)=>this.classes.delete(name),
+                contains:(name)=>this.classes.has(name)};
+        },
         setAttribute(name,value){this[name]=value;},
         appendChild(child){this.children.push(child);},
         addEventListener(type,cb){events[type]=cb;},
@@ -169,6 +174,7 @@ const center=pointer(7,68,78);
 base.events.pointerdown(center);
 assert.equal(base.capture,7);
 assert.equal(center.stopped,true);
+assert.equal(base.classList.contains('is-active'),true);
 assert.equal(controls.currentDirection(),null);
 const right=pointer(7,108,78);
 base.events.pointermove(right);
@@ -179,10 +185,16 @@ player.moving=false;
 base.events.pointerup(pointer(7,108,78));
 assert.equal(controls.pointerId,null);
 assert.equal(controls.currentDirection(),null);
+assert.equal(base.classList.contains('is-active'),false);
 assert.equal(controls.thumb.style.transform,'translate(0px, 0px)');
 const click=event('click');
 base.events.click(click);
 assert.equal(click.stopped,true);
+const nativeTouch={stopPropagation(){this.stopped=true;}};
+base.events.touchstart(nativeTouch);
+assert.equal(nativeTouch.stopped,true);
+base.events.touchend(nativeTouch);
+assert.equal(nativeTouch.stopped,true);
 
 // Cancel and window blur prevent stuck controls.
 base.events.pointerdown(pointer(9,15,78));
