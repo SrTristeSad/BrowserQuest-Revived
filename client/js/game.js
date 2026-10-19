@@ -341,7 +341,13 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 this.sprites = this.spritesets[0];
             } else {
                 this.sprites = this.spritesets[scale - 1];
-                
+
+                // Game.run calls setSpriteScale right after loadSprites,
+                // before image onload callbacks. Just select the catalog
+                // during loading; Game.run initializes hurt sprites/cursors
+                // after all images finish. Resizes may happen in between.
+                if(!this.ready) { return; }
+
                 _.each(this.entities, function(entity) {
                     entity.sprite = null;
                     var preferred = self.sprites[entity.getSpriteName()],
