@@ -78,8 +78,10 @@ module.exports = World = cls.Class.extend({
                 player.forEachAttacker(function(mob) {
                     var target = self.getEntityById(mob.target);
                     if(target) {
-                        var pos = self.findPositionNextTo(mob, target);
-                        if(mob.distanceToSpawningPoint(pos.x, pos.y) > (mob.aggroDistance || 50)) {
+                        // Use the authoritative target tile for leash checks.
+                        // Looking for an adjacent random tile can loop forever
+                        // when every tile next to the player is blocked.
+                        if(mob.distanceToSpawningPoint(target.x, target.y) > (mob.aggroDistance || 50)) {
                             mob.clearTarget();
                             mob.forgetEveryone();
                             player.removeAttacker(mob);
