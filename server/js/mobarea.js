@@ -79,7 +79,7 @@ module.exports = MobArea = Area.extend({
         this.removeFromArea(mob);
 
         setTimeout(function() {
-            if(!self.isActive()) { return; }
+            if(!self.isActive() || self.entities.length >= self.nb) { return; }
             var pos = self._getSafeSpawnPosition();
             if(!pos) {
                 // Retry later rather than spawning enemies on players / in
@@ -98,7 +98,7 @@ module.exports = MobArea = Area.extend({
     respawnMobLater: function(mob) {
         var self = this;
         setTimeout(function() {
-            if(!self.isActive()) { return; }
+            if(!self.isActive() || self.entities.length >= self.nb) { return; }
             var pos = self._getSafeSpawnPosition();
             if(!pos) { self.respawnMobLater(mob); return; }
             mob.x = pos.x;
