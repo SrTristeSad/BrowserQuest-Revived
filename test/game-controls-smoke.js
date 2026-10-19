@@ -59,6 +59,18 @@ const controls = new Controls(game);
 assert.equal(document.body.children.length,1);
 assert.equal(document.body.children[0].id,'bq-joystick');
 assert.equal(controls.thumb.className,'bq-joystick-thumb');
+// Keyboard takeover interrupts a long click-to-move route once, at the next
+// safe movement boundary, rather than redirecting every animation frame.
+player.moving=true;
+const takeover=()=>listeners.document.keydown({
+    code:'KeyW',target:{tagName:'BODY'},preventDefault(){}
+});
+takeover();
+takeover();
+assert.equal(player.stopCalls,1,'auto-repeat must not interrupt the same route twice');
+listeners.document.keyup({code:'KeyW',preventDefault(){}});
+player.moving=false;
+
 function event(code,target={tagName:'BODY'}){
     return {code,target,prevented:false,stopped:false,
         preventDefault(){this.prevented=true;},
