@@ -3,7 +3,9 @@
 // A beginner-safe region is the union of the initial (s === 1) checkpoint
 // rectangles, expanded by the configured number of map tiles. Other
 // checkpoints and mob territory remain unchanged.
-const DEFAULT_RADIUS = 8;
+// Smaller default retains a genuinely mob-free entry area but does not erase
+// the original rat patrols. Published/editor-configured radii are respected.
+const DEFAULT_RADIUS = 2;
 const MAX_RADIUS = 20;
 function normalizeRadius(value) {
     if(value === undefined || value === null) return DEFAULT_RADIUS;
