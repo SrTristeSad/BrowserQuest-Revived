@@ -12,16 +12,36 @@ module.exports = MobArea = Area.extend({
         this.setNumberOfEntities(this.nb);
     },
 
+    // A map can place original roaming areas directly over beginner checkpoints.
+    // If no eligible tiles remain, keep that area empty rather than spawning
+    // enemies on the player (or spinning forever searching for a valid tile).
     spawnMobs: function() {
         for(var i = 0; i < this.nb; i += 1) {
-            this.addToArea(this._createMobInsideArea());
+            var mob = this._createMobInsideArea();
+            if(!mob) { break; }
+            this.addToArea(mob);
         }
+        this.setNumberOfEntities(this.entities.length);
+    },
+
+    _getSafeSpawnPosition: function() {
+        var positions = [], x, y, world = this.world, map = world.map;
+        for(y = this.y; y < this.y + this.height; y += 1) {
+            for(x = this.x; x < this.x + this.width; x += 1) {
+                if(world.isValidPosition(x, y) &&
+                    !(map && map.isProtectedSpawnTile && map.isProtectedSpawnTile(x, y))) {
+                    positions.push({x:x, y:y});
+                }
+            }
+        }
+        return positions.length ? positions[Math.floor(Math.random() * positions.length)] : null;
     },
 
     _createMobInsideArea: function() {
         var k = Types.getKindFromString(this.kind),
-            pos = this._getRandomPositionInsideArea(),
-            mob = new Mob('1' + this.id + '' + k + '' + this.entities.length, k, pos.x, pos.y, this.editorData);
+            pos = this._getSafeSpawnPosition();
+        if(!pos) { return null; }
+        var mob = new Mob('1' + this.id + '' + k + '' + this.entities.length, k, pos.x, pos.y, this.editorData);
 
         mob.onMove(this.world.onMobMoveCallback.bind(this.world));
         return mob;
@@ -32,7 +52,8 @@ module.exports = MobArea = Area.extend({
         this.removeFromArea(mob);
 
         setTimeout(function() {
-            var pos = self._getRandomPositionInsideArea();
+            var pos = self._getSafeSpawnPosition();
+            if(!pos) { return; }
             mob.x = pos.x;
             mob.y = pos.y;
             mob.isDead = false;
