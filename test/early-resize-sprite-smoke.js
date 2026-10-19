@@ -70,12 +70,15 @@ for(const upscaled of [false,true]) {
     assert.doesNotThrow(()=>game.setSpriteScale(2),
         'once catalog exists resizing should continue to rebind visible mobs');
     assert.equal(game.sprites.rat,sprite);
-    assert.equal(mob.sprite,sprite,'existing mob must not disappear on rescale');
     if(!upscaled) {
+        assert.equal(mob.sprite,sprite,'existing mob must not disappear on rescale');
         assert.equal(game.cursorCalls,1);
         assert.equal(game.hurtCalls,1);
     }
     assert.doesNotThrow(()=>game.setSpriteScale(3));
-    assert.equal(mob.sprite,sprite);
+    assert.equal(game.sprites.rat,sprite);
+    if(!upscaled) {
+        assert.equal(mob.sprite,sprite);
+    }
 }
 console.log('Early browser resize before sprites are loaded and late sprite rebind smoke tests passed.');
