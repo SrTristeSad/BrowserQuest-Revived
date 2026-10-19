@@ -1,5 +1,5 @@
 
-define(['jquery', 'app', 'controls'], function($, App, Controls) {
+define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, App, Controls, DayCycle) {
     var app, game;
 
     var initApp = function() {
@@ -186,6 +186,20 @@ define(['jquery', 'app', 'controls'], function($, App, Controls) {
     		game = new Game(app);
     		game.setup('#bubbles', canvas, background, foreground, input);
             game.controls = new Controls(game);
+            // One epoch-based clock for server and client; only terrain darkens.
+            var previousPhase = null;
+            function updateWorldLight() {
+                var phase = DayCycle.phase(Date.now(), game.map && game.map.dayNight),
+                    body = document.body;
+                if(previousPhase === phase) { return; }
+                previousPhase = phase;
+                body.classList.remove('bq-night', 'bq-dusk', 'bq-dawn');
+                if(phase === 'night' || phase === 'dusk' || phase === 'dawn') {
+                    body.classList.add('bq-' + phase);
+                }
+            }
+            updateWorldLight();
+            setInterval(updateWorldLight, 5000);
     		game.setStorage(app.storage);
     		app.setGame(game);
     		
