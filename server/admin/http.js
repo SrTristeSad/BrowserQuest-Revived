@@ -6,7 +6,8 @@ var fs = require('fs'),
     Auth = require('./auth'),
     StoryStore = require('./story-store').StoryStore,
     WorldStore = require('./world-store').WorldStore,
-    SpriteImportStore = require('./sprite-import-store').SpriteImportStore;
+    SpriteImportStore = require('./sprite-import-store').SpriteImportStore,
+    UpdateManager = require('./update-manager').UpdateManager;
 
 function parseCookies(header) {
     var out = {};
@@ -64,6 +65,29 @@ function readJson(request) {
     });
 }
 
+function readArchive(request) {
+    return new Promise(function(resolve, reject) {
+        var chunks = [], size = 0, stopped = false;
+        if(!/^application\/(?:zip|octet-stream)(?:;|$)/i.test(String(request.headers['content-type'] || ''))) {
+            reject(new Error('Envie um arquivo ZIP binário.')); return;
+        }
+        request.on('data', function(chunk) {
+            if(stopped) { return; }
+            size += chunk.length;
+            if(size > 20 * 1024 * 1024) {
+                stopped = true;
+                reject(new Error('ZIP maior que 20 MB.'));
+                request.destroy(); return;
+            }
+            chunks.push(chunk);
+        });
+        request.on('end', function() {
+            if(!stopped) { resolve(Buffer.concat(chunks)); }
+        });
+        request.on('error', reject);
+    });
+}
+
 function safeRead(filepath) {
     try { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
     catch(error) { return null; }
@@ -109,6 +133,7 @@ function createAdminHandler(options) {
             versionsDir: path.join(configDir, 'world-versions')
         }),
         spriteImports = new SpriteImportStore(path.join(configDir,'sprite-imports')),
+        updater = new UpdateManager(path.resolve(__dirname, '../..'), configDir),
         legacyAttempts = new Map();
     world.spriteImports = spriteImports;
 
@@ -134,10 +159,24 @@ function createAdminHandler(options) {
     }
 
     function originAllowed(request) {
-        var origin = request.headers.origin, host = request.headers.host;
-        if(!origin || !host) { return true; }
-        try { return new URL(origin).host === host; }
-        catch(error) { return false; }
+        var origin = request.headers.origin, host = request.headers.host,
+            publicOrigin = String(process.env.BROWSERQUEST_PUBLIC_ORIGIN || '').trim();
+        if(!origin) { return true; }
+        try {
+            var incoming = new URL(origin);
+            if(publicOrigin) { return incoming.origin === new URL(publicOrigin).origin; }
+            if(host && incoming.host === host) { return true; }
+            // Trust forwarded host only from a local reverse proxy (aaPanel Apache).
+            // The last header value is the one added by the trusted local proxy.
+            var remote = request.socket && request.socket.remoteAddress || '',
+                local = remote === '127.0.0.1' || remote === '::1' ||
+                    remote === '::ffff:127.0.0.1',
+                forwardedHost = String(request.headers['x-forwarded-host'] || '').split(',').pop().trim(),
+                forwardedProto = String(request.headers['x-forwarded-proto'] || '').split(',').pop().trim();
+            return Boolean(local && forwardedHost && incoming.host === forwardedHost &&
+                (forwardedProto === 'https' || forwardedProto === 'http') &&
+                incoming.protocol === forwardedProto + ':');
+        } catch(error) { return false; }
     }
 
     async function checkLoginRate(ip) {
@@ -487,6 +526,47 @@ function createAdminHandler(options) {
             return;
         }
 
+        if(pathname === '/admin/updates' && request.method === 'GET') {
+            session = await requireAdmin(request, response, false);
+            if(session && session.role === 'owner') { serveFile(response, 'updates.html'); }
+            else if(session) { send(response, 403, 'Somente o proprietário pode atualizar o servidor.'); }
+            return;
+        }
+        if(pathname === '/admin/api/updates' && request.method === 'GET') {
+            session = await requireAdmin(request, response, true);
+            if(session) {
+                if(session.role !== 'owner') { json(response, 403, {error: 'Apenas o proprietário pode atualizar o código.'}); }
+                else { json(response, 200, updater.status()); }
+            }
+            return;
+        }
+        if(['/admin/api/updates/stage/zip', '/admin/api/updates/stage/git', '/admin/api/updates/apply'].includes(pathname) && request.method === 'POST') {
+            session = await requireAdmin(request, response, true);
+            if(!session) { return; }
+            if(session.role !== 'owner') { json(response, 403, {error: 'Apenas o proprietário pode atualizar o código.'}); return; }
+            if(!updater.enabled()) { json(response, 403, {error: 'Habilite BROWSERQUEST_UPDATES_ENABLED=1 no ambiente do Node.js para usar atualizações.'}); return; }
+            // A valid Origin is mandatory for privileged code deployment requests.
+            if(!request.headers.origin || !originAllowed(request)) { json(response, 403, {error: 'Origem inválida para atualização.'}); return; }
+            try {
+                if(pathname.endsWith('/zip')) {
+                    body = await readArchive(request);
+                    json(response, 200, {staged: updater.stage(body, 'Arquivo ZIP enviado')});
+                } else if(pathname.endsWith('/git')) {
+                    json(response, 200, {staged: await updater.stageFromGit()});
+                } else {
+                    body = await readJson(request);
+                    if(!body || body.confirm !== 'APLICAR' || !/^[a-f0-9]{24}$/.test(String(body.id || ''))) {
+                        json(response, 400, {error: 'Confirmação ou pacote inválido.'}); return;
+                    }
+                    const applied = updater.apply(body.id);
+                    await audit(session, 'code.update.apply', 'installation', {source: updater.status().gitSource, changed: applied.changed, backupId: applied.backupId}, request);
+                    json(response, 200, applied);
+                }
+            } catch(error) {
+                json(response, error.statusCode || 422, {error: error.message || 'Falha ao processar atualização.'});
+            }
+            return;
+        }
         if(pathname === '/admin/sprite-importer' && request.method === 'GET') {
             if(await requireAdmin(request,response,false)) { serveFile(response,'sprite-importer.html'); }
             return;

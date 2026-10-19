@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atualizações · BrowserQuest Admin</title>
+<style>
+:root{color-scheme:dark;--bg:#100f15;--pane:#1c1a24;--pane2:#22202c;--line:#373143;--text:#f5efe6;--sub:#b5a9be;--accent:#e8b66e;--success:#82d6aa;--error:#f39b93}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 70% -40%,#3b3049,transparent 60%),var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.layout{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
+aside{background:#15131bcf;border-right:1px solid var(--line);padding:26px 16px}
+.brand{font-size:20px;font-weight:900;letter-spacing:-.03em;margin:0 10px 5px}
+.sub{color:var(--sub);font-size:12px;margin:0 10px 24px}
+nav a{display:flex;align-items:center;gap:10px;text-decoration:none;color:#d7cddd;padding:11px 12px;border-radius:10px;margin:4px 0}
+nav a:hover,nav a[aria-current=page]{background:#35283b;color:#ffe0af}
+main{padding:32px clamp(20px,4vw,56px);max-width:1260px;width:100%}
+.kicker{color:var(--accent);font-size:12px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
+h1{font-size:clamp(26px,3vw,36px);line-height:1.2;margin:9px 0}
+h2{font-size:18px;margin:0 0 10px}
+h3{font-size:15px;margin:0 0 8px}
+p{margin:8px 0;color:var(--sub)}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:28px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--pane);border:1px solid var(--line);border-radius:15px;padding:22px;box-shadow:0 14px 24px #00000014}
+.card.full{grid-column:1/-1}
+.meta{color:var(--sub);font-size:13px}
+.cap{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--sub);font-weight:800}
+.flag{border:1px solid #8d6d41;color:var(--accent);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:800}
+.flag.ok{border-color:#3c7d61;color:var(--success)}
+button{background:var(--accent);border:0;border-radius:9px;color:#24180e;font:inherit;font-weight:850;padding:11px 16px;cursor:pointer}
+button.secondary{background:#34303e;color:var(--text);border:1px solid #55475b}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:not(:disabled):hover{filter:brightness(1.12)}
+input[type=file],input[type=text]{width:100%;background:#12111a;color:var(--text);border:1px solid #5b4b62;border-radius:8px;padding:11px;margin:8px 0}
+input:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}
+#log{white-space:pre-wrap;word-break:break-word;color:#d7cfde;min-height:24px}
+#log.error{color:var(--error)}#log.ok{color:var(--success)}
+.warning{border-left:3px solid var(--accent);background:#2b231e;padding:13px 16px;border-radius:0 9px 9px 0;margin:16px 0;color:#e5c9a0;font-size:13px}
+.list{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin:14px 0}
+.file{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);font:12px ui-monospace,Consolas,monospace}
+.file:last-child{border:0}.file span{overflow-wrap:anywhere}.file em{font:11px system-ui;color:var(--sub);white-space:nowrap}
+code{background:#110f16;padding:2px 6px;border-radius:4px;color:#e9cc9c}
+[hidden]{display:none!important}
+@media(max-width:900px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);padding:16px}.brand,.sub{margin-left:4px}nav{display:flex;overflow:auto}nav a{white-space:nowrap}main{padding:22px 16px}.grid{grid-template-columns:1fr}.card.full{grid-column:auto}}
+@media(max-width:520px){.top{align-items:flex-start;flex-direction:column}.card{padding:16px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand">BrowserQuest Admin</div>
+<div class="sub">Central de gerenciamento</div>
+<nav aria-label="Navegação administrativa">
+<a href="/admin/dashboard">◫ Visão geral</a>
+<a href="/admin/settings">⚙ Configurações</a>
+<a href="/admin/story-editor">✎ Histórias</a>
+<a href="/admin/world-editor">▦ Editor de Mundo</a>
+<a href="/admin/sprite-importer">✥ Sprites</a>
+<a href="/admin/updates" aria-current="page">↻ Atualizações</a>
+</nav>
+</aside>
+<main>
+<header class="top">
+<div><div class="kicker">Manutenção · Software</div><h1>Central de atualizações</h1><p>Atualize os arquivos do jogo sem substituir suas configurações ou seus mundos publicados.</p></div>
+<div class="flag" id="enabled">Verificando...</div>
+</header>
+<div class="grid">
+<section class="card">
+<div class="cap">Opção 01</div>
+<h2>Atualizar pelo GitHub</h2>
+<p>Obtém a versão mais recente do repositório oficial, mesmo quando a instalação foi feita por ZIP e não possui <code>.git</code>.</p>
+<p class="meta" id="repository">Carregando origem...</p>
+<div class="actions"><button id="git" type="button">Buscar atualização</button></div>
+</section>
+<section class="card">
+<div class="cap">Opção 02</div>
+<h2>Atualizar por ZIP</h2>
+<p>Envie um pacote do projeto. Nenhum arquivo será substituído até você revisar e confirmar a atualização.</p>
+<label for="zip" class="cap">Pacote ZIP (máximo 20 MB)</label>
+<input type="file" id="zip" accept=".zip,application/zip,application/x-zip-compressed">
+<div class="actions"><button id="sendZip" type="button">Analisar ZIP</button></div>
+</section>
+<section class="card full">
+<h2>Revisão da atualização</h2>
+<div class="warning">Somente código é atualizado. Dados de jogadores, banco PostgreSQL, Redis, arquivos em <code>var/</code>, <code>.env</code>, configurações do servidor e assets pessoais não são enviados ao GitHub nem substituídos. Faça também um backup externo antes de atualizar o sistema em produção.</div>
+<p id="stageInfo">Nenhum pacote analisado.</p>
+<div id="stage" hidden>
+<div class="cap" id="stageTitle"></div>
+<div class="list" id="files" aria-label="Arquivos que serão atualizados"></div>
+<label class="cap" for="confirm">Digite APLICAR para confirmar</label>
+<input id="confirm" type="text" autocomplete="off" placeholder="APLICAR">
+<div class="actions"><button id="apply" disabled type="button">Criar backup e aplicar atualização</button></div>
+</div>
+<div class="actions"><div id="log" role="status" aria-live="polite"></div></div>
+</section>
+<section class="card full">
+<h2>Segurança e reinicialização</h2>
+<p>Para habilitar a instalação pelo painel, configure a variável de ambiente <code>BROWSERQUEST_UPDATES_ENABLED=1</code> no processo Node.js e reinicie-o. Por segurança, essa função começa desativada.</p>
+<p>Após aplicar uma atualização, reinicie o processo Node.js no aaPanel para carregar o código novo. Bibliotecas npm e alterações de banco de dados devem ser revisadas separadamente.</p>
+</section>
+</div>
+</main>
+</div>
+<script>
+(function(){
+'use strict';
+const el=id=>document.getElementById(id);
+let current=null, enabled=false, busy=false;
+function status(message,error){el('log').textContent=message;el('log').className=error?'error':'ok'}
+function updateButtons(){
+    el('git').disabled=busy||!enabled;
+    el('sendZip').disabled=busy||!enabled;
+    el('apply').disabled=busy||!enabled||!current||el('confirm').value!=='APLICAR';
+}
+async function api(url,options){
+    const response=await fetch(url,Object.assign({credentials:'same-origin'},options||{}));
+    if(response.status===401){location.href='/admin/login';throw Error('Sessão expirada')}
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error(data.error||'Falha na atualização.');
+    return data;
+}
+function render(stage) {
+    current=stage||null;
+    el('stage').hidden=!stage;
+    el('stageInfo').textContent=stage?
+        stage.changes.length+' arquivo(s) para atualização · pacote '+stage.source:
+        'Nenhum pacote analisado.';
+    el('files').replaceChildren();
+    el('confirm').value='';
+    if(stage) {
+        el('stageTitle').textContent='Revisão · '+stage.id;
+        stage.changes.forEach(file=>{
+            const row=document.createElement('div'),name=document.createElement('span'),
+                meta=document.createElement('em');
+            row.className='file';
+            name.textContent=file.path;
+            meta.textContent=(file.kind==='created'?'Novo':'Modificado')+' · '+Math.ceil(file.size/1024)+' KB';
+            row.append(name,meta);el('files').append(row);
+        });
+    }
+    updateButtons();
+}
+async function load(){
+    try{
+        const data=await api('/admin/api/updates');
+        enabled=data.enabled;
+        el('enabled').textContent=enabled?'Instalação habilitada':'Instalação desativada';
+        el('enabled').className='flag'+(enabled?' ok':'');
+        el('repository').textContent=data.gitSource;
+        render(data.staged);
+    }catch(error){status(error.message,true)}
+    updateButtons();
+}
+async function stage(kind){
+    if(busy)return;
+    const file=el('zip').files[0];
+    if(kind==='zip'&&(!file||!file.name.toLowerCase().endsWith('.zip'))){status('Escolha um arquivo ZIP.',true);return}
+    if(kind==='zip'&&file.size>20*1024*1024){status('O ZIP excede 20 MB.',true);return}
+    busy=true;updateButtons();status('Analisando pacote...',false);
+    try {
+        const data=kind==='git'
+            ? await api('/admin/api/updates/stage/git',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})
+            : await api('/admin/api/updates/stage/zip',{method:'POST',headers:{'content-type':'application/zip'},body:file});
+        render(data.staged);
+        status('Pacote validado. Revise os arquivos antes de aplicar.',false);
+    }catch(error){status(error.message,true)}finally{busy=false;updateButtons()}
+}
+async function apply(){
+    if(busy||!current||el('confirm').value!=='APLICAR')return;
+    if(!confirm('Aplicar alterações no código da instalação? O servidor precisará ser reiniciado manualmente.'))return;
+    busy=true;updateButtons();status('Criando backup e instalando...',false);
+    try{
+        const result=await api('/admin/api/updates/apply',{
+            method:'POST',headers:{'content-type':'application/json'},
+            body:JSON.stringify({id:current.id,confirm:'APLICAR'})
+        });
+        render(null);
+        status(result.changed+' arquivos atualizados. Backup '+result.backupId+'. Reinicie o Node.js pelo aaPanel.',false);
+    }catch(error){status(error.message,true)}finally{busy=false;updateButtons()}
+}
+el('git').onclick=()=>stage('git');
+el('sendZip').onclick=()=>stage('zip');
+el('apply').onclick=apply;
+el('confirm').addEventListener('input',updateButtons);
+load();
+})();
+</script>
+</body>
+</html>

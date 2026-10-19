@@ -6,6 +6,21 @@
 <title>BrowserQuest Revived — Configurações</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#17120d;color:#f5e8c8;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.layout{min-height:100vh;display:grid;grid-template-columns:230px 1fr}.side{background:#21180f;border-right:1px solid #49351e;padding:22px 16px}.brand{font-weight:900;font-size:20px;margin-bottom:24px}.nav a{display:block;color:#d8c29b;text-decoration:none;padding:10px 12px;border-radius:7px;margin:4px 0}.nav a:hover,.nav a.active{background:#49351e;color:#fff}.main{padding:28px;max-width:1000px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:20px}h1{margin:0;font-size:28px}.muted{color:#b9a37d}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#241a11;border:1px solid #49351e;border-radius:10px;padding:18px}.card h2{margin:0 0 14px;font-size:18px}.field{margin-top:14px}label{display:block;font-weight:800;margin-bottom:6px}select,input[type=number]{width:100%;background:#120d09;color:#f5e8c8;border:1px solid #725333;border-radius:6px;padding:11px;font:inherit}.toggle{display:flex;align-items:center;gap:10px}.toggle input{width:20px;height:20px}.status{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pill{padding:12px;border-radius:7px;background:#17110b;border:1px solid #49351e}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#a5372f;margin-right:7px}.pill.ok .dot{background:#3ca65a}.actions{display:flex;gap:10px;margin-top:18px}button{border:0;border-radius:7px;padding:11px 16px;font-weight:900;cursor:pointer;background:#704a24;color:#fff}button.secondary{background:#3d3021}button:disabled{opacity:.55;cursor:wait}#message{min-height:24px;margin-top:12px;font-weight:700}.okmsg{color:#67c77e}.errmsg{color:#e46f64}.small{font-size:13px}.notice{margin-top:12px;padding:11px 12px;border-radius:7px;border:1px solid #8c6a29;background:#2c2212;color:#e8c66f}.notice.ok{border-color:#326c43;background:#14271a;color:#86d79a}.capacity-state{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.logout{background:#3d3021}@media(max-width:760px){.layout{grid-template-columns:1fr}.side{border-right:0;border-bottom:1px solid #49351e}.nav{display:flex;flex-wrap:wrap}.nav a{margin-right:5px}.main{padding:18px}.grid,.status,.capacity-state{grid-template-columns:1fr}}
+:root{color-scheme:dark;--line:#3f3747;--gold:#e8b66e}
+body{background:radial-gradient(ellipse at 68% -30%,#3c304a 0,transparent 60%),#100f15;color:#f5f0e6}
+.side{background:#16141cf5;border-color:var(--line);position:sticky;top:0;height:100vh}
+.brand{font-size:22px;letter-spacing:-.04em}
+.nav a{border-radius:10px;padding:12px 14px}
+.nav a:hover,.nav a.active{background:#38293f;color:#ffdfa8}
+.main{max-width:1260px;width:100%;padding:36px clamp(20px,3.5vw,52px)}
+h1{font-size:clamp(28px,3vw,38px);letter-spacing:-.04em}
+.card{background:linear-gradient(155deg,#25222f,#1c1a24);border-color:var(--line);border-radius:15px;padding:22px;box-shadow:0 9px 20px #00000016}
+.card h2{font-size:19px}select,input[type=number]{background:#14111a;border-color:#66556c;border-radius:9px}
+button{border-radius:9px}button:hover:not(:disabled){filter:brightness(1.15)}
+button:focus-visible,input:focus-visible,select:focus-visible,.nav a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.pill{background:#1b1822;border-color:var(--line)}
+@media(max-width:760px){.side{position:static;height:auto}.main{padding:20px 16px}}
+
 </style>
 </head>
 <body>
@@ -13,9 +28,12 @@
 <aside class="side">
   <div class="brand">BrowserQuest Admin</div>
   <nav class="nav">
+    <a href="/admin/dashboard">Visão geral</a>
     <a class="active" href="/admin/settings">Configurações</a>
     <a href="/admin/story-editor">Editor de História</a>
     <a href="/admin/world-editor">Editor de Mundo</a>
+    <a href="/admin/sprite-importer">Sprites</a>
+    <a href="/admin/updates">Atualizações</a>
   </nav>
 </aside>
 <main class="main">

@@ -157,6 +157,17 @@ define(['jquery', 'app'], function($, App) {
             $('#resize-check').bind("transitionend", app.resizeUi.bind(app));
             $('#resize-check').bind("webkitTransitionEnd", app.resizeUi.bind(app));
             $('#resize-check').bind("oTransitionEnd", app.resizeUi.bind(app));
+            // Window resize, orientation and browser panels do not always fire
+            // CSS transition events. Refresh the actual three Canvas layers too.
+            var resizeFramePending = false;
+            window.addEventListener('resize', function() {
+                if(resizeFramePending) { return; }
+                resizeFramePending = true;
+                (window.requestAnimationFrame || function(fn) { setTimeout(fn, 16); })(function() {
+                    resizeFramePending = false;
+                    app.resizeUi();
+                });
+            });
         
             log.info("App initialized.");
         
