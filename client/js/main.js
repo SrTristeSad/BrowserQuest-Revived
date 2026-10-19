@@ -1,5 +1,5 @@
 
-define(['jquery', 'app'], function($, App) {
+define(['jquery', 'app', 'controls'], function($, App, Controls) {
     var app, game;
 
     var initApp = function() {
@@ -185,6 +185,7 @@ define(['jquery', 'app'], function($, App) {
 
     		game = new Game(app);
     		game.setup('#bubbles', canvas, background, foreground, input);
+            game.controls = new Controls(game);
     		game.setStorage(app.storage);
     		app.setGame(game);
     		

@@ -700,6 +700,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
             if(this.started) {
                 this.updateCursorLogic();
                 this.updater.update();
+                if(this.controls) { this.controls.update(); }
                 this.renderer.renderFrame();
             }
 
@@ -1932,6 +1933,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
          * Processes game logic when the user triggers a click/touch event during the game.
          */
         click: function() {
+            if(this.controls) { this.controls.reset(); }
             var pos = this.getMouseGridPosition(),
                 entity;
             
