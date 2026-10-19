@@ -202,7 +202,8 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
             setInterval(updateWorldLight, 5000);
     		game.setStorage(app.storage);
     		app.setGame(game);
-    		
+            app.initEquipmentPanel();
+
     		if(app.isDesktop && app.supportsWorkers) {
     		    game.loadMap();
     		}
