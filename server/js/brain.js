@@ -448,16 +448,17 @@ Brain.prototype.tryMove = function(x, y) {
 Brain.prototype.findNearest = function(type, radius) {
     var nearest = null,
         nearestDistance = radius + 1,
-        entity = this.entity;
+        entity = this.entity,
+        safeMap = this.world.map;
 
     this.world.forEachEntity(function(candidate) {
         var d;
         if(!candidate || candidate.id === entity.id || candidate.type !== type || candidate.isDead) {
             return;
         }
-        if(type === 'player' && entity.type === 'mob' && this.map &&
-            this.map.isProtectedSpawnTile &&
-            this.map.isProtectedSpawnTile(candidate.x, candidate.y)) {
+        if(type === 'player' && entity.type === 'mob' && safeMap &&
+            safeMap.isProtectedSpawnTile &&
+            safeMap.isProtectedSpawnTile(candidate.x, candidate.y)) {
             return;
         }
         d = distance(entity, candidate);
