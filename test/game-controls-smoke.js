@@ -149,6 +149,10 @@ game.isZoning=()=>false;
 player.isDead=true;
 assert.equal(keydown('KeyD').prevented,false);
 player.isDead=false;
+document.querySelector=()=>({className:'active'});
+assert.equal(keydown('KeyD').prevented,false,
+    'movement must be blocked while tutorial or achievements overlay is open');
+document.querySelector=()=>null;
 
 // Touch joystick has a dead zone, pointer capture and native event isolation.
 const base=controls.joystick;
