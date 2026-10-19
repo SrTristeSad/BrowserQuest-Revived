@@ -1424,7 +1424,8 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                         isHurt;
                 
                     if(player && !player.isDead && !player.invincible) {
-                        isHurt = points <= player.hitPoints;
+                        // Equal HP updates and regen syncs are not attacks.
+                        isHurt = points < player.hitPoints;
                         diff = points - player.hitPoints;
                         player.hitPoints = points;
 

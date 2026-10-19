@@ -7,6 +7,7 @@ var cls = require("./lib/class"),
     Formulas = require("./formulas"),
     check = require("./format").check,
     MissionService = require("../story/mission-service"),
+    CombatGuard = require("./combat-guard"),
     Types = require("../../shared/js/gametypes");
 
 module.exports = Player = Character.extend({
@@ -26,6 +27,7 @@ module.exports = Player = Character.extend({
         this.isDead = false;
         // Ignore damage during initial spawn and immediately after a revive.
         this.spawnProtectedUntil = 0;
+        this.lastMobHurtTimes = Object.create(null);
         this.haters = {};
         this.lastCheckpoint = null;
         this.formatChecker = new FormatChecker();
@@ -139,18 +141,19 @@ module.exports = Player = Character.extend({
                 }
             }
             else if(action === Types.Messages.HURT) {
-                var mob = self.server.getEntityById(message[1]);
-                if(mob && !self.isDead && self.hitPoints > 0 &&
-                    Date.now() >= self.spawnProtectedUntil &&
-                    !(self.server.map && self.server.map.isProtectedSpawnTile &&
-                      self.server.map.isProtectedSpawnTile(self.x, self.y))) {
-                    self.hitPoints -= Formulas.dmg(mob.weaponLevel, self.armorLevel);
-                    self.server.handleHurtEntity(self);
-                    
-                    if(self.hitPoints <= 0) {
-                        self.isDead = true;
-                        if(self.firepotionTimeout) {
-                            clearTimeout(self.firepotionTimeout);
+                var mob = self.server.getEntityById(message[1]),
+                    hitTime = Date.now();
+                if(CombatGuard.canMobDamagePlayer(self.server, mob, self, hitTime)) {
+                    var damage = Formulas.dmg(mob.weaponLevel, self.armorLevel);
+                    if(Number.isFinite(damage) && damage > 0) {
+                        self.lastMobHurtTimes[mob.id] = hitTime;
+                        self.hitPoints = Math.max(0, self.hitPoints - damage);
+                        self.server.handleHurtEntity(self);
+                        if(self.hitPoints <= 0) {
+                            self.isDead = true;
+                            if(self.firepotionTimeout) {
+                                clearTimeout(self.firepotionTimeout);
+                            }
                         }
                     }
                 }
@@ -338,6 +341,7 @@ module.exports = Player = Character.extend({
         this.updateHitPoints();
         this.updatePosition();
         this.spawnProtectedUntil = Date.now() + 10000;
+        this.lastMobHurtTimes = Object.create(null);
         
         this.server.addPlayer(this);
         this.server.enter_callback(this);

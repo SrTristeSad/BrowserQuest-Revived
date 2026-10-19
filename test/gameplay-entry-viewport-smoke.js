@@ -101,8 +101,10 @@ assert.equal(game.mouse.y, 224, 'pointer y must be mapped into canvas pixels');
 const serverSource = read('server/js/player.js'),
       mainSource = read('client/js/main.js'),
       html = read('client/index.html');
-assert(serverSource.includes('Date.now() >= self.spawnProtectedUntil'),
-    'server must enforce spawn grace period while processing HURT');
+assert(serverSource.includes('CombatGuard.canMobDamagePlayer(self.server, mob, self, hitTime)'),
+    'HURT must be gated by authoritative server combat validation');
+assert(read('server/js/combat-guard.js').includes('timestamp < (player.spawnProtectedUntil || 0)'),
+    'server must still enforce the initial 10-second spawn grace period');
 assert(serverSource.includes('this.spawnProtectedUntil = Date.now() + 10000'),
     'new players and revives must receive a grace period');
 assert(mainSource.includes("readyState !== WebSocket.OPEN"),
