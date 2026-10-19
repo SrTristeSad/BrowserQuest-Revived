@@ -5,6 +5,7 @@ var fs = require('fs'),
     crypto = require('crypto'),
     ReferenceValidator = require('./story-reference-validator'),
     WorldPublishTransaction = require('./world-publish-transaction'),
+    SpawnSafety = require('../js/spawn-safety'),
     Types = require('../../shared/js/gametypes');
 
 var NPC_KINDS = ['guard','king','octocat','villagegirl','villager','priest','scientist','agent','rick','nyan','sorcerer','beachnpc','forestnpc','desertnpc','lavanpc','coder'];
@@ -153,6 +154,7 @@ function buildEditableMap(base, baseClient, maxTileId) {
         chestAreas: clone(base.chestAreas || []),
         staticChests: clone(base.staticChests || []),
         roamingAreas: clone(base.roamingAreas || []),
+        spawnSafeRadius: SpawnSafety.normalizeRadius(base.spawnSafeRadius),
         entities: entities
     };
 }
@@ -177,6 +179,11 @@ function validateRawWorld(raw, width, height, maxTileId, migrateLegacy) {
     } else {
         if(map.width != null && map.width !== width || map.height != null && map.height !== height) {
             add('map.width/height','Dimensões incompatíveis com o mapa original.');
+        }
+        if(map.spawnSafeRadius != null &&
+            (!Number.isInteger(map.spawnSafeRadius) || map.spawnSafeRadius < 0 ||
+             map.spawnSafeRadius > SpawnSafety.MAX_RADIUS)) {
+            add('map.spawnSafeRadius', 'Distância segura deve estar entre 0 e 20 tiles.');
         }
         if(map.data != null) {
             if(!Array.isArray(map.data)) {
@@ -515,6 +522,7 @@ WorldStore.prototype.normalize = function(state) {
         tiles={url:this.tileCatalog.url,tileSize:this.tileCatalog.tileSize,width:this.tileCatalog.width,height:this.tileCatalog.height,columns:this.tileCatalog.columns,rows:this.tileCatalog.rows,count:this.tileCatalog.count,measured:this.tileCatalog.measured};
     npcs.forEach(function(p){npcIds[p.id]=true;}); mobs.forEach(function(p){mobIds[p.id]=true;});
     map.width=baseWidth; map.height=baseHeight;
+    map.spawnSafeRadius=SpawnSafety.normalizeRadius(map.spawnSafeRadius);
     map.data=normalizeTileData(map.data,baseTileData,baseWidth*baseHeight,this.tileCatalog.maxTileId);
     map.collisions=Array.isArray(map.collisions)?Array.from(new Set(map.collisions.map(Number).filter(function(v){return Number.isInteger(v)&&v>=0&&v<baseWidth*baseHeight;}))).sort(function(a,b){return a-b;}):[];
     map.blocking=normalizeLayerIndices(map.blocking,this.baseClient && this.baseClient.blocking,baseWidth*baseHeight,0);
@@ -551,7 +559,7 @@ WorldStore.prototype.buildServerMap = function(state) {
         else if(entity.profileType==='mob'&&mobById[entity.profileId]){kind=mobById[entity.profileId].baseKind;metadata={type:'mob',profileId:entity.profileId};}
         staticEntities[String(tile)]=kind; if(metadata){editorMetadata[String(tile)]=metadata;}
     });
-    published.width=map.width; published.height=map.height; published.collisions=map.collisions.slice(); published.doors=clone(map.doors);
+    published.width=map.width; published.height=map.height; published.spawnSafeRadius=map.spawnSafeRadius; published.collisions=map.collisions.slice(); published.doors=clone(map.doors);
     published.checkpoints=clone(map.checkpoints); published.chestAreas=clone(map.chestAreas); published.staticChests=clone(map.staticChests); published.staticEntities=staticEntities;
     published.roamingAreas=map.roamingAreas.map(function(area){var out=clone(area);if(out.profileId&&mobById[out.profileId]){out.type=mobById[out.profileId].baseKind;}return out;});
     published.editorMetadata=editorMetadata; published.editorProfiles={npcs:npcById,mobs:mobById}; published.editorRevision=state.revision;
