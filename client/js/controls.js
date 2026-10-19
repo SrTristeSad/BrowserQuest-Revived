@@ -37,7 +37,7 @@ define(function() {
                 player = game.player;
             // Tutorial and achievement dialogs should not move the character.
             if(document.querySelector &&
-                document.querySelector('#instructions.active, #achievements.active')) {
+                document.querySelector('#chatbox.active, #instructions.active, #achievements.active')) {
                 return false;
             }
             return Boolean(game.started && game.ready && game.playerId !== undefined &&
@@ -95,7 +95,7 @@ define(function() {
                     dx = event.clientX - (rect.left + halfW),
                     dy = event.clientY - (rect.top + halfH),
                     distance = Math.sqrt(dx * dx + dy * dy),
-                    radius = Math.max(1, Math.min(halfW, halfH) - 23),
+                    radius = Math.max(1, Math.min(halfW, halfH) * .54),
                     ratio = distance ? Math.min(1, radius / distance) : 0;
                 thumb.style.transform = 'translate(' + Math.round(dx * ratio) +
                     'px, ' + Math.round(dy * ratio) + 'px)';
@@ -112,6 +112,7 @@ define(function() {
                 if(self.pointerId !== null || !self.canMove()) { return; }
                 if(event.pointerType === 'mouse') { return; }
                 self.pointerId = event.pointerId;
+                base.classList.add('is-active');
                 self.pressed.length = 0;
                 if(self.game.player.isMoving()) { self.game.player.stop(); }
                 if(base.setPointerCapture) { base.setPointerCapture(event.pointerId); }
@@ -136,6 +137,14 @@ define(function() {
             base.addEventListener('lostpointercapture', function(event) {
                 if(self.pointerId === event.pointerId) { self.releaseJoystick(); }
             });
+            // Mobile Safari and embedded browsers can deliver touchstart on
+            // the overlay even when their synthetic click is sent later.
+            base.addEventListener('touchstart', function(event) {
+                event.stopPropagation();
+            }, {passive: true});
+            base.addEventListener('touchend', function(event) {
+                event.stopPropagation();
+            }, {passive: true});
             // Synthetic click events must never reach BrowserQuest click-to-move.
             base.addEventListener('click', function(event) {
                 event.preventDefault();
@@ -146,6 +155,7 @@ define(function() {
         releaseJoystick: function() {
             this.pointerId = null;
             this.touchDirection = null;
+            if(this.joystick) { this.joystick.classList.remove('is-active'); }
             if(this.thumb) { this.thumb.style.transform = 'translate(0px, 0px)'; }
         },
 

@@ -1,37 +1,56 @@
-/* Optional touch input overlay; outside the CSS-scaled classic game viewport. */
+/* Mobile controls sit in screen space, outside the scaled BrowserQuest Canvas.
+ * Keep the stage and centered gameplay clear; joystick is lower-left only. */
 #bq-joystick {
     display: none;
     position: fixed;
-    left: max(20px, env(safe-area-inset-left));
-    bottom: max(20px, env(safe-area-inset-bottom));
-    width: 116px;
-    height: 116px;
-    border: 3px solid rgba(244, 211, 135, .8);
+    left: max(12px, env(safe-area-inset-left));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: clamp(78px, 24vh, 108px);
+    height: clamp(78px, 24vh, 108px);
+    border: 2px solid rgba(244, 211, 135, .78);
     border-radius: 50%;
     background: rgba(23, 18, 32, .62);
-    box-shadow: inset 0 0 0 2px rgba(0,0,0,.32), 0 3px 12px rgba(0,0,0,.3);
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,.25), 0 3px 9px rgba(0,0,0,.24);
+    opacity: .48;
     z-index: 50;
     box-sizing: border-box;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
+    transition: opacity .12s ease-out;
+}
+#bq-joystick.is-active {
+    opacity: .94;
 }
 #bq-joystick .bq-joystick-thumb {
-    width: 50px;
-    height: 50px;
+    width: 44%;
+    height: 44%;
     position: absolute;
-    top: calc(50% - 25px);
-    left: calc(50% - 25px);
+    top: 28%;
+    left: 28%;
     background: rgba(232, 182, 110, .9);
-    border: 3px solid rgba(255, 234, 181, .9);
+    border: 2px solid rgba(255, 234, 181, .9);
     border-radius: 50%;
     box-sizing: border-box;
     pointer-events: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    box-shadow: 0 2px 5px rgba(0,0,0,.3);
 }
+/* A landscape touch screen has a physical pointer; on a desktop the original
+ * clickable game viewport remains unobstructed. Portrait is unsupported by
+ * the existing BrowserQuest mobile layout and never shows a stray joystick. */
 @media (pointer: coarse) and (orientation: landscape) {
     body.game.started:not(.death) #bq-joystick {
         display: block;
     }
+}
+/* Do not leave an active overlay above the chat box or tutorial. */
+body.game.started:has(#chatbox.active) #bq-joystick,
+body.game.started:has(#instructions.active) #bq-joystick,
+body.game.started:has(#achievements.active) #bq-joystick {
+    opacity: 0;
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    #bq-joystick { transition: none; }
 }
