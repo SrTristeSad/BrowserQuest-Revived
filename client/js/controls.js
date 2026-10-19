@@ -35,6 +35,11 @@ define(function() {
         canMove: function() {
             var game = this.game,
                 player = game.player;
+            // Tutorial and achievement dialogs should not move the character.
+            if(document.querySelector &&
+                document.querySelector('#instructions.active, #achievements.active')) {
+                return false;
+            }
             return Boolean(game.started && game.ready && game.playerId !== undefined &&
                 game.map && game.pathfinder && player && !player.isDead &&
                 !game.isZoning() && !game.isZoningTile(player.nextGridX, player.nextGridY));
