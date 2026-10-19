@@ -37,8 +37,11 @@ async function main() {
  ]) {
   const page=await browser.newPage({viewport:{width:config.width,height:config.height},isMobile:config.mobile,hasTouch:config.mobile});
   page.on('pageerror',e=>errors.push(config.name+': '+e.message));
+  console.log('Opening viewport:',config.name);
   await page.goto(url);
+  await page.waitForFunction(()=>document.getElementById('foreground').width>300); 
   await page.locator('#nameinput').fill('View'+config.name);
+  await page.waitForSelector('#createcharacter .play:not(.disabled)');
   await page.locator('#createcharacter .play div').click();
   await page.waitForSelector('body.game.started',{timeout:30000});
   // First-entry tutorial deliberately pauses controls.
