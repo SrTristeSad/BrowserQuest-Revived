@@ -51,7 +51,19 @@ async function main() {
   await page.locator('#nameinput').fill('View'+config.name);
   await page.waitForSelector('#createcharacter .play:not(.disabled)');
   await page.locator('#createcharacter .play div').click();
-  await page.waitForSelector('body.game.started',{timeout:30000});
+  try {
+   await page.waitForSelector('body.game.started',{timeout:30000});
+  } catch(error) {
+   const state=await page.evaluate(()=>({
+    body:document.body.className,
+    error:document.querySelector('#container')?.className,
+    name:document.querySelector('#nameinput')?.value,
+    play:document.querySelector('#createcharacter .play')?.className,
+    visible:document.querySelector('#createcharacter')?.className
+   }));
+   console.error('Game startup diagnostic:', JSON.stringify({state,errors}));
+   throw error;
+  }
   // First-entry tutorial deliberately pauses controls.
   await page.evaluate(()=>document.getElementById('instructions').classList.remove('active'));
   await page.waitForFunction(()=>/^Vida: [1-9]/.test(document.getElementById('healthbar').title));
