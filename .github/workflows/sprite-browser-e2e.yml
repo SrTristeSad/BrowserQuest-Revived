@@ -44,6 +44,14 @@ jobs:
           set -euo pipefail
           node --check test/sprite-chromium-visual-e2e.js
           npm run test:sprites:browser
+      - name: Verify mobile joystick and touch interactions in real Chromium
+        shell: bash
+        env:
+          SPRITE_SCREENSHOT_DIR: ${{ runner.temp }}/sprite-screenshots
+        run: |
+          set -euo pipefail
+          node --check test/mobile-controls-chromium-e2e.js
+          node test/mobile-controls-chromium-e2e.js
       - name: Preserve desktop/mobile browser evidence
         if: always()
         uses: actions/upload-artifact@v4
