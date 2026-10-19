@@ -1,6 +1,8 @@
 var Area = require('./area'),
     _ = require('underscore'),
     Types = require("../../shared/js/gametypes"),
+    Entity = require('./entity'),
+    Character = require('./character'),
     Mob = require('./mob'),
     DayCycle = require('../../shared/js/daycycle'),
     MobBudget = require('./mob-budget');
