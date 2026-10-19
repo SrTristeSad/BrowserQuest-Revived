@@ -128,6 +128,8 @@ async function main(){
             await page.screenshot({path:path.join(out,'mobile-controls-'+config.name+'.png')});
             await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
             await page.waitForFunction(()=>window.__controls.pointerId===null);
+            assert.equal(await page.evaluate(()=>window.__controls.currentDirection()),null,
+                'releasing a touch must clear joystick direction');
             assert.equal(await page.evaluate(()=>window.__events.taps),0,
                 'moving joystick must not accidentally tap a mob/item on world');
             await page.touchscreen.tap(config.viewport.width/2,config.viewport.height/2);
