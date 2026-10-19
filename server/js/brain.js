@@ -305,7 +305,9 @@ Brain.prototype.tickMob = function() {
 
     if(entity.hasTarget && entity.hasTarget()) {
         var target = this.world.getEntityById(entity.target);
-        if(target) {
+        if(target && !target.isDead &&
+            !(target.type === 'player' && this.world.map && this.world.map.isProtectedSpawnTile &&
+              this.world.map.isProtectedSpawnTile(target.x, target.y))) {
             this.memory.lastSeenPlayerId = target.id;
             this.memory.lastSeenAt = Date.now();
             this.memory.lastDecision = 'chase';
@@ -425,7 +427,9 @@ Brain.prototype.stepAwayFrom = function(target) {
 };
 
 Brain.prototype.tryMove = function(x, y) {
-    if(!this.world.isValidPosition(x, y)) {
+    if(!this.world.isValidPosition(x, y) ||
+        (this.entity.type === 'mob' && this.world.map && this.world.map.isProtectedSpawnTile &&
+         this.world.map.isProtectedSpawnTile(x, y))) {
         return false;
     }
     if(typeof this.world.isPositionOccupied === 'function' && this.world.isPositionOccupied(x, y, this.entity.id)) {
@@ -449,6 +453,11 @@ Brain.prototype.findNearest = function(type, radius) {
     this.world.forEachEntity(function(candidate) {
         var d;
         if(!candidate || candidate.id === entity.id || candidate.type !== type || candidate.isDead) {
+            return;
+        }
+        if(type === 'player' && entity.type === 'mob' && this.map &&
+            this.map.isProtectedSpawnTile &&
+            this.map.isProtectedSpawnTile(candidate.x, candidate.y)) {
             return;
         }
         d = distance(entity, candidate);
