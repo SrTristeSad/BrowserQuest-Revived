@@ -19,13 +19,13 @@ const fixture = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#192a2a;color:white;font:14px sans-serif}
-#playfield{position:fixed;inset:0;width:100%;height:100%;touch-action:manipulation;background:#233b32}
+#foreground{position:fixed;inset:0;width:100%;height:100%;touch-action:manipulation;background:#233b32}
 #mock-hud{position:fixed;left:0;top:0;right:0;height:34px;background:#1b1a15;pointer-events:none}
 #mock-enemy{position:fixed;left:calc(50% - 12px);top:calc(50% - 12px);width:24px;height:24px;background:#aa4242;pointer-events:none}
 #chatbox{position:fixed;bottom:0;left:40%;width:20%;height:30px;pointer-events:none}
 </style></head>
 <body class="game started">
-<div id="playfield"></div><div id="mock-enemy"></div><div id="mock-hud"></div>
+<div id="foreground"></div><div id="mock-enemy"></div><div id="mock-hud"></div>
 <div id="chatbox"></div><div id="instructions"></div><div id="achievements"></div>
 <script>
 window.__events={taps:0,moves:[],errors:[]};
@@ -46,9 +46,8 @@ makePlayerGoTo(x,y){window.__events.moves.push([x,y]);player.moving=true;}};
 window.__game=game;
 window.__controls=new Controls(game);
 setInterval(()=>window.__controls.update(),30);
-const field=document.getElementById('playfield');
-field.addEventListener('touchstart',()=>window.__events.taps++,{passive:true});
-field.addEventListener('click',()=>window.__events.taps++);
+const field=document.getElementById('foreground');
+window.__controls.attachTouchSurface(field,()=>window.__events.taps++);
 window.__ready=true;
 </script></body></html>`;
 
@@ -89,64 +88,69 @@ async function main(){
         page.on('pageerror',error=>errors.push(config.name+': '+error.message));
         await page.goto(url);
         await page.waitForFunction(()=>window.__ready);
-        const layout=await page.evaluate(()=>{
-            const element=document.getElementById('bq-joystick'),
-                r=element.getBoundingClientRect(),style=getComputedStyle(element);
-            return {display:style.display,opacity:Number(style.opacity),
-                left:r.left,right:r.right,top:r.top,bottom:r.bottom,
-                width:r.width,height:r.height,
-                centerObscured:document.elementFromPoint(innerWidth/2,innerHeight/2)?.id==='bq-joystick',
+        const idle=await page.evaluate(()=>{
+            const el=document.getElementById('bq-joystick'),
+                style=getComputedStyle(el);
+            return {display:style.display,pointerEvents:style.pointerEvents,
                 coarse:matchMedia('(pointer: coarse)').matches};
         });
-        assert.equal(layout.display==='block',config.visible,config.name+' visibility');
+        assert.equal(idle.display,'none',config.name+
+            ' joystick must not obscure the map while no finger is touching');
+        assert.equal(idle.pointerEvents,'none');
         if(config.visible){
-            assert(layout.coarse,'touchscreen must identify as coarse input');
-            assert(layout.width>=78 && layout.width<=108,'joystick bounds for touch');
-            assert(layout.height>=78 && layout.height<=108,'joystick height for touch');
-            assert(layout.right<=Math.max(122,config.viewport.width*.3),
-                'joystick must remain near left edge and leave central scene visible');
-            assert(layout.bottom<=config.viewport.height,
-                'bottom joystick must remain inside safe viewport');
-            assert.equal(layout.centerObscured,false,'enemy at game center stays unobscured');
-            assert(layout.opacity<0.6,'idle joystick should be translucent');
-            const center={x:layout.left+layout.width/2,y:layout.top+layout.height/2};
+            assert(idle.coarse,'touchscreen must identify as coarse input');
+            const contact={x:Math.round(config.viewport.width*.24),
+                y:Math.round(config.viewport.height*.64)};
             const cdp=await page.context().newCDPSession(page);
             await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',
-                touchPoints:[{id:1,x:center.x,y:center.y}]});
+                touchPoints:[{id:1,x:contact.x,y:contact.y}]});
             await page.waitForFunction(()=>window.__controls.pointerId!==null);
-            assert.equal(await page.locator('#bq-joystick').evaluate(
-                el=>el.classList.contains('is-active')),true);
-            const activeOpacity=await page.locator('#bq-joystick').evaluate(
-                el=>Number(getComputedStyle(el).opacity));
-            // Transition might not have reached its final value at the first frame.
-            await page.waitForFunction(()=>Number(getComputedStyle(
-                document.querySelector('#bq-joystick')).opacity)>.85);
+            const active=await page.evaluate(()=>{
+                const el=document.getElementById('bq-joystick'),
+                    r=el.getBoundingClientRect(),
+                    style=getComputedStyle(el);
+                return {display:style.display,width:r.width,height:r.height,
+                    x:r.left+r.width/2,y:r.top+r.height/2,
+                    hitTarget:document.elementFromPoint(innerWidth/2,innerHeight/2)?.id,
+                    pointerEvents:style.pointerEvents};
+            });
+            assert.equal(active.display,'block',config.name+' joystick visible on touch');
+            assert(active.width>=78&&active.width<=112,'responsive joystick size');
+            assert(active.height>=78&&active.height<=112,'responsive joystick height');
+            assert(Math.abs(active.x-contact.x)<=1,
+                'floating base must be centered exactly where the finger started');
+            assert(Math.abs(active.y-contact.y)<=1,
+                'floating joystick y must match finger contact');
+            assert.equal(active.pointerEvents,'none',
+                'overlay must never intercept taps intended for enemies');
+            assert.notEqual(active.hitTarget,'bq-joystick');
             await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',
-                touchPoints:[{id:1,x:center.x+30,y:center.y}]});
+                touchPoints:[{id:1,x:contact.x+40,y:contact.y}]});
             await page.waitForFunction(()=>window.__events.moves.length>0);
             assert.deepEqual(await page.evaluate(()=>window.__events.moves[0]),[6,5]);
             await page.screenshot({path:path.join(out,'mobile-controls-'+config.name+'.png')});
             await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
             await page.waitForFunction(()=>window.__controls.pointerId===null);
-            assert.equal(await page.evaluate(()=>window.__controls.currentDirection()),null,
-                'releasing a touch must clear joystick direction');
+            assert.equal(await page.evaluate(()=>window.__controls.currentDirection()),null);
             assert.equal(await page.evaluate(()=>window.__events.taps),0,
-                'moving joystick must not accidentally tap a mob/item on world');
+                'dragging cannot accidentally fire a world tap');
+            assert.equal(await page.locator('#bq-joystick').evaluate(
+                el=>getComputedStyle(el).display),'none',
+                'floating base must disappear on finger release');
             await page.touchscreen.tap(config.viewport.width/2,config.viewport.height/2);
-            await page.waitForFunction(()=>window.__events.taps>0);
+            await page.waitForFunction(()=>window.__events.taps===1);
             await page.locator('#chatbox').evaluate(el=>el.classList.add('active'));
             assert.equal(await page.evaluate(()=>window.__controls.canMove()),false,
-                'chat overlay must disable directional movement, not only hide joystick');
-            await page.waitForFunction(()=>getComputedStyle(document.querySelector('#bq-joystick')).opacity==='0');
+                'chat overlay must block movement');
             assert.equal(await page.locator('#bq-joystick').evaluate(
-                el=>getComputedStyle(el).pointerEvents),'none',
+                el=>getComputedStyle(el).display),'none',
                 'chat must not be covered by joystick overlay');
             await cdp.detach();
         }
         await page.close();
     }
     assert.deepEqual(errors,[]);
-    console.log('Chromium mobile controls passed: 2 landscape sizes, portrait/desktop visibility, hit testing, joystick gesture, native touch and chat.');
+    console.log('Chromium mobile controls passed: 2 landscape sizes, portrait/desktop idle hiding, touch-relative floating joystick, interaction taps and chat.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
     if(browser)await browser.close();
