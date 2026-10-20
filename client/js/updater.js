@@ -8,7 +8,8 @@ define(['character', 'timer'], function(Character, Timer) {
         },
 
         update: function() {
-            this.updateZoning();
+            // Legacy page transitions are no longer used by the continuous
+            // follow camera. Avoid advancing the old zoning controller.
             this.updateCharacters();
             this.updatePlayerAggro();
             this.updateTransitions();
