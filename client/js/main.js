@@ -334,7 +334,12 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
                     }
                 }
                 
-                if(game.started && !game.renderer.mobile && game.player && !hasClosedParchment) {
+                var sourceEvent = event.originalEvent || {};
+                var isTouchClick = sourceEvent.pointerType === 'touch' ||
+                    (sourceEvent.sourceCapabilities &&
+                     sourceEvent.sourceCapabilities.firesTouchEvents);
+                if(game.started && !game.renderer.mobile && game.player &&
+                   !hasClosedParchment && !isTouchClick) {
                     game.click();
                 }
             });
