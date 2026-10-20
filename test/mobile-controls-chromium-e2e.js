@@ -28,7 +28,7 @@ body{margin:0;background:#192a2a;color:white;font:14px sans-serif}
 <div id="foreground"></div><div id="mock-enemy"></div><div id="mock-hud"></div>
 <div id="chatbox"></div><div id="instructions"></div><div id="achievements"></div>
 <script>
-window.__events={taps:0,moves:[],errors:[]};
+window.__events={taps:0,attacks:0,moves:[],errors:[]};
 window.Class={extend(methods){function Klass(){if(this.init)this.init.apply(this,arguments)}
 Klass.prototype=methods;return Klass;}};
 window.define=factory=>window.Controls=factory();
@@ -42,7 +42,8 @@ map:{isOutOfBounds(x,y){return x<0||y<0||x>=50||y>=50},
 isColliding(){return false},isPlateau(){return false}},
 isZoning(){return false},isZoningTile(){return false},
 findPath(p,x,y){return [[p.gridX,p.gridY],[x,y]]},
-makePlayerGoTo(x,y){window.__events.moves.push([x,y]);player.moving=true;}};
+makePlayerGoTo(x,y){window.__events.moves.push([x,y]);player.moving=true;},
+attackNearestAdjacentMob(){window.__events.attacks++;return true;}};
 window.__game=game;
 window.__controls=new Controls(game);
 setInterval(()=>window.__controls.update(),30);
@@ -97,6 +98,8 @@ async function main(){
         assert.equal(idle.display,'none',config.name+
             ' joystick must not obscure the map while no finger is touching');
         assert.equal(idle.pointerEvents,'none');
+        assert.equal(await page.locator('#bq-attack-button').isVisible(),config.visible,
+            config.name+' mobile attack visibility');
         if(config.visible){
             assert(idle.coarse,'touchscreen must identify as coarse input');
             const contact={x:Math.round(config.viewport.width*.24),
@@ -128,6 +131,11 @@ async function main(){
                 touchPoints:[{id:1,x:contact.x+40,y:contact.y}]});
             await page.waitForFunction(()=>window.__events.moves.length>0);
             assert.deepEqual(await page.evaluate(()=>window.__events.moves[0]),[6,5]);
+            await page.locator('#bq-attack-button').click();
+            assert.equal(await page.evaluate(()=>window.__events.attacks),1,
+                'attack button works while the movement finger is held');
+            assert.equal(await page.evaluate(()=>window.__controls.currentDirection()[0]),1,
+                'attack button never steals the movement finger');
             await page.screenshot({path:path.join(out,'mobile-controls-'+config.name+'.png')});
             await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
             await page.waitForFunction(()=>window.__controls.pointerId===null);
@@ -145,12 +153,14 @@ async function main(){
             assert.equal(await page.locator('#bq-joystick').evaluate(
                 el=>getComputedStyle(el).display),'none',
                 'chat must not be covered by joystick overlay');
+            assert.equal(await page.locator('#bq-attack-button').isVisible(),false,
+                'attack button must hide while chat is active');
             await cdp.detach();
         }
         await page.close();
     }
     assert.deepEqual(errors,[]);
-    console.log('Chromium mobile controls passed: 2 landscape sizes, portrait/desktop idle hiding, touch-relative floating joystick, interaction taps and chat.');
+    console.log('Chromium mobile controls passed: 2 landscape sizes, portrait/desktop idle hiding, touch-relative floating joystick, simultaneous ATQ, short interactions and chat.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
     if(browser)await browser.close();
