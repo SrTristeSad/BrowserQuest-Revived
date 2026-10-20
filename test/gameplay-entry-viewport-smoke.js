@@ -101,8 +101,9 @@ assert.equal(game.mouse.y, 224, 'pointer y must be mapped into canvas pixels');
 const serverSource = read('server/js/player.js'),
       mainSource = read('client/js/main.js'),
       html = read('client/index.html');
-assert(serverSource.includes('CombatGuard.canMobDamagePlayer(self.server, mob, self, hitTime)'),
-    'HURT must be gated by authoritative server combat validation');
+assert(serverSource.includes('CombatGuard.canMobDamagePlayer(this.server, mob, this, now)') &&
+       serverSource.includes('self.applyMobHit(mob, Date.now())'),
+    'legacy HURT and autonomous attacks must share the same server-side guard');
 assert(read('server/js/combat-guard.js').includes('timestamp < (player.spawnProtectedUntil || 0)'),
     'server must still enforce the initial 10-second spawn grace period');
 assert(serverSource.includes('this.spawnProtectedUntil = Date.now() + 10000'),

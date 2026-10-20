@@ -86,6 +86,32 @@ assert(source.includes('this.updater.updateCameraFollow();') &&
 assert(!onStep.includes('self.enqueueZoningFrom('),
     'original page transitions must never fire while a player walks');
 
+// Render-boundary assertion catches stale renderer/game camera references
+// even if the earlier update loop used the wrong Camera object.
+let Renderer;
+vm.runInNewContext(read('client/js/renderer.js'), {
+ Class,window:{innerWidth:1440,innerHeight:900},
+ define(deps,factory){Renderer=factory();}
+},{filename:'renderer.js'});
+const realRenderer=Object.create(Renderer.prototype);
+realRenderer.camera=c;realRenderer.game=game;
+// The smoke harness has no DOM canvas; count static repaint requests.
+realRenderer.renderStaticCanvases=function(){redraw.static++;};
+let painted=0;
+realRenderer.renderFrameDesktop=function(){painted++;};
+realRenderer.renderFrameMobile=function(){painted++;};
+game.camera={x:12345,y:54321};
+player.x=600;player.y=700;
+realRenderer.renderFrame();
+assert.equal(game.camera,c,'real Canvas renderer and game must share one camera');
+assert.equal(player.x+8-c.x,c.gridW*8,
+ 'real frame must position player at center X after stale camera reset');
+assert.equal(player.y+8-c.y,c.gridH*8,
+ 'real frame must position player at center Y after stale camera reset');
+assert.equal(painted,1,'rendered frame must still draw after re-centering');
+assert.equal(realRenderer.syncCameraToPlayer(),false,
+ 'camera already centered should never redraw cached background');
+
 const rendererSource=read('client/js/renderer.js');
 assert(rendererSource.includes("this.drawBackground(this.background, '#263c30')"),
     'overscrolling off-map must paint a consistent backdrop instead of black strips');
@@ -94,6 +120,10 @@ assert(rendererSource.includes('if(this.cameraMoved)') &&
     rendererSource.includes('this.cameraMoved = false'),
     'mobile entities redraw when camera scrolls');
 
+const html=read('client/index.html');
+assert(html.includes('BROWSERQUEST_CLIENT_BUILD') &&
+       html.includes('urlArgs:'),
+       'the browser must download the same new AMD client version instead of stale cached scripts');
 const hud=read('client/css/viewport.css');
 assert(hud.includes("url('../img/2/barsheet.png')") &&
        hud.includes('background-position: 0 -96px') &&

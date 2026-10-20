@@ -232,7 +232,15 @@ module.exports = World = cls.Class.extend({
 
         var regenCount = this.ups * 2;
         var updateCount = 0;
+        var combatCount = 0;
         setInterval(function() {
+            // Scan active, linked mobs four times per second. Each strike
+            // is independently checked and rate-limited in Player.applyMobHit.
+            // This works even when the browser fails to send a HURT packet.
+            if(++combatCount >= Math.max(1, Math.floor(self.ups / 4))) {
+                combatCount = 0;
+                self.updateMobCombat(Date.now());
+            }
             self.processGroups();
             self.processQueues();
             
@@ -538,6 +546,22 @@ module.exports = World = cls.Class.extend({
         for(var id in this.mobs) {
             callback(this.mobs[id]);
         }
+    },
+    
+    updateMobCombat: function(now) {
+        var self = this;
+        if(!this.players || !this.mobs) { return 0; }
+        var strikes = 0;
+        this.forEachMob(function(mob) {
+            if(!mob || !mob.hasTarget || !mob.hasTarget()) { return; }
+            var player = self.players[mob.target];
+            if(!player || typeof player.applyMobHit !== 'function') { return; }
+            // applyMobHit validates the real active mob object, live
+            // target link, one-tile range, protected checkpoints/grace
+            // and last hit time. No trusting client movement or HP values.
+            if(player.applyMobHit(mob, now)) { strikes += 1; }
+        });
+        return strikes;
     },
     
     forEachCharacter: function(callback) {
