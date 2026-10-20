@@ -318,7 +318,9 @@ Brain.prototype.tickMob = function() {
                typeof this.world.handleMobHate === 'function') {
                 this.world.handleMobHate(entity.id, target.id, 1);
             }
-            if(distance(entity, target) > 1) {
+            // Client melee animation is cardinal; a diagonal target
+            // is not attackable until the mob reaches a side tile.
+            if(Math.abs(entity.x - target.x) + Math.abs(entity.y - target.y) !== 1) {
                 this.stepToward(target.x, target.y);
             }
             return;
@@ -341,7 +343,7 @@ Brain.prototype.tickMob = function() {
                !player.attackers || player.attackers[entity.id] !== entity) {
                 this.world.handleMobHate(entity.id, player.id, 1);
             }
-            if(distance(entity, player) > 1) {
+            if(Math.abs(entity.x - player.x) + Math.abs(entity.y - player.y) !== 1) {
                 this.stepToward(player.x, player.y);
             }
             return;

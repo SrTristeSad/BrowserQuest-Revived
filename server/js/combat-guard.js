@@ -3,7 +3,7 @@
 /** Server-side validation for legacy client HURT messages. A client-provided
  * mob ID by itself is NOT evidence of a valid enemy attack.
  */
-const MAX_HIT_DISTANCE = 1; // Only an actually adjacent mob can hit a player.
+const MAX_HIT_DISTANCE = 1; // Orthogonal melee only; match client animation and navigation.
 const MIN_HIT_INTERVAL_MS = 800; // Match legacy mob attack animation; server ticks cannot stack.
 
 function canMobDamagePlayer(world, mob, player, now) {
@@ -22,7 +22,7 @@ function canMobDamagePlayer(world, mob, player, now) {
     }
     // A valid server attack must reach the player in real map coordinates.
     if(![mob.x,mob.y,player.x,player.y].every(Number.isFinite) ||
-       Math.max(Math.abs(mob.x - player.x), Math.abs(mob.y - player.y)) > MAX_HIT_DISTANCE) {
+       Math.abs(mob.x - player.x) + Math.abs(mob.y - player.y) !== MAX_HIT_DISTANCE) {
         return false;
     }
     if(world.map && world.map.isProtectedSpawnTile &&

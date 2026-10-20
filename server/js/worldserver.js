@@ -94,7 +94,7 @@ module.exports = World = cls.Class.extend({
                             player.removeAttacker(mob);
                         } else if(self.brains[mob.id] &&
                                   typeof self.brains[mob.id].stepToward === 'function' &&
-                                  Math.max(Math.abs(mob.x - target.x), Math.abs(mob.y - target.y)) > 1) {
+                                  Math.abs(mob.x - target.x) + Math.abs(mob.y - target.y) !== 1) {
                             // Advance one map tile and emit the existing MOVE
                             // protocol. Never teleport a hidden attacker next
                             // to a player without updating the client.
@@ -163,7 +163,7 @@ module.exports = World = cls.Class.extend({
                 brain = self.brains[attacker.id];
             if(target && attacker.type === "mob" && brain &&
                typeof brain.stepToward === 'function' &&
-               Math.max(Math.abs(attacker.x - target.x), Math.abs(attacker.y - target.y)) > 1) {
+               Math.abs(attacker.x - target.x) + Math.abs(attacker.y - target.y) !== 1) {
                 // The AI moves normally and broadcasts MOVE, instead of
                 // silently jumping from another position into melee range.
                 brain.stepToward(target.x, target.y);
