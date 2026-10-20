@@ -95,6 +95,8 @@ vm.runInNewContext(read('client/js/renderer.js'), {
 },{filename:'renderer.js'});
 const realRenderer=Object.create(Renderer.prototype);
 realRenderer.camera=c;realRenderer.game=game;
+// The smoke harness has no DOM canvas; count static repaint requests.
+realRenderer.renderStaticCanvases=function(){redraw.static++;};
 let painted=0;
 realRenderer.renderFrameDesktop=function(){painted++;};
 realRenderer.renderFrameMobile=function(){painted++;};
