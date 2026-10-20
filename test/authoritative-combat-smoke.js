@@ -30,6 +30,7 @@ const fails = (change,restore,message) => {
 fails(()=>{mob.x=70},()=>{mob.x=16},'reject hits from mobs outside player view');
 fails(()=>{mob.y=18},()=>{mob.y=15},'reject out of range diagonal attack');
 fails(()=>{mob.x=17},()=>{mob.x=16},'reject two tiles away even when rendered in the same camera zone');
+fails(()=>{mob.y=16},()=>{mob.y=15},'reject diagonal mob strike: client animation only swings cardinally');
 fails(()=>{mob.isDead=true},()=>{mob.isDead=false},'reject dead mobs');
 fails(()=>{mob.hitPoints=0},()=>{mob.hitPoints=40},'reject mobs already killed');
 fails(()=>{mob.target='someone-else'},()=>{mob.target=player.id},'wrong attack target');
@@ -64,6 +65,8 @@ assert(!worldSrc.includes('self.moveEntity(mob, pos.x, pos.y)'),
     'silent teleports of mobs after player movement are forbidden');
 assert(!worldSrc.includes('self.moveEntity(attacker, pos.x, pos.y)'),
     'silent teleports when target acquired are forbidden');
+assert(server.includes('self.target === mob.id'),
+    'player HIT must require the explicitly selected target');
 assert(game.includes('isHurt = points < player.hitPoints;'),
     'equal health sync must not be treated as incoming damage');
 
