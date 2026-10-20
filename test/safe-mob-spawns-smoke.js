@@ -119,6 +119,12 @@ try{
    versionsDir:path.join(dir,'versions')});
  let state=store.load();
  assert.equal(state.map.spawnSafeRadius,2);
+ // World Editor must publish the same blocking layer to BOTH server and
+ // client: no more walking through obstacles on one side of the protocol.
+ state.map.blocking=[17];
+ store.save(state);
+ assert.deepEqual(store.buildServerMap(store.load()).blocking,[17]);
+ assert.deepEqual(store.buildClientMap(store.load()).blocking,[17]);
  state.map.spawnSafeRadius=14;
  store.save(state);
  assert.equal(store.load().map.spawnSafeRadius,14);
