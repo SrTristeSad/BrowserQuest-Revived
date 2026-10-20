@@ -1628,10 +1628,12 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 c = this.renderer.camera,
                 s = this.renderer.scale,
                 ts = this.renderer.tilesize,
-                offsetX = mx % (ts * s),
-                offsetY = my % (ts * s),
-                x = ((mx - offsetX) / (ts * s)) + c.gridX,
-                y = ((my - offsetY) / (ts * s)) + c.gridY;
+                // Camera position is interpolated in *pixels*, not a
+                // multiple of the tile size. Adding only camera.gridX/Y
+                // selected the wrong tile whenever the camera scrolled
+                // part-way through a cell (including mob attacks/loot).
+                x = Math.floor((mx / s + c.x) / ts),
+                y = Math.floor((my / s + c.y) / ts);
         
                 return { x: x, y: y };
         },
@@ -2021,8 +2023,6 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
 	        
     	    if(this.started
     	    && this.player
-    	    && !this.isZoning()
-    	    && !this.isZoningTile(this.player.nextGridX, this.player.nextGridY)
     	    && !this.player.isDead
     	    && !this.hoveringCollidingTile
     	    && !this.hoveringPlateauTile) {
