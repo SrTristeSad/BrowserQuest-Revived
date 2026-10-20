@@ -48,3 +48,39 @@ body.game.started:has(#instructions.active) #bq-joystick,
 body.game.started:has(#achievements.active) #bq-joystick {
     display: none;
 }
+
+/* Independent thumb attack: movement stays on the floating joystick, while
+ * this one action is intentionally fixed and never obscures the center.
+ * It sits above the classic BrowserQuest HUD and outside the scaled Canvas. */
+#bq-attack-button {
+    display: none;
+    position: fixed;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(60px, calc(env(safe-area-inset-bottom) + 50px));
+    width: clamp(62px, 17vw, 76px);
+    height: clamp(62px, 17vw, 76px);
+    z-index: 135;
+    box-sizing: border-box;
+    border: 3px solid #dfc280;
+    border-radius: 50%;
+    color: #fff5ce;
+    background: radial-gradient(circle at 35% 30%, #a24838, #512322 72%);
+    box-shadow: 0 4px 0 #291b20, 0 6px 14px rgba(0,0,0,.44);
+    font: 700 17px/1 sans-serif;
+    text-shadow: 1px 2px #3b1412;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+#bq-attack-button:active { transform: translateY(2px); box-shadow: 0 2px 0 #291b20; }
+#bq-attack-button:focus-visible { outline: 3px solid #fff5ce; outline-offset: 3px; }
+@media (pointer: coarse), (any-pointer: coarse) {
+    body.game.started:not(.death) #bq-attack-button { display: block; }
+}
+body.game.started:has(#chatbox.active) #bq-attack-button,
+body.game.started:has(#instructions.active) #bq-attack-button,
+body.game.started:has(#achievements.active) #bq-attack-button {
+    display: none;
+}
