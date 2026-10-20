@@ -80,9 +80,9 @@ const onStep=source.slice(source.indexOf('self.player.onStep(function() {'),
     source.indexOf('self.player.onStopPathing(',source.indexOf('self.player.onStep(function() {')));
 assert(onStep.includes('self.client.sendMove(self.player.gridX, self.player.gridY)'),
     'server still receives every completed movement tile');
-assert(source.includes('this.updater.updateCameraFollow();') &&
-       source.indexOf('this.updater.updateCameraFollow();') < source.indexOf('this.renderer.renderFrame();'),
-       'camera must synchronize immediately before every painted frame');
+assert(source.includes('this.renderer.renderFrame();') &&
+       !source.includes('this.updater.updateCameraFollow();'),
+       'Game loop delegates camera centering once to the renderer at paint time');
 assert(!onStep.includes('self.enqueueZoningFrom('),
     'original page transitions must never fire while a player walks');
 

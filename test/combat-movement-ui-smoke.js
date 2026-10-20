@@ -69,7 +69,7 @@ assert.equal(player.attackers[mob.id],mob,'player attacker link must survive mov
 assert.equal(mob.target,player,'combat target must survive movement');
 assert.equal(combatSteps,1,'server mob movement must bypass Character.go to preserve combat');
 Game.prototype.onCharacterUpdate.call(game,mob);
-assert.equal(hurts,1,'visible adjacent chasing mob can report a real HURT');
+assert.equal(hurts,0,'mob hit animations never control authoritative damage');
 assert.equal(mob.hitCount,1,'mob hit animation continues while attacking');
 mob.attacking=false;
 game.moveRemoteCharacter(mob,7,6);

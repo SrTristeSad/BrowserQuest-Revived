@@ -724,7 +724,8 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                 if(this.controls) { this.controls.update(); }
                 // Follow at the last possible moment before painting the
                 // frame, including movement started by held controls.
-                this.updater.updateCameraFollow();
+                // Renderer.renderFrame synchronizes the one canonical
+                // camera immediately before painting. No duplicate follow.
                 this.renderer.renderFrame();
             }
 
@@ -2165,20 +2166,8 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
                             this.audioManager.playSound("hit"+Math.floor(Math.random()*2+1));
                         }
                         
-                        // The client must never report a hit from a monster
-                        // it cannot actually render or that is no longer in
-                        // melee range. The server independently validates it.
-                        if(character instanceof Mob && character.hasTarget() &&
-                           character.target.id === this.playerId &&
-                           this.player && !this.player.invincible &&
-                           this.getEntityById(character.id) === character &&
-                           character.sprite && character.sprite.isLoaded &&
-                           !character.sprite.loadFailed && character.isVisible() &&
-                           this.camera && this.camera.isVisible(character) &&
-                           Math.max(Math.abs(character.gridX - this.player.gridX),
-                                    Math.abs(character.gridY - this.player.gridY)) <= 1) {
-                            this.client.sendHurt(character);
-                        }
+                        // Mob strikes are authoritative server events.
+                        // Render the attack, but never send client HURT.
                     }
                 } else {
                     if(character.hasTarget()

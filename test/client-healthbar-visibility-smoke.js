@@ -48,13 +48,10 @@ healthUpdate(0,0);
 assert.equal(elements['#hitpoints'].css.width,'0px','avoid NaN when HP is not initialized');
 assert.equal(elements['#healthbar'].attributes.title,'Vida: aguardando servidor');
 const client=read('client/js/game.js');
-assert(client.includes('this.camera.isVisible(character)') &&
-  client.includes('character.sprite.isLoaded') && client.includes('character.isVisible()'),
-  'client may only claim HURT from a fully-rendered on-camera enemy');
-assert(client.includes('this.getEntityById(character.id) === character'),
-  'client must reject stale enemy instances');
-assert(client.includes('Math.abs(character.gridX - this.player.gridX)'),
-  'client must reject non-adjacent enemy claims');
+assert(!client.includes('this.client.sendHurt(character)'),
+  'mob attack animation must never control real HP: world server owns all damage');
+assert(client.includes('isHurt = points < player.hitPoints;'),
+  'HP decreases received from the server must still animate as real damage');
 assert(!client.includes('self.player.die();\n                    }\n                    if(self.disconnect_callback)'),
   'disconnected sessions must not be classified as deaths');
 console.log('HP bar: initial hidden layout, real current/max HP, damage and no-connection-death checks passed.');

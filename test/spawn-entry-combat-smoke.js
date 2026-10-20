@@ -44,6 +44,10 @@ player.weaponLevel=1;mob.armorLevel=1;
 listen([Types.Messages.HIT,2]);assert.equal(hits,0,'remote HIT rejected');
 mob.x=11;
 listen([Types.Messages.HIT,2]);assert.equal(hits,1,'adjacent hit accepted');
+const beforeHurt=player.hitPoints;
+listen([Types.Messages.HURT,2]);
+assert.equal(player.hitPoints,beforeHurt,
+ 'untrusted legacy HURT packets may never directly inflict mob damage');
 listen([Types.Messages.HIT,2]);assert.equal(hits,1,'duplicate hit rate limited');
 player.isDead=true;player.nextHitAt=0;
 listen([Types.Messages.HIT,2]);assert.equal(hits,1,'dead player cannot attack');
