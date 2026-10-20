@@ -6,6 +6,7 @@ define(function() {
     // avoid restarting the walk animation every single tile; the existing
     // Game.onStep still reports each completed step to the server.
     var RUN_TILES = 4;
+    var TOUCH_DEAD_ZONE = 16;
     var DIRECTION = {
         KeyW: [0, -1], ArrowUp: [0, -1],
         KeyS: [0, 1], ArrowDown: [0, 1],
@@ -32,6 +33,11 @@ define(function() {
             this.pointerId = null;
             this.joystick = null;
             this.thumb = null;
+            this.touchSurface = null;
+            this.touchOrigin = null;
+            this.touchDragged = false;
+            this.actionPointerId = null;
+            this.actionOrigin = null;
             this.autoRunActive = false;
             this.installKeyboard();
             this.installJoystick();
@@ -87,81 +93,139 @@ define(function() {
         },
 
         installJoystick: function() {
+            // This is a visual indicator only, not a fixed interactive pad.
+            // The actual gesture belongs to the gameplay canvas, so taps on
+            // enemies, NPCs and items still use the existing click action.
             if(!document.createElement || !document.body) { return; }
-            var self = this,
-                base = document.createElement('div'),
+            var base = document.createElement('div'),
                 thumb = document.createElement('div');
             base.id = 'bq-joystick';
-            base.setAttribute('role', 'group');
-            base.setAttribute('aria-label', 'Movement joystick');
+            base.setAttribute('aria-hidden', 'true');
             thumb.className = 'bq-joystick-thumb';
-            thumb.setAttribute('aria-hidden', 'true');
             base.appendChild(thumb);
             document.body.appendChild(base);
             this.joystick = base;
             this.thumb = thumb;
+        },
+
+        attachTouchSurface: function(surface, onTap) {
+            if(!surface || !surface.addEventListener) { return; }
+            var self = this;
+            this.touchSurface = surface;
+
+            function consume(event) {
+                if(event.preventDefault) { event.preventDefault(); }
+                if(event.stopPropagation) { event.stopPropagation(); }
+            }
 
             function updateFromPointer(event) {
-                var rect = base.getBoundingClientRect(),
-                    halfW = rect.width / 2, halfH = rect.height / 2,
-                    dx = event.clientX - (rect.left + halfW),
-                    dy = event.clientY - (rect.top + halfH),
+                var origin = self.touchOrigin;
+                if(!origin) { return; }
+                var dx = event.clientX - origin.x,
+                    dy = event.clientY - origin.y,
                     distance = Math.sqrt(dx * dx + dy * dy),
-                    radius = Math.max(1, Math.min(halfW, halfH) * .54),
+                    rect = self.joystick.getBoundingClientRect(),
+                    radius = Math.max(1, Math.min(rect.width, rect.height) * .28),
                     ratio = distance ? Math.min(1, radius / distance) : 0;
-                thumb.style.transform = 'translate(' + Math.round(dx * ratio) +
-                    'px, ' + Math.round(dy * ratio) + 'px)';
-                // Touch jitter should not send a one-tile movement.
-                if(distance < 13) {
+                self.thumb.style.transform = 'translate(' +
+                    Math.round(dx * ratio) + 'px, ' +
+                    Math.round(dy * ratio) + 'px)';
+                if(distance < TOUCH_DEAD_ZONE) {
                     self.touchDirection = null;
-                } else if(Math.abs(dx) >= Math.abs(dy)) {
+                    return;
+                }
+                self.touchDragged = true;
+                if(Math.abs(dx) >= Math.abs(dy)) {
                     self.touchDirection = dx > 0 ? [1, 0] : [-1, 0];
                 } else {
                     self.touchDirection = dy > 0 ? [0, 1] : [0, -1];
                 }
             }
-            base.addEventListener('pointerdown', function(event) {
-                if(self.pointerId !== null || !self.canMove()) { return; }
-                if(event.pointerType === 'mouse') { return; }
+
+            function capture(event) {
+                if(surface.setPointerCapture) {
+                    surface.setPointerCapture(event.pointerId);
+                }
+            }
+
+            surface.addEventListener('pointerdown', function(event) {
+                if(event.pointerType !== 'touch') { return; }
+                if(self.pointerId !== null) {
+                    // Keep the first finger moving. A second finger may tap
+                    // a mob or item without relocating the movement origin.
+                    if(self.actionPointerId === null && self.canMove()) {
+                        self.actionPointerId = event.pointerId;
+                        self.actionOrigin = {x:event.clientX, y:event.clientY};
+                        capture(event);
+                    }
+                    consume(event);
+                    return;
+                }
+                if(!self.canMove()) { return; }
                 self.pointerId = event.pointerId;
-                base.classList.add('is-active');
+                self.touchOrigin = {x:event.clientX, y:event.clientY};
+                self.touchDragged = false;
+                self.touchDirection = null;
+                self.autoRunActive = false;
                 self.pressed.length = 0;
                 if(self.game.player.isMoving()) { self.game.player.stop(); }
-                if(base.setPointerCapture) { base.setPointerCapture(event.pointerId); }
-                updateFromPointer(event);
-                event.preventDefault();
-                event.stopPropagation();
+                self.joystick.style.left = event.clientX + 'px';
+                self.joystick.style.top = event.clientY + 'px';
+                self.joystick.classList.add('is-active');
+                self.thumb.style.transform = 'translate(0px, 0px)';
+                capture(event);
+                consume(event);
             });
-            base.addEventListener('pointermove', function(event) {
-                if(self.pointerId !== event.pointerId) { return; }
-                updateFromPointer(event);
-                event.preventDefault();
-                event.stopPropagation();
+
+            surface.addEventListener('pointermove', function(event) {
+                if(event.pointerId === self.pointerId) {
+                    updateFromPointer(event);
+                    consume(event);
+                } else if(event.pointerId === self.actionPointerId) {
+                    consume(event);
+                }
             });
-            function release(event) {
-                if(self.pointerId !== event.pointerId) { return; }
-                self.releaseJoystick();
-                event.preventDefault();
-                event.stopPropagation();
+
+            function release(event, cancelled) {
+                if(event.pointerId === self.pointerId) {
+                    var wasTap = !cancelled && !self.touchDragged;
+                    self.releaseJoystick();
+                    consume(event);
+                    if(wasTap && self.canMove() && typeof onTap === 'function') {
+                        onTap(event);
+                    }
+                } else if(event.pointerId === self.actionPointerId) {
+                    var origin = self.actionOrigin,
+                        dx = origin ? event.clientX - origin.x : Infinity,
+                        dy = origin ? event.clientY - origin.y : Infinity,
+                        wasActionTap = !cancelled &&
+                            dx * dx + dy * dy < TOUCH_DEAD_ZONE * TOUCH_DEAD_ZONE;
+                    self.actionPointerId = null;
+                    self.actionOrigin = null;
+                    consume(event);
+                    if(wasActionTap && self.canMove() && typeof onTap === 'function') {
+                        onTap(event);
+                    }
+                }
             }
-            base.addEventListener('pointerup', release);
-            base.addEventListener('pointercancel', release);
-            base.addEventListener('lostpointercapture', function(event) {
-                if(self.pointerId === event.pointerId) { self.releaseJoystick(); }
+            surface.addEventListener('pointerup', function(event) { release(event, false); });
+            surface.addEventListener('pointercancel', function(event) { release(event, true); });
+            surface.addEventListener('lostpointercapture', function(event) {
+                if(event.pointerId === self.pointerId ||
+                   event.pointerId === self.actionPointerId) {
+                    release(event, true);
+                }
             });
-            // Mobile Safari and embedded browsers can deliver touchstart on
-            // the overlay even when their synthetic click is sent later.
-            base.addEventListener('touchstart', function(event) {
-                event.stopPropagation();
-            }, {passive: true});
-            base.addEventListener('touchend', function(event) {
-                event.stopPropagation();
-            }, {passive: true});
-            // Synthetic click events must never reach BrowserQuest click-to-move.
-            base.addEventListener('click', function(event) {
-                event.preventDefault();
-                event.stopPropagation();
-            });
+
+            // A captured pointer normally keeps events on the Canvas. Support
+            // older touch browsers without setPointerCapture too.
+            if(!surface.setPointerCapture && window.addEventListener) {
+                window.addEventListener('pointermove', function(event) {
+                    if(event.pointerId === self.pointerId) { updateFromPointer(event); }
+                });
+                window.addEventListener('pointerup', function(event) { release(event, false); });
+                window.addEventListener('pointercancel', function(event) { release(event, true); });
+            }
         },
 
         releaseJoystick: function() {
@@ -171,6 +235,11 @@ define(function() {
             }
             this.pointerId = null;
             this.touchDirection = null;
+            this.touchOrigin = null;
+            this.touchDragged = false;
+            this.actionPointerId = null;
+            this.actionOrigin = null;
+            this.autoRunActive = false;
             if(this.joystick) { this.joystick.classList.remove('is-active'); }
             if(this.thumb) { this.thumb.style.transform = 'translate(0px, 0px)'; }
         },
