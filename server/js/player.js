@@ -141,8 +141,11 @@ module.exports = Player = Character.extend({
             }
             else if(action === Types.Messages.HIT) {
                 var mob = self.server.getEntityById(message[1]);
+                // Only the selected live target can receive a player
+                // strike, and melee must be cardinal (not diagonal).
                 if(mob && mob.type === 'mob' && !mob.isDead && mob.hitPoints > 0 &&
-                   Math.max(Math.abs(mob.x - self.x), Math.abs(mob.y - self.y)) <= 1 &&
+                   !self.isDead && self.hitPoints > 0 && self.target === mob.id &&
+                   Math.abs(mob.x - self.x) + Math.abs(mob.y - self.y) === 1 &&
                    Date.now() >= (self.nextHitAt || 0)) {
                     self.nextHitAt = Date.now() + 450;
                     var dmg = Formulas.dmg(self.weaponLevel, mob.armorLevel);
