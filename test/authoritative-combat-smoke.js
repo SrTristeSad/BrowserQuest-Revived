@@ -45,16 +45,19 @@ assert.equal(valid(),false,'no duplicate damage packets within attack rate');
 player.lastMobHurtTimes[mob.id] = now - CombatGuard.MIN_HIT_INTERVAL_MS;
 assert.equal(valid(),true,'legitimate later hit is permitted');
 assert.equal(CombatGuard.MAX_HIT_DISTANCE,1);
+assert.equal(CombatGuard.MIN_HIT_INTERVAL_MS,800);
 
 const server = read('server/js/player.js'),
     worldSrc = read('server/js/worldserver.js'),
     game = read('client/js/game.js');
-assert(server.includes('CombatGuard.canMobDamagePlayer(self.server, mob, self, hitTime)'),
-    'socket handler must actually apply the server-side combat guard');
-assert(server.includes('self.lastMobHurtTimes[mob.id] = hitTime'),
-    'successful hit must be rate-limited');
+assert(server.includes('CombatGuard.canMobDamagePlayer(this.server, mob, this, now)'),
+    'shared server-owned mob damage method must apply the combat guard');
+assert(server.includes('this.lastMobHurtTimes[mob.id] = now'),
+    'successful hit must be rate-limited across client and server strikes');
 assert(!server.includes('self.hitPoints -= Formulas.dmg(mob.weaponLevel, self.armorLevel)'),
     'legacy client-trusted damage branch must be removed');
+assert(worldSrc.includes('self.updateMobCombat(Date.now())'),
+    'the server tick must autonomously apply mob damage without client HURT');
 assert(worldSrc.includes('self.brains[mob.id].stepToward(target.x, target.y)'),
     'mob chase after player movement must use visible AI movement');
 assert(!worldSrc.includes('self.moveEntity(mob, pos.x, pos.y)'),
