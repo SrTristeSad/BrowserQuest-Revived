@@ -4,7 +4,7 @@
  * mob ID by itself is NOT evidence of a valid enemy attack.
  */
 const MAX_HIT_DISTANCE = 1; // Only an actually adjacent mob can hit a player.
-const MIN_HIT_INTERVAL_MS = 450;
+const MIN_HIT_INTERVAL_MS = 800; // Match legacy mob attack animation; server ticks cannot stack.
 
 function canMobDamagePlayer(world, mob, player, now) {
     if(!world || !world.mobs || !world.entities || !mob || !player ||
