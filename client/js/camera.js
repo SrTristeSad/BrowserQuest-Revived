@@ -57,10 +57,24 @@ define(function() {
             this.setPosition(position.x, position.y);
         },
 
+        // Include the partially visible row and column during smooth
+        // pixel scrolling. Using gridX + gridW omits the right/bottom edge
+        // whenever the camera is not aligned to a tile.
+        getVisibleTileBounds: function(extra) {
+            var ts = (this.renderer && this.renderer.tilesize) || 16,
+                margin = Math.max(0, Math.floor(Number(extra) || 0));
+            return {
+                left: Math.floor(this.x / ts) - margin,
+                top: Math.floor(this.y / ts) - margin,
+                right: Math.ceil((this.x + this.gridW * ts) / ts) + margin,
+                bottom: Math.ceil((this.y + this.gridH * ts) / ts) + margin
+            };
+        },
+
         forEachVisiblePosition: function(callback, extra) {
-            var extra = extra || 0;
-            for(var y=this.gridY-extra, maxY=this.gridY+this.gridH+(extra*2); y < maxY; y += 1) {
-                for(var x=this.gridX-extra, maxX=this.gridX+this.gridW+(extra*2); x < maxX; x += 1) {
+            var bounds = this.getVisibleTileBounds(extra);
+            for(var y = bounds.top; y < bounds.bottom; y += 1) {
+                for(var x = bounds.left; x < bounds.right; x += 1) {
                     callback(x, y);
                 }
             }
@@ -71,12 +85,9 @@ define(function() {
         },
         
         isVisiblePosition: function(x, y) {
-            if(y >= this.gridY && y < this.gridY + this.gridH
-            && x >= this.gridX && x < this.gridX + this.gridW) {
-                return true;
-            } else {
-                return false;
-            }
+            var bounds = this.getVisibleTileBounds(0);
+            return x >= bounds.left && x < bounds.right &&
+                   y >= bounds.top && y < bounds.bottom;
         },
     
         focusEntity: function(entity) {
