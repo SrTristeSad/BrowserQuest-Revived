@@ -321,7 +321,8 @@ game.findPath=originalFind;
 const main=read('client/js/main.js'),gameSrc=read('client/js/game.js');
 assert(main.includes("new Controls(game)"));
 assert(gameSrc.includes("this.controls.update()"));
-assert(gameSrc.includes("this.controls.reset()"));
+assert(!gameSrc.includes("this.controls.reset()"),
+ 'non-movement interactions must not reset a held joystick/WASD gesture');
 assert(read('client/index.html').includes('css/controls.css'));
 const css=read('client/css/controls.css');
 assert(css.includes('(pointer: coarse)'));
@@ -331,7 +332,11 @@ assert(css.includes('#bq-joystick.is-active'));
 assert(css.includes('#bq-attack-button'));
 assert(css.includes('bottom: max(60px'), 'attack stays above the original HUD');
 assert(!css.includes('bottom: max(12px'), 'joystick is no longer anchored at a fixed corner');
-assert(main.includes('game.controls.attachTouchSurface(foreground, handleCanvasTap)'));
-assert(main.includes('game.click()'), 'short canvas taps keep real world interactions');
+assert(main.includes('game.controls.attachTouchSurface(foreground, interactAtPointer)'));
+assert(main.includes('game.attackAtCursor()'));
+assert(!main.includes('hasClosedParchment && !isTouchClick'));
+assert(read('client/index.html').includes('20261020-direct-actions'));
+
+assert(main.includes('game.click()'), 'left click still enables nearby NPC/chest interactions without movement');
 
 console.log('WASD, arrows, collision, floating joystick, separate ATQ button, interactions and multitouch smoke passed.');
