@@ -155,11 +155,10 @@ module.exports = Player = Character.extend({
                 }
             }
             else if(action === Types.Messages.HURT) {
-                // Legacy clients can still report their hit animation. It
-                // uses the same server-side cooldown as autonomous mob hits,
-                // so a client packet can never double-count a server strike.
-                var mob = self.server.getEntityById(message[1]);
-                self.applyMobHit(mob, Date.now());
+                // Obsolete client animation event. Only the world server's
+                // combat timer may inflict damage; forged packets cannot
+                // accelerate a legitimate fight or trigger a premature hit.
+                return;
             }
             else if(action === Types.Messages.LOOT) {
                 var item = self.server.getEntityById(message[1]);
