@@ -36,6 +36,8 @@ function(Camera, Item, Character, Player, Timer) {
             this.highTileCount = 0;
         
             this.fixFlickeringTimer = new Timer(100);
+            if(typeof window !== 'undefined' && window.BrowserQuestSunnysideArt)
+                window.BrowserQuestSunnysideArt.attach(this);
         },
     
         getWidth: function() {
@@ -382,7 +384,12 @@ function(Camera, Item, Character, Player, Timer) {
 
         drawTile: function(ctx, tileid, tileset, setW, gridW, cellid) {
             var s = this.upscaledRendering ? 1 : this.scale;
-            if(tileid !== -1) { // -1 when tile is empty in Tiled. Don't attempt to draw it.
+            if(tileid !== -1) { // -1 when tile is empty in Tiled.
+                // Override only known terrain IDs; preserve legacy map layers,
+                // sprites, high tiles, boundaries and collisions.
+                if(typeof window !== 'undefined' && window.BrowserQuestSunnysideArt &&
+                   window.BrowserQuestSunnysideArt.paintTile(this, ctx, tileid, cellid, gridW))
+                    return;
                 this.drawScaledImage(ctx,
                                      tileset,
                                      getX(tileid + 1, (setW / s)) * this.tilesize,
@@ -655,6 +662,12 @@ function(Camera, Item, Character, Player, Timer) {
                     self.drawTile(self.background, id, self.tileset, tilesetwidth, m.width, index);
                 }
             }, 1);
+            if(typeof window !== 'undefined' && window.BrowserQuestSunnysideArt &&
+               typeof this.game.forEachVisibleTileIndex === 'function') {
+                this.game.forEachVisibleTileIndex(function(index) {
+                    window.BrowserQuestSunnysideArt.decorate(self, self.background, index, m.width);
+                }, 1);
+            }
         },
 
         createTerrainChunk: function(m, chunkX, chunkY, tilesetwidth) {
@@ -697,6 +710,10 @@ function(Camera, Item, Character, Player, Timer) {
                     } else {
                         paint(cell, index);
                     }
+                    // Decorations use the same world-grid coordinates as the
+                    // server-side furniture collision cells.
+                    if(typeof window !== 'undefined' && window.BrowserQuestSunnysideArt)
+                        window.BrowserQuestSunnysideArt.decorate(self, ctx, index, m.width);
                 }
             }
             ctx.restore();

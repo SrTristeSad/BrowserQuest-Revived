@@ -18,6 +18,16 @@ define(['jquery', 'area'], function($, Area) {
         
         _checkReady: function() {
             if(this.tilesetsLoaded && this.mapLoaded) {
+                // Add only the furniture's real solid footprint. Both desktop
+                // worker grids and mobile JSON grids pass through here.
+                var layout = typeof window !== 'undefined' &&
+                    window.BrowserQuestSunnysideLayout;
+                if(layout && layout.active(this) && this.grid) {
+                    layout.solidCells(this).forEach(function(cell) {
+                        if(this.grid[cell.y] && this.grid[cell.y][cell.x] !== undefined)
+                            this.grid[cell.y][cell.x] = 1;
+                    }, this);
+                }
                 this.isLoaded = true;
                 if(this.ready_func) {
         	    	this.ready_func();

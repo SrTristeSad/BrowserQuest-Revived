@@ -2,6 +2,7 @@ var cls = require('./lib/class'),
     fs = require('fs'),
     _ = require('underscore'),
     Utils = require('./utils'),
+    SunnysideLayout = require('../../client/maps/sunnyside-layout'),
     Checkpoint = require('./checkpoint'),
     SpawnSafety = require('./spawn-safety'),
     MobBudget = require('./mob-budget'),
@@ -117,6 +118,12 @@ module.exports = cls.Class.extend({
                     tileIndex += 1;
                 }
             }
+            // Keep furniture footprints authoritative and identical to the
+            // client's grid; only enabled for the matching existing house.
+            SunnysideLayout.solidCells(this).forEach(function(cell) {
+                if(this.grid[cell.y] && this.grid[cell.y][cell.x] !== undefined)
+                    this.grid[cell.y][cell.x] = 1;
+            }, this);
         }
     },
 
