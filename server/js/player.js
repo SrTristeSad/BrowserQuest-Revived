@@ -155,23 +155,11 @@ module.exports = Player = Character.extend({
                 }
             }
             else if(action === Types.Messages.HURT) {
-                var mob = self.server.getEntityById(message[1]),
-                    hitTime = Date.now();
-                if(CombatGuard.canMobDamagePlayer(self.server, mob, self, hitTime)) {
-                    var damage = Formulas.dmg(mob.weaponLevel, self.armorLevel);
-                    if(Number.isFinite(damage) && damage > 0) {
-                        self.lastMobHurtTimes[mob.id] = hitTime;
-                        RegenPolicy.noteDamage(self, hitTime);
-                        self.hitPoints = Math.max(0, self.hitPoints - damage);
-                        self.server.handleHurtEntity(self);
-                        if(self.hitPoints <= 0) {
-                            self.isDead = true;
-                            if(self.firepotionTimeout) {
-                                clearTimeout(self.firepotionTimeout);
-                            }
-                        }
-                    }
-                }
+                // Legacy clients can still report their hit animation. It
+                // uses the same server-side cooldown as autonomous mob hits,
+                // so a client packet can never double-count a server strike.
+                var mob = self.server.getEntityById(message[1]);
+                self.applyMobHit(mob, Date.now());
             }
             else if(action === Types.Messages.LOOT) {
                 var item = self.server.getEntityById(message[1]);
@@ -636,6 +624,26 @@ module.exports = Player = Character.extend({
         return Promise.resolve(false);
     },
     
+    // Server-owned damage path shared by periodic mob attacks and legacy
+    // client HURT. The browser's animations must not control player health.
+    applyMobHit: function(mob, now) {
+        now = Number.isFinite(now) ? now : Date.now();
+        if(!CombatGuard.canMobDamagePlayer(this.server, mob, this, now)) {
+            return false;
+        }
+        var damage = Formulas.dmg(mob.weaponLevel, this.armorLevel);
+        if(!Number.isFinite(damage) || damage <= 0) { return false; }
+        this.lastMobHurtTimes[mob.id] = now;
+        RegenPolicy.noteDamage(this, now);
+        this.hitPoints = Math.max(0, this.hitPoints - damage);
+        if(this.hitPoints <= 0) {
+            this.isDead = true;
+            if(this.firepotionTimeout) { clearTimeout(this.firepotionTimeout); }
+        }
+        this.server.handleHurtEntity(this);
+        return true;
+    },
+
     updateHitPoints: function() {
         this.resetHitPoints(Formulas.hp(this.armorLevel));
     },
