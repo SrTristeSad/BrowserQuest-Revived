@@ -1,27 +1,29 @@
-/* Mobile controls sit in screen space, outside the scaled BrowserQuest Canvas.
- * Keep the stage and centered gameplay clear; joystick is lower-left only. */
+/* Floating joystick feedback for touch users.
+ * The actual control surface is the gameplay canvas, not this overlay.
+ * No fixed pad covers part of the map between gestures. */
 #bq-joystick {
     display: none;
     position: fixed;
-    left: max(12px, env(safe-area-inset-left));
-    bottom: max(12px, env(safe-area-inset-bottom));
-    width: clamp(78px, 24vh, 108px);
-    height: clamp(78px, 24vh, 108px);
-    border: 2px solid rgba(244, 211, 135, .78);
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: clamp(78px, 22vh, 112px);
+    height: clamp(78px, 22vh, 112px);
+    border: 2px solid rgba(244, 211, 135, .82);
     border-radius: 50%;
-    background: rgba(23, 18, 32, .62);
-    box-shadow: inset 0 0 0 2px rgba(0,0,0,.25), 0 3px 9px rgba(0,0,0,.24);
-    opacity: .48;
+    background: rgba(23, 18, 32, .55);
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,.3), 0 3px 9px rgba(0,0,0,.26);
+    opacity: .88;
     z-index: 130;
     box-sizing: border-box;
+    pointer-events: none;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
-    transition: opacity .12s ease-out;
 }
-#bq-joystick.is-active {
-    opacity: .94;
+body.game.started:not(.death) #bq-joystick.is-active {
+    display: block;
 }
 #bq-joystick .bq-joystick-thumb {
     width: 44%;
@@ -29,26 +31,20 @@
     position: absolute;
     top: 28%;
     left: 28%;
-    background: rgba(232, 182, 110, .9);
-    border: 2px solid rgba(255, 234, 181, .9);
+    background: rgba(232, 182, 110, .92);
+    border: 2px solid rgba(255, 234, 181, .92);
     border-radius: 50%;
     box-sizing: border-box;
     pointer-events: none;
     box-shadow: 0 2px 5px rgba(0,0,0,.3);
 }
-/* Touch controls remain available in both screen orientations. */
-@media (pointer: coarse) {
-    body.game.started:not(.death) #bq-joystick {
-        display: block;
-    }
+/* Prevent scrolling/zoom gestures only on the actual gameplay canvas.
+ * UI dialogs, chat and menu controls retain their normal touch behavior. */
+@media (pointer: coarse), (any-pointer: coarse) {
+    body.game #foreground { touch-action: none; }
 }
-/* Do not leave an active overlay above the chat box or tutorial. */
 body.game.started:has(#chatbox.active) #bq-joystick,
 body.game.started:has(#instructions.active) #bq-joystick,
 body.game.started:has(#achievements.active) #bq-joystick {
-    opacity: 0;
-    pointer-events: none;
-}
-@media (prefers-reduced-motion: reduce) {
-    #bq-joystick { transition: none; }
+    display: none;
 }
