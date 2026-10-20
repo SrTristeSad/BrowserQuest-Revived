@@ -203,8 +203,13 @@ assert.equal(controls.actionPointerId,8);
 surface.events.pointerup(pointer(8,453,391));
 assert.deepEqual(taps,[[453,391]],'second-finger tap dispatches world interaction');
 assert.equal(controls.currentDirection()[0],1,'first finger keeps its direction');
+const stopsBeforeSteer=player.stopCalls;
+surface.events.pointermove(pointer(7,250,310));
+assert.equal(controls.currentDirection()[1],-1,'direction changes as finger steers upward');
+assert.equal(player.stopCalls,stopsBeforeSteer+1,
+    'steering interrupts an old four-tile run at the next safe tile');
 player.moving=false;
-surface.events.pointerup(pointer(7,290,350));
+surface.events.pointerup(pointer(7,250,310));
 assert.equal(controls.pointerId,null);
 assert.equal(controls.currentDirection(),null);
 assert.equal(base.classList.contains('is-active'),false);
