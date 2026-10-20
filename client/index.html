@@ -368,7 +368,14 @@ Mozilla presents an HTML5 mini-MMORPG by Little Workshop http://www.littleworksh
         
         <script src="js/lib/log.js"></script>
         <script>
-                var require = { waitSeconds: 60 };
+                // Bust cached AMD modules when the client is updated.
+                // This version is exposed so production users can confirm
+                // which JavaScript build their browser actually loaded.
+                window.BROWSERQUEST_CLIENT_BUILD = '20261019-server-melee-center';
+                var require = {
+                    waitSeconds: 60,
+                    urlArgs: 'bq_build=20261019-server-melee-center'
+                };
         </script>
         <script src="/game/sprites/catalog.js"></script>
         <script data-main="js/home" src="js/lib/require-jquery.js"></script>
