@@ -1743,7 +1743,7 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
 
         attackAtCursor: function() {
             if(!this.started || !this.player || this.player.isDead ||
-               !this.controls || !this.controls.canMove()) { return false; }
+               (this.controls && !this.controls.canMove())) { return false; }
             var pos = this.getMouseGridPosition();
             return this.attackMobInRange(this.getMobAt(pos.x, pos.y));
         },
