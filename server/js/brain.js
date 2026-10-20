@@ -311,6 +311,13 @@ Brain.prototype.tickMob = function() {
             this.memory.lastSeenPlayerId = target.id;
             this.memory.lastSeenAt = Date.now();
             this.memory.lastDecision = 'chase';
+            // An existing target without the reverse attacker link can
+            // chase forever but never pass the authoritative hit guard.
+            if(target.type === 'player' && (!target.attackers ||
+               target.attackers[entity.id] !== entity) &&
+               typeof this.world.handleMobHate === 'function') {
+                this.world.handleMobHate(entity.id, target.id, 1);
+            }
             if(distance(entity, target) > 1) {
                 this.stepToward(target.x, target.y);
             }
@@ -328,10 +335,11 @@ Brain.prototype.tickMob = function() {
             this.memory.lastSeenPlayerId = player.id;
             this.memory.lastSeenAt = Date.now();
             this.memory.lastDecision = 'acquire-target';
-            if(typeof entity.hates === 'function' && !entity.hates(player.id)) {
+            // Never set a player target directly here: target and attacker
+            // registries must be created by the same authoritative method.
+            if(!entity.hasTarget() || entity.target !== player.id ||
+               !player.attackers || player.attackers[entity.id] !== entity) {
                 this.world.handleMobHate(entity.id, player.id, 1);
-            } else if(!entity.hasTarget()) {
-                entity.setTarget(player);
             }
             if(distance(entity, player) > 1) {
                 this.stepToward(player.x, player.y);
