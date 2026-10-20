@@ -56,3 +56,38 @@ todos os subsistemas não relacionados foram auditados exaustivamente.
 - Logs reais do processo Node.js, estado de `/ready`, cache de proxy/browser e qual PID do aaPanel responde às conexões.
 - Qualidade visual do sprite no centro (centro matemático do tile vs. percepção do corpo desenhado), que deve ser avaliada por captura após atualização.
 - Combate com vários jogadores e mobs: carga, lag de rede e persistência em condições de produção.
+
+
+## Revisão complementar — consistência entre câmera, clique e alcance
+
+Após integrar a auditoria original, foram encontrados mais três pontos no
+caminho jogador → cursor → alvo → ataque:
+
+1. **Cursor com câmera em pixels fracionários.** O cliente convertia cliques
+   somando apenas `camera.gridX/gridY`, perdendo a fração do deslocamento
+   visual. Uma unidade de câmera entre duas bordas de tile era suficiente
+   para selecionar um tile diferente do que aparecia sob o cursor. Agora a
+   conversão usa `floor((mouse/scale + cameraPixels)/tileSize)` para os dois
+   eixos, inclusive quando há overscroll negativo.
+2. **Zoning legado ainda bloqueava cliques.** Apesar da câmera moderna não
+   fazer mais transição de telas, `Game.click()` continuava exigindo
+   `!isZoning()` e `!isZoningTile()`. Os dois filtros foram removidos
+   desse caminho de entrada; movimento real e colisões continuam validados.
+3. **Alcance discordante.** A animação e o `canReachTarget()` do BrowserQuest
+   consideram adjacência ortogonal, mas o guard e a IA usavam adjacência
+   Chebyshev, aceitando diagonais. O servidor agora permite **somente**
+   Manhattan=1 para mob→jogador e jogador→mob; a IA tenta alcançar
+   uma casa ortogonal em vez de parar na diagonal. O HIT de jogador também
+   verifica o alvo realmente selecionado e jogador vivo.
+
+**Invariantes testados:** cliques no tile real durante scroll parcial,
+ausência de bloqueio por zoning abandonado, HIT rejeitado sem alvo selecionado,
+sem diagonais ou após morte, perseguição da IA até tile ortogonal, zero
+dano diagonal e ataque válido preservado. Os testes existentes de combate,
+câmera, persistência e Chromium continuam obrigatórios.
+
+**Publicação:** esta revisão também não atualiza a VPS. Sincronize o
+`main` somente após o CI, reinicie o processo Node.js (a validação
+de combate mudou), recarregue os navegadores e confirme com um mob fora
+da zona segura, uma caminhada contínua e clique sobre um alvo enquanto
+a câmera está em movimento. Não substitua o mapa de produção para testar.
