@@ -31,7 +31,10 @@ module.exports = cls.Class.extend({
     initMap: function(map) {
         this.width = map.width;
         this.height = map.height;
-        this.collisions = map.collisions;
+        this.collisions = Array.isArray(map.collisions) ? map.collisions : [];
+        // Match the client/worker: blocking terrain is just as solid as
+        // explicit collision tiles. Published worlds carry both layers.
+        this.blocking = Array.isArray(map.blocking) ? map.blocking : [];
         this.mobAreas = map.roamingAreas;
         this.spawnSafeRadius = SpawnSafety.normalizeRadius(map.spawnSafeRadius);
         this.maxNearbyMobs = MobBudget.normalizeLimit(map.maxNearbyMobs);
@@ -81,7 +84,8 @@ module.exports = cls.Class.extend({
     generateCollisionGrid: function() {
         this.grid = [];
         if(this.isLoaded) {
-            var tileIndex = 0, j, i, blocked = new Set(this.collisions || []);
+            var tileIndex = 0, j, i,
+                blocked = new Set((this.collisions || []).concat(this.blocking || []));
             for(i = 0; i < this.height; i += 1) {
                 this.grid[i] = [];
                 for(j = 0; j < this.width; j += 1) {
