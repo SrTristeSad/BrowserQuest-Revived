@@ -279,22 +279,36 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
             // Preserve a name typed while the game assets were loading.
     		$('#chatbox').attr('value', '');
     		
-        	if(game.renderer.mobile || game.renderer.tablet) {
+            function handleCanvasTap(event) {
+                app.center();
+                app.setMouseCoordinates(event);
+                game.click();
+                app.hideWindows();
+            }
+            // Touch gestures originate at the finger's position anywhere on
+            // the playable canvas. A short tap still interacts with the world;
+            // dragging instead moves the player with a floating joystick.
+            if(window.PointerEvent) {
+                game.controls.attachTouchSurface(foreground, handleCanvasTap);
+            } else if(game.renderer.mobile || game.renderer.tablet) {
+                // Fallback for older mobile browsers without Pointer Events.
                 $('#foreground').bind('touchstart', function(event) {
-                    app.center();
-                    app.setMouseCoordinates(event.originalEvent.touches[0]);
-                	game.click();
-                	app.hideWindows();
+                    var touches = event.originalEvent.touches;
+                    if(!touches || !touches.length) { return; }
+                    handleCanvasTap(touches[0]);
                 });
-            } else {
+            }
+            if(!game.renderer.mobile && !game.renderer.tablet) {
                 $('#foreground').click(function(event) {
-                    app.center();
-                    app.setMouseCoordinates(event);
-                    if(game) {
-                	    game.click();
-                	}
-                	app.hideWindows();
-                    // $('#chatinput').focus();
+                    var original = event.originalEvent || {};
+                    // Avoid triggering a second click after touch Pointer Events
+                    // on hybrid touchscreen laptops.
+                    if(original.pointerType === 'touch' ||
+                       (original.sourceCapabilities &&
+                        original.sourceCapabilities.firesTouchEvents)) {
+                        return;
+                    }
+                    handleCanvasTap(event);
                 });
             }
 
@@ -320,7 +334,12 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
                     }
                 }
                 
-                if(game.started && !game.renderer.mobile && game.player && !hasClosedParchment) {
+                var sourceEvent = event.originalEvent || {};
+                var isTouchClick = sourceEvent.pointerType === 'touch' ||
+                    (sourceEvent.sourceCapabilities &&
+                     sourceEvent.sourceCapabilities.firesTouchEvents);
+                if(game.started && !game.renderer.mobile && game.player &&
+                   !hasClosedParchment && !isTouchClick) {
                     game.click();
                 }
             });

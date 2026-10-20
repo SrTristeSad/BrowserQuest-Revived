@@ -162,8 +162,12 @@ assert.equal(keydown('KeyD').prevented,false,
     'movement must be blocked while chat, tutorial or achievements is open');
 document.querySelector=()=>null;
 
-// Touch joystick has a dead zone, pointer capture and native event isolation.
+// Floating joystick lives under the finger, never in a fixed map corner.
+// Short taps preserve world actions; dragging moves without firing a tap.
 const base=controls.joystick;
+const surface=node('canvas');
+const taps=[];
+controls.attachTouchSurface(surface,e=>taps.push([e.clientX,e.clientY]));
 function pointer(id,x,y,type='touch'){
     return {pointerId:id,clientX:x,clientY:y,pointerType:type,
         prevented:false,stopped:false,
@@ -171,46 +175,92 @@ function pointer(id,x,y,type='touch'){
         stopPropagation(){this.stopped=true;}
     };
 }
-assert.equal(base.events.pointerdown(pointer(1,68,78,'mouse')),undefined);
-assert.equal(controls.pointerId,null);
-const center=pointer(7,68,78);
-base.events.pointerdown(center);
-assert.equal(base.capture,7);
+surface.events.pointerdown(pointer(1,250,350,'mouse'));
+assert.equal(controls.pointerId,null,'desktop mouse input is untouched');
+const center=pointer(7,250,350);
+surface.events.pointerdown(center);
+assert.equal(surface.capture,7,'canvas captures the active finger');
 assert.equal(center.stopped,true);
+assert.equal(center.prevented,true);
 assert.equal(base.classList.contains('is-active'),true);
+assert.equal(base.style.left,'250px');
+assert.equal(base.style.top,'350px');
 assert.equal(controls.currentDirection(),null);
-const right=pointer(7,108,78);
-base.events.pointermove(right);
+surface.events.pointermove(pointer(7,257,358));
+assert.equal(controls.currentDirection(),null,'micro movements remain in the dead zone');
+const right=pointer(7,290,350);
+surface.events.pointermove(right);
 assert.equal(right.prevented,true);
 assert.equal(controls.currentDirection()[0],1);
+assert.notEqual(controls.thumb.style.transform,'translate(0px, 0px)');
 controls.update();assert.deepEqual(moves[4],[6,5]);
+
+// A second finger can tap an enemy or item while the first keeps moving.
+const another=pointer(8,450,390);
+surface.events.pointerdown(another);
+assert.equal(controls.pointerId,7,'secondary touch never steals the joystick');
+assert.equal(controls.actionPointerId,8);
+surface.events.pointerup(pointer(8,453,391));
+assert.deepEqual(taps,[[453,391]],'second-finger tap dispatches world interaction');
+assert.equal(controls.currentDirection()[0],1,'first finger keeps its direction');
+const stopsBeforeSteer=player.stopCalls;
+surface.events.pointermove(pointer(7,250,310));
+assert.equal(controls.currentDirection()[1],-1,'direction changes as finger steers upward');
+assert.equal(player.stopCalls,stopsBeforeSteer+1,
+    'steering interrupts an old four-tile run at the next safe tile');
 player.moving=false;
-base.events.pointerup(pointer(7,108,78));
+surface.events.pointerup(pointer(7,250,310));
 assert.equal(controls.pointerId,null);
 assert.equal(controls.currentDirection(),null);
 assert.equal(base.classList.contains('is-active'),false);
 assert.equal(controls.thumb.style.transform,'translate(0px, 0px)');
-const click=event('click');
-base.events.click(click);
-assert.equal(click.stopped,true);
-const nativeTouch={stopPropagation(){this.stopped=true;}};
-base.events.touchstart(nativeTouch);
-assert.equal(nativeTouch.stopped,true);
-base.events.touchend(nativeTouch);
-assert.equal(nativeTouch.stopped,true);
+assert.equal(taps.length,1,'drag release never triggers click-to-move or attack');
 
-// Cancel and window blur prevent stuck controls.
-base.events.pointerdown(pointer(9,15,78));
-assert.equal(controls.currentDirection()[0],-1);
-base.events.pointercancel(pointer(9,15,78));
+// A brief tap triggers exactly one click action after the pointer is released.
+surface.events.pointerdown(pointer(10,130,480));
+assert.equal(base.style.left,'130px');
+assert.equal(base.style.top,'480px');
+surface.events.pointerup(pointer(10,133,482));
+assert.deepEqual(taps[1],[133,482]);
+assert.equal(base.classList.contains('is-active'),false);
+assert.equal(taps.length,2);
+
+// Touch cancellation, capture loss, app blur and tab hiding never leave
+// a character walking or a floating overlay stuck on screen.
+surface.events.pointerdown(pointer(11,225,330));
+surface.events.pointermove(pointer(11,270,330));
+surface.events.pointercancel(pointer(11,270,330));
 assert.equal(controls.currentDirection(),null);
-keydown('KeyD');
+assert.equal(taps.length,2,'cancelled drag cannot click an enemy');
+surface.events.pointerdown(pointer(12,225,330));
+surface.events.lostpointercapture(pointer(12,225,330));
+assert.equal(base.classList.contains('is-active'),false);
+assert.equal(taps.length,2);
+surface.events.pointerdown(pointer(13,225,330));
 listeners.window.blur();
 assert.equal(controls.currentDirection(),null);
+assert.equal(base.classList.contains('is-active'),false);
 keydown('KeyS');
 document.hidden=true;
 listeners.document.visibilitychange();
 assert.equal(controls.currentDirection(),null);
+document.hidden=false;
+
+// Dialogs and inactive/dead players cannot start a touch gesture.
+game.started=false;
+surface.events.pointerdown(pointer(14,250,350));
+assert.equal(controls.pointerId,null);
+game.started=true;
+player.isDead=true;
+surface.events.pointerdown(pointer(15,250,350));
+assert.equal(controls.pointerId,null);
+player.isDead=false;
+
+// Retired screen zoning should not disable WASD/joystick when the player
+// steps between camera tiles. Collision checks still occur in update().
+game.isZoningTile=()=>true;
+assert.equal(controls.canMove(),true);
+game.isZoningTile=()=>false;
 
 // Continuous keyboard movement: holding a direction should select the
 // longest straight validated segment instead of stopping/restarting every tile.
@@ -261,6 +311,13 @@ assert(main.includes("new Controls(game)"));
 assert(gameSrc.includes("this.controls.update()"));
 assert(gameSrc.includes("this.controls.reset()"));
 assert(read('client/index.html').includes('css/controls.css'));
-assert(read('client/css/controls.css').includes('(pointer: coarse)'));
+const css=read('client/css/controls.css');
+assert(css.includes('(pointer: coarse)'));
+assert(css.includes('body.game #foreground { touch-action: none; }'));
+assert(css.includes('pointer-events: none;'));
+assert(css.includes('#bq-joystick.is-active'));
+assert(!css.includes('bottom: max(12px'), 'joystick is no longer anchored at a fixed corner');
+assert(main.includes('game.controls.attachTouchSurface(foreground, handleCanvasTap)'));
+assert(main.includes('game.click()'), 'short canvas taps keep real world interactions');
 
-console.log('WASD, arrows, collision, chat focus and touch joystick smoke passed.');
+console.log('WASD, arrows, collision, floating joystick, tap interactions and multitouch smoke passed.');
