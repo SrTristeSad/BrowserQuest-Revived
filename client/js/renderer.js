@@ -913,7 +913,28 @@ function(Camera, Item, Character, Player, Timer) {
             }
         },
 
+        // Canonical render-time camera. This is deliberately independent of
+        // input and movement callbacks: regardless of a stale game.camera
+        // reference after resize, the actual canvas is rendered with the
+        // player in the center of its visible playable area.
+        syncCameraToPlayer: function() {
+            var game = this.game, camera = this.camera;
+            if(!game || !game.started || !game.player || game.player.isDead ||
+               !camera || !camera.getCenteredPosition) { return false; }
+            if(game.camera !== camera) { game.camera = camera; }
+            var centered = camera.getCenteredPosition(game.player);
+            if(camera.x === centered.x && camera.y === centered.y) { return false; }
+            if(game.updater && typeof game.updater.updateCameraView === 'function') {
+                return game.updater.updateCameraView(centered.x, centered.y);
+            }
+            camera.setPosition(centered.x, centered.y);
+            this.renderStaticCanvases();
+            if(this.mobile || this.tablet) { this.cameraMoved = true; }
+            return true;
+        },
+
         renderFrame: function() {
+            this.syncCameraToPlayer();
             if(this.mobile || this.tablet) {
                 this.renderFrameMobile();
             }
