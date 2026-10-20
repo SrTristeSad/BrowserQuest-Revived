@@ -102,8 +102,12 @@ const serverSource = read('server/js/player.js'),
       mainSource = read('client/js/main.js'),
       html = read('client/index.html');
 assert(serverSource.includes('CombatGuard.canMobDamagePlayer(this.server, mob, this, now)') &&
-       serverSource.includes('self.applyMobHit(mob, Date.now())'),
-    'legacy HURT and autonomous attacks must share the same server-side guard');
+       read('server/js/worldserver.js').includes('self.updateMobCombat(Date.now())'),
+    'mob damage must be independently checked by the server combat timer');
+const legacy = serverSource.slice(serverSource.indexOf('else if(action === Types.Messages.HURT)'),
+   serverSource.indexOf('else if(action === Types.Messages.LOOT)'));
+assert(legacy.includes('return;') && !legacy.includes('applyMobHit('),
+    'legacy browser HURT must be ignored, not trusted to cause damage');
 assert(read('server/js/combat-guard.js').includes('timestamp < (player.spawnProtectedUntil || 0)'),
     'server must still enforce the initial 10-second spawn grace period');
 assert(serverSource.includes('this.spawnProtectedUntil = Date.now() + 10000'),
