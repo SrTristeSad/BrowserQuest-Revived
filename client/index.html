@@ -30,7 +30,7 @@ Mozilla presents an HTML5 mini-MMORPG by Little Workshop http://www.littleworksh
         <meta property="og:description" content="Play Mozilla's BrowserQuest, an HTML5 massively multiplayer game demo powered by WebSockets!">
         <link rel="stylesheet" href="css/main.css" type="text/css">
         <link rel="stylesheet" href="css/viewport.css" type="text/css">
-        <link rel="stylesheet" href="css/controls.css?v=20261020-floating-joystick" type="text/css">
+        <link rel="stylesheet" href="css/controls.css?v=20261020-direct-actions" type="text/css">
         <link rel="stylesheet" href="css/achievements.css" type="text/css">
         <link rel="stylesheet" href="css/announcements.css" type="text/css">
         <script src="js/lib/modernizr.js" type="text/javascript"></script>
@@ -223,7 +223,7 @@ Mozilla presents an HTML5 mini-MMORPG by Little Workshop http://www.littleworksh
      	               <span class="right-ornament"></span>
 	                </h1>
 	                <ul>
-	                   <li><span class="icon"></span>Click or tap to move, attack and pick up items. Use WASD or arrow keys to walk. On touchscreens, touch and drag anywhere on the game area to show the joystick under your finger; release to stop. Tap briefly to interact.</li>
+	                   <li><span class="icon"></span>PC: use WASD or arrow keys to move, right-click an adjacent enemy to attack, and left-click a nearby NPC or chest to interact. Mobile: touch and drag the playfield to move with a floating joystick; press ATQ to attack an adjacent enemy. Walk onto items to collect them. Clicking the ground does not move your character.</li>
 	                   <li><span class="icon"></span>Press ENTER to chat.</li>
 	                   <li><span class="icon"></span>Your character is automatically saved as you play.</li>
 	                </ul>
@@ -371,10 +371,10 @@ Mozilla presents an HTML5 mini-MMORPG by Little Workshop http://www.littleworksh
                 // Bust cached AMD modules when the client is updated.
                 // This version is exposed so production users can confirm
                 // which JavaScript build their browser actually loaded.
-                window.BROWSERQUEST_CLIENT_BUILD = '20261020-floating-joystick';
+                window.BROWSERQUEST_CLIENT_BUILD = '20261020-direct-actions';
                 var require = {
                     waitSeconds: 60,
-                    urlArgs: 'bq_build=20261020-floating-joystick'
+                    urlArgs: 'bq_build=20261020-direct-actions'
                 };
         </script>
         <script src="/game/sprites/catalog.js"></script>

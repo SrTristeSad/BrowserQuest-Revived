@@ -1707,8 +1707,63 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
          * 
          */
         makePlayerAttack: function(mob) {
+            // Legacy click-to-chase remains available to internal callers, but
+            // direct PC/mobile controls use attackMobInRange instead.
             this.createAttackLink(this.player, mob);
             this.client.sendAttack(mob);
+        },
+
+        // Combat controls never start pathfinding. The existing combat loop
+        // performs attack animations and sends HIT messages; the server still
+        // verifies selected target, adjacency and cooldown independently.
+        attackMobInRange: function(mob) {
+            var player = this.player;
+            if(!this.started || !player || player.isDead ||
+               !mob || !(mob instanceof Mob) || mob.isDead || mob.isDying ||
+               !this.client || player.isMoving() ||
+               Math.abs(player.gridX - mob.gridX) +
+               Math.abs(player.gridY - mob.gridY) !== 1) {
+                return false;
+            }
+            if(player.target === mob && player.isAttacking()) {
+                return true;
+            }
+            if(player.hasTarget && player.hasTarget()) {
+                player.disengage();
+            }
+            // Character.engage() calls follow() and moves toward the enemy.
+            // Set the combat state directly instead: WASD/joystick alone move.
+            player.attackingMode = true;
+            player.followingMode = false;
+            player.setTarget(mob);
+            player.lookAtTarget();
+            this.client.sendAttack(mob);
+            return true;
+        },
+
+        attackAtCursor: function() {
+            if(!this.started || !this.player || this.player.isDead) { return false; }
+            var pos = this.getMouseGridPosition();
+            return this.attackMobInRange(this.getMobAt(pos.x, pos.y));
+        },
+
+        attackNearestAdjacentMob: function() {
+            if(!this.started || !this.player || this.player.isDead) { return false; }
+            var player = this.player,
+                closest = null,
+                bestPriority = -1;
+            this.forEachMob(function(mob) {
+                if(!mob || mob.isDead || mob.isDying ||
+                   Math.abs(mob.gridX - player.gridX) +
+                   Math.abs(mob.gridY - player.gridY) !== 1) { return; }
+                var orientation = player.getOrientationTo(mob),
+                    facing = orientation === player.orientation ? 1 : 0;
+                if(facing > bestPriority) {
+                    closest = mob;
+                    bestPriority = facing;
+                }
+            });
+            return this.attackMobInRange(closest);
         },
     
         /**
@@ -2010,46 +2065,29 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
          * Processes game logic when the user triggers a click/touch event during the game.
          */
         click: function() {
-            if(this.controls) { this.controls.reset(); }
+            // Left click and short taps are interaction only. No click-to-walk,
+            // click-to-chase or remote object pathfinding.
+            if(!this.started || !this.player || this.player.isDead ||
+               this.player.isMoving()) { return false; }
             var pos = this.getMouseGridPosition(),
-                entity;
-            
-            if(pos.x === this.previousClickPosition.x
-            && pos.y === this.previousClickPosition.y) {
-                return;
-            } else {
-                this.previousClickPosition = pos;
+                entity = this.getEntityAt(pos.x, pos.y),
+                distance = Math.abs(this.player.gridX - pos.x) +
+                           Math.abs(this.player.gridY - pos.y);
+            if(distance > 1) { return false; }
+            if(entity instanceof Npc) {
+                this.makeNpcTalk(entity);
+                return true;
             }
-	        
-    	    if(this.started
-    	    && this.player
-    	    && !this.player.isDead
-    	    && !this.hoveringCollidingTile
-    	    && !this.hoveringPlateauTile) {
-        	    entity = this.getEntityAt(pos.x, pos.y);
-    	    
-        	    if(entity instanceof Mob) {
-        	        this.makePlayerAttack(entity);
-        	    }
-        	    else if(entity instanceof Item) {
-        	        this.makePlayerGoToItem(entity);
-        	    }
-        	    else if(entity instanceof Npc) {
-        	        if(this.player.isAdjacentNonDiagonal(entity) === false) {
-                        this.makePlayerTalkTo(entity);
-        	        } else {
-                        this.makeNpcTalk(entity);
-        	        }
-        	    }
-        	    else if(entity instanceof Chest) {
-        	        this.makePlayerOpenChest(entity);
-        	    }
-        	    else {
-        	        this.makePlayerGoTo(pos.x, pos.y);
-        	    }
-        	}
+            if(entity instanceof Chest) {
+                this.client.sendOpen(entity);
+                this.audioManager.playSound("chest");
+                return true;
+            }
+            // Walking onto loot continues to collect it through the existing
+            // onStopPathing callback, as before.
+            return false;
         },
-        
+
         isMobOnSameTile: function(mob, x, y) {
             var X = x || mob.gridX,
                 Y = y || mob.gridY,

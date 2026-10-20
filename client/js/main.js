@@ -279,38 +279,37 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
             // Preserve a name typed while the game assets were loading.
     		$('#chatbox').attr('value', '');
     		
-            function handleCanvasTap(event) {
-                app.center();
+            function interactAtPointer(event) {
                 app.setMouseCoordinates(event);
-                game.click();
-                app.hideWindows();
+                game.click(); // adjacent NPC/chest only; never walks.
             }
-            // Touch gestures originate at the finger's position anywhere on
-            // the playable canvas. A short tap still interacts with the world;
-            // dragging instead moves the player with a floating joystick.
+            // Pointer Events provide the floating movement joystick. A short
+            // touch can still talk to a nearby NPC, but cannot move or attack.
             if(window.PointerEvent) {
-                game.controls.attachTouchSurface(foreground, handleCanvasTap);
+                game.controls.attachTouchSurface(foreground, interactAtPointer);
             } else if(game.renderer.mobile || game.renderer.tablet) {
-                // Fallback for older mobile browsers without Pointer Events.
-                $('#foreground').bind('touchstart', function(event) {
-                    var touches = event.originalEvent.touches;
-                    if(!touches || !touches.length) { return; }
-                    handleCanvasTap(touches[0]);
+                $('#foreground').bind('touchend', function(event) {
+                    var changed = event.originalEvent.changedTouches;
+                    if(changed && changed.length) { interactAtPointer(changed[0]); }
                 });
             }
             if(!game.renderer.mobile && !game.renderer.tablet) {
                 $('#foreground').click(function(event) {
                     var original = event.originalEvent || {};
-                    // Avoid triggering a second click after touch Pointer Events
-                    // on hybrid touchscreen laptops.
                     if(original.pointerType === 'touch' ||
                        (original.sourceCapabilities &&
-                        original.sourceCapabilities.firesTouchEvents)) {
-                        return;
-                    }
-                    handleCanvasTap(event);
+                        original.sourceCapabilities.firesTouchEvents)) { return; }
+                    interactAtPointer(event);
                 });
             }
+            foreground.addEventListener('contextmenu', function(event) {
+                if(!game.started || !game.controls || !game.controls.canMove() ||
+                   event.pointerType === 'touch') { return; }
+                event.preventDefault();
+                event.stopPropagation();
+                app.setMouseCoordinates(event);
+                game.attackAtCursor(); // target under mouse, only one tile away
+            });
 
             $('body').unbind('click');
             $('body').click(function(event) {
@@ -338,10 +337,8 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
                 var isTouchClick = sourceEvent.pointerType === 'touch' ||
                     (sourceEvent.sourceCapabilities &&
                      sourceEvent.sourceCapabilities.firesTouchEvents);
-                if(game.started && !game.renderer.mobile && game.player &&
-                   !hasClosedParchment && !isTouchClick) {
-                    game.click();
-                }
+                // Global body clicks only manage parchment/help overlays.
+                // Movement is exclusive to WASD/arrows and the joystick.
             });
             
             $('#respawn').click(function(event) {
@@ -451,10 +448,7 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
                         });
                         return false;
                     }
-                    if(key === 65) { // a
-                        // game.player.hit();
-                        return false;
-                    }
+
                 } else {
                     if(key === 13 && game.ready) {
                         $chat.focus();

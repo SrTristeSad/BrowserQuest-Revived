@@ -27,20 +27,18 @@ assert.deepEqual({...game.getMouseGridPosition()},{x:-1,y:-1},
  'negative overscroll must not truncate toward zero');
 game.renderer.camera.x=9;game.renderer.camera.y=11;
 const rat=new Mob();
-game.controls={reset(){}};
-game.previousClickPosition={};
 game.started=true;
-game.player={isDead:false};
-game.hoveringCollidingTile=false;
-game.hoveringPlateauTile=false;
+game.player={isDead:false,gridX:0,gridY:1};
 let attacks=0;
-game.getEntityAt=(x,y)=>x===1&&y===1?rat:null;
-game.makePlayerAttack=mob=>{assert.equal(mob,rat);attacks++};
-// Old page-boundary tests must not reject legitimate click-to-attack.
+game.getMobAt=(x,y)=>x===1&&y===1?rat:null;
+game.attackMobInRange=mob=>{assert.equal(mob,rat);attacks++;return true;};
+// Right-click projects through the fractional camera, without forcing the
+// legacy screen zoning or walking-by-click.
 game.isZoning=()=>true;
 game.isZoningTile=()=>true;
-game.click();
-assert.equal(attacks,1,'click must attack mob under correctly projected tile');
+assert.equal(game.attackAtCursor(),true);
+assert.equal(attacks,1,'right-click selects mob under the correct fractional tile');
+
 
 global.log={debug(){},info(){},error(){}};
 require('../server/js/entity');
@@ -89,4 +87,4 @@ player.isDead=true;
 const lastHp=ratServer.hitPoints;
 handler([Types.Messages.HIT,ratServer.id]);
 assert.equal(ratServer.hitPoints,lastHp,'dead player cannot issue new attacks');
-console.log('Pixel-follow pointer and selected-target melee: sub-tile hover/click, overscroll, server HIT guards passed.');
+console.log('Pixel-follow pointer and selected-target melee: sub-tile right-click, overscroll, server HIT guards passed.');

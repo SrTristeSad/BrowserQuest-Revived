@@ -33,6 +33,7 @@ define(function() {
             this.pointerId = null;
             this.joystick = null;
             this.thumb = null;
+            this.attackButton = null;
             this.touchSurface = null;
             this.touchOrigin = null;
             this.touchDragged = false;
@@ -65,7 +66,7 @@ define(function() {
                 }
                 event.preventDefault();
                 if(self.pressed.indexOf(code) !== -1) { return; }
-                // Keyboard direction overrides click-to-move at the next tile.
+                // A newly held direction takes over at the next safe tile.
                 if(self.game.player.isMoving()) {
                     // Interrupt the old route at the next tile for responsive
                     // changes of direction, not mid-tile teleports.
@@ -93,9 +94,8 @@ define(function() {
         },
 
         installJoystick: function() {
-            // This is a visual indicator only, not a fixed interactive pad.
-            // The actual gesture belongs to the gameplay canvas, so taps on
-            // enemies, NPCs and items still use the existing click action.
+            // The joystick is visual feedback; dragging the Canvas controls
+            // movement. The separate attack button remains thumb-accessible.
             if(!document.createElement || !document.body) { return; }
             var base = document.createElement('div'),
                 thumb = document.createElement('div');
@@ -106,6 +106,31 @@ define(function() {
             document.body.appendChild(base);
             this.joystick = base;
             this.thumb = thumb;
+
+            var button = document.createElement('button'),
+                self = this;
+            button.id = 'bq-attack-button';
+            button.type = 'button';
+            button.textContent = 'ATQ';
+            button.setAttribute('aria-label', 'Atacar inimigo adjacente');
+            button.setAttribute('title', 'Atacar inimigo adjacente');
+            button.addEventListener('click', function(event) {
+                if(event.stopPropagation) { event.stopPropagation(); }
+                if(event.preventDefault) { event.preventDefault(); }
+                self.attack();
+            });
+            // This button stays separate from the movement Canvas and can
+            // be tapped with the opposite thumb during an active gesture.
+            document.body.appendChild(button);
+            this.attackButton = button;
+        },
+
+        attack: function() {
+            if(!this.canMove() ||
+               typeof this.game.attackNearestAdjacentMob !== 'function') {
+                return false;
+            }
+            return this.game.attackNearestAdjacentMob();
         },
 
         attachTouchSurface: function(surface, onTap) {
