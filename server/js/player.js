@@ -145,6 +145,11 @@ module.exports = Player = Character.extend({
                 // strike, and melee must be cardinal (not diagonal).
                 if(mob && mob.type === 'mob' && !mob.isDead && mob.hitPoints > 0 &&
                    !self.isDead && self.hitPoints > 0 && self.target === mob.id &&
+                   (!self.server.mobs || self.server.mobs[mob.id] === mob) &&
+                   (!self.server.entities || self.server.entities[mob.id] === mob) &&
+                   (!self.server.map || !self.server.map.isColliding ||
+                    (!self.server.map.isColliding(mob.x, mob.y) &&
+                     !self.server.map.isColliding(self.x, self.y))) &&
                    Math.abs(mob.x - self.x) + Math.abs(mob.y - self.y) === 1 &&
                    Date.now() >= (self.nextHitAt || 0)) {
                     self.nextHitAt = Date.now() + 450;
@@ -636,6 +641,14 @@ module.exports = Player = Character.extend({
         var damage = Formulas.dmg(mob.weaponLevel, this.armorLevel);
         if(!Number.isFinite(damage) || damage <= 0) { return false; }
         this.lastMobHurtTimes[mob.id] = now;
+        // Opt-in diagnostics for investigating invisible/unsynced damage.
+        // Disabled by default to avoid flooding production logs.
+        if(process.env.BQ_COMBAT_DIAGNOSTICS === '1') {
+            log.info('[combat] attacker=' + mob.id +
+                ' at=' + mob.x + ',' + mob.y +
+                ' player=' + this.id + ' at=' + this.x + ',' + this.y +
+                ' damage=' + damage + ' hp-before=' + this.hitPoints);
+        }
         RegenPolicy.noteDamage(this, now);
         this.hitPoints = Math.max(0, this.hitPoints - damage);
         if(this.hitPoints <= 0) {
