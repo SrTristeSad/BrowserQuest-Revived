@@ -41,6 +41,9 @@ let hits=0;
 mob.receiveDamage=()=>{hits++;};
 world.handleMobHate=()=>{};world.handleHurtEntity=()=>{};
 player.weaponLevel=1;mob.armorLevel=1;
+// A real client sends ATTACK before HIT. Keep the selected target valid
+// while verifying that out-of-range and repeated packets are rejected.
+player.setTarget(mob);
 listen([Types.Messages.HIT,2]);assert.equal(hits,0,'remote HIT rejected');
 mob.x=11;
 listen([Types.Messages.HIT,2]);assert.equal(hits,1,'adjacent hit accepted');
