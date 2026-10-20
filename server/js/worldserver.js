@@ -589,10 +589,16 @@ module.exports = World = cls.Class.extend({
     chooseMobTarget: function(mob, hateRank) {
         var player = this.getEntityById(mob.getHatedPlayerId(hateRank));
         
-        // If the mob is not already attacking the player, create an attack link between them.
-        if(player && !player.isDead && Date.now() >= (player.spawnProtectedUntil || 0) &&
+        // Combat links are bidirectional. Repair either half if a previous
+        // client movement, respawn or AI decision left them inconsistent.
+        // Only a live, registered mob and eligible player can be linked.
+        if(player && mob && !mob.isDead && mob.hitPoints > 0 &&
+            this.mobs[mob.id] === mob && this.entities[mob.id] === mob &&
+            this.players[player.id] === player && !player.isDead &&
+            Date.now() >= (player.spawnProtectedUntil || 0) &&
             !(this.map.isProtectedSpawnTile && this.map.isProtectedSpawnTile(player.x, player.y)) &&
-            !(mob.id in player.attackers)) {
+            (mob.target !== player.id || !player.attackers ||
+             player.attackers[mob.id] !== mob)) {
             this.clearMobAggroLink(mob);
             
             player.addAttacker(mob);
