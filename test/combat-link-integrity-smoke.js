@@ -81,4 +81,23 @@ m.isDead=false;
 world.mobs[m.id]={...m};
 world.chooseMobTarget(m);
 assert.equal(p.attackers[m.id],undefined,'stale mob object must not bind to player');
-console.log('Combat link integration: hate re-acquire, bidirectional repair, single announce, real server damage, protection passed.');
+// The AI used to stop at diagonal adjacency (Chebyshev=1), but the
+// client renders only orthogonal melee. Verify diagonal mobs attempt to
+// close the last gap instead of hitting from an invisible angle.
+world.mobs[m.id]=m;world.entities[m.id]=m;
+m.hitPoints=35;m.isDead=false;m.target=p.id;
+p.spawnProtectedUntil=0;p.isDead=false;p.x=11;p.y=11;
+p.attackers[m.id]=m;
+let steps=0;
+brain.stepToward=(x,y)=>{assert.equal(x,p.x);assert.equal(y,p.y);steps++;return true};
+brain.tickMob();
+assert.equal(steps,1,'AI must seek cardinal adjacent tile from diagonally neighboring mob');
+assert.equal(Guard.canMobDamagePlayer(world,m,p,Date.now()+2000),false,
+ 'server must not hit diagonally before mob reaches orthogonal position');
+p.y=10;
+steps=0;
+brain.tickMob();
+assert.equal(steps,0,'AI must stop moving at a valid orthogonal attack tile');
+assert.equal(Guard.canMobDamagePlayer(world,m,p,Date.now()+2000),true,
+ 'orthogonally adjacent active mob must be allowed to hit');
+console.log('Combat link integration: hate re-acquire, bidirectional repair, cardinal melee, safe targets passed.');
