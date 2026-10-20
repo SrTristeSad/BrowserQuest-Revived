@@ -1,0 +1,81 @@
+'use strict';
+// Server/client tile collision parity, dynamic occupancies and contact damage.
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const Map=require('../server/js/map');
+const World=require('../server/js/worldserver');
+const Types=require('../shared/js/gametypes');
+const Combat=require('../server/js/combat-guard');
+const {acceptStep}=require('../server/js/movement-guard');
+const root=path.resolve(__dirname,'..');
+const s=JSON.parse(fs.readFileSync(path.join(root,'server/maps/world_server.json')));
+const c=JSON.parse(fs.readFileSync(path.join(root,'client/maps/world_client.json')));
+const map=Object.create(Map.prototype);
+map.initMap(s);map.generateCollisionGrid();
+const collisionSet=new Set(s.collisions);
+const only=c.blocking.find(v=>!collisionSet.has(v)&&v>=s.width &&
+   v<s.width*(s.height-1)&&v%s.width>0&&v%s.width<s.width-1);
+assert(Number.isInteger(only),'fixture must contain independently blocking tiles');
+const x=only%s.width,y=Math.floor(only/s.width);
+assert.equal(map.isColliding(x,y),true,
+ 'legacy live map must inherit paired client blocking geometry');
+const custom=Object.create(Map.prototype);
+custom.initMap({...s,blocking:[only]});custom.generateCollisionGrid();
+assert.equal(custom.isColliding(x,y),true,'published map uses blocking directly');
+custom.initMap({...s,blocking:[]});custom.generateCollisionGrid();
+assert.equal(custom.isColliding(x,y),collisionSet.has(only),
+ 'explicit empty blocking layer must not silently load another map version');
+const world=Object.create(World.prototype);
+const monster={id:11,type:'mob',x:6,y:5,isDead:false};
+const npc={id:12,type:'npc',x:7,y:5,isDead:false};
+const chest={id:13,type:'item',kind:Types.Entities.CHEST,x:8,y:5,isDead:false};
+const item={id:14,type:'item',kind:Types.Entities.FLASK,x:9,y:5,isDead:false};
+const otherPlayer={id:15,type:'player',x:10,y:5,isDead:false};
+world.entities={11:monster,12:npc,13:chest,14:item,15:otherPlayer};
+assert(world.isPlayerTileBlocked(6,5,1),'living mob occupies tile');
+assert(world.isPlayerTileBlocked(7,5,1),'NPC occupies tile');
+assert(world.isPlayerTileBlocked(8,5,1),'chest occupies tile');
+assert(!world.isPlayerTileBlocked(9,5,1),'loot stays walkable');
+assert(!world.isPlayerTileBlocked(10,5,1),'other players remain pass-through');
+monster.isDead=true;
+assert(!world.isPlayerTileBlocked(6,5,1),'dead mob no longer blocks');
+monster.isDead=false;
+world.isValidPosition=(xx,yy)=>xx>0&&yy>0&&xx<20&&yy<20;
+const p={id:1,x:5,y:5,lastStepAt:1000,stepCreditMs:120};
+assert(!acceptStep(world,p,6,5,1120),'cannot walk through mob hitbox');
+assert(!acceptStep(world,p,7,5,1120),'cannot skip a tile');
+assert(acceptStep(world,p,5,6,1120),'adjacent free tile remains legal');
+assert.equal(world.isPositionOccupied(8,5,1),true,'AI also avoids chests');
+monster.x=6;monster.y=5;
+const victim={id:1,type:'player',x:5,y:5,hitPoints:80,isDead:false,
+ spawnProtectedUntil:0,attackers:{11:monster},lastMobHurtTimes:{},group:'g'};
+monster.hitPoints=50;monster.target=1;monster.weaponLevel=1;
+world.mobs={11:monster};world.players={1:victim};
+world.map={isColliding(xx,yy){return xx===17&&yy===5;},isProtectedSpawnTile(){return false;}};
+world.groups={g:{entities:{11:monster}}};
+assert(Combat.canMobDamagePlayer(world,monster,victim,1000),'proper adjacent visible mob can hit');
+world.groups.g.entities={};
+assert(!Combat.canMobDamagePlayer(world,monster,victim,1000),'unsubscribed ghost mob cannot hit');
+world.groups.g.entities={11:monster};
+monster.x=17;victim.x=16;
+assert(!Combat.canMobDamagePlayer(world,monster,victim,2000),'mob inside impassable wall cannot hit');
+monster.x=6;victim.x=5;
+monster.y=6;victim.y=5;
+assert(!Combat.canMobDamagePlayer(world,monster,victim,2000),'diagonal melee remains invalid');
+monster.y=5;
+
+const events=[];
+const routing=Object.create(World.prototype);
+routing.handleEntityGroupMembership=m=>{
+ events.push('membership');m.recentlyLeftGroups=['old'];return true;
+};
+routing.pushToGroup=(id,message)=>events.push(id+':'+message.serialize()[0]);
+routing.pushToAdjacentGroups=(id,message)=>events.push('new:'+message.serialize()[0]);
+monster.group='new';
+routing.onMobMoveCallback(monster);
+assert.equal(events[0],'membership','group must update before movement broadcast');
+assert.equal(events[1].split(':')[0],'old','old observers receive DESTROY');
+assert.equal(events[2].split(':')[0],'new','new observers receive updated MOVE');
+assert.deepEqual(monster.recentlyLeftGroups,[]);
+console.log('Hitbox parity: blocking terrain, player/NPC/mob/chest occupancy, strict melee and mob group-sync passed.');
