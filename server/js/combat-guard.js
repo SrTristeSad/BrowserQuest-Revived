@@ -20,6 +20,20 @@ function canMobDamagePlayer(world, mob, player, now) {
     if(mob.target !== player.id || !player.attackers || player.attackers[mob.id] !== mob) {
         return false;
     }
+    // Avoid hits from mobs which this player's server-side subscription no
+    // longer contains (e.g. stale group links after a roam or map edit).
+    // A missing groups object is allowed only for isolated unit fixtures.
+    if(world.groups && player.group && world.groups[player.group] &&
+       world.groups[player.group].entities &&
+       world.groups[player.group].entities[mob.id] !== mob) {
+        return false;
+    }
+    // A mob standing inside an impassable tile cannot deal contact damage.
+    if(world.map && typeof world.map.isColliding === 'function' &&
+       (world.map.isColliding(mob.x, mob.y) ||
+        world.map.isColliding(player.x, player.y))) {
+        return false;
+    }
     // A valid server attack must reach the player in real map coordinates.
     if(![mob.x,mob.y,player.x,player.y].every(Number.isFinite) ||
        Math.abs(mob.x - player.x) + Math.abs(mob.y - player.y) !== MAX_HIT_DISTANCE) {
