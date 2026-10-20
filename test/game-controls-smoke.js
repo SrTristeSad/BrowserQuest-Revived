@@ -335,7 +335,7 @@ assert(!css.includes('bottom: max(12px'), 'joystick is no longer anchored at a f
 assert(main.includes('game.controls.attachTouchSurface(foreground, interactAtPointer)'));
 assert(main.includes('game.attackAtCursor()'));
 assert(!main.includes('hasClosedParchment && !isTouchClick'));
-assert(read('client/index.html').includes('20261020-direct-actions'));
+assert(read('client/index.html').includes('20261020-left-combat-hitboxes'));
 
 assert(main.includes('game.click()'), 'left click still enables nearby NPC/chest interactions without movement');
 
