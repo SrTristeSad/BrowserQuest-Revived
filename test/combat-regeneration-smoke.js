@@ -51,7 +51,7 @@ assert(world.includes('RegenPolicy.recover(character, now)'),
 assert(!world.includes('Math.floor(character.maxHitPoints / 25)'),
     'legacy four-percent-every-two-seconds regen is forbidden');
 const playerSource=source('server/js/player.js');
-assert(playerSource.includes('RegenPolicy.noteDamage(self, hitTime)'),
+assert(playerSource.includes('RegenPolicy.noteDamage(this, now)'),
     'server must delay healing after a real mob HURT');
 const mobSource=source('server/js/mob.js');
 assert(mobSource.includes('RegenPolicy.noteDamage(this)'),
