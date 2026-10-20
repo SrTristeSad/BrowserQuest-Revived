@@ -578,7 +578,7 @@ WorldStore.prototype.buildServerMap = function(state) {
         else if(entity.profileType==='mob'&&mobById[entity.profileId]){kind=mobById[entity.profileId].baseKind;metadata={type:'mob',profileId:entity.profileId};}
         staticEntities[String(tile)]=kind; if(metadata){editorMetadata[String(tile)]=metadata;}
     });
-    published.width=map.width; published.height=map.height; published.spawnSafeRadius=map.spawnSafeRadius; published.maxNearbyMobs=map.maxNearbyMobs; published.dayNight=map.dayNight; published.collisions=map.collisions.slice(); published.doors=clone(map.doors);
+    published.width=map.width; published.height=map.height; published.spawnSafeRadius=map.spawnSafeRadius; published.maxNearbyMobs=map.maxNearbyMobs; published.dayNight=map.dayNight; published.collisions=map.collisions.slice(); published.blocking=map.blocking.slice(); published.doors=clone(map.doors);
     published.checkpoints=clone(map.checkpoints); published.chestAreas=clone(map.chestAreas); published.staticChests=clone(map.staticChests); published.staticEntities=staticEntities;
     published.roamingAreas=map.roamingAreas.map(function(area){var out=clone(area);if(out.profileId&&mobById[out.profileId]){out.type=mobById[out.profileId].baseKind;}return out;});
     published.editorMetadata=editorMetadata; published.editorProfiles={npcs:npcById,mobs:mobById}; published.editorRevision=state.revision;
