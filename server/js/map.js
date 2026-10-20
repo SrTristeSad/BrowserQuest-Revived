@@ -35,6 +35,30 @@ module.exports = cls.Class.extend({
         // Match the client/worker: blocking terrain is just as solid as
         // explicit collision tiles. Published worlds carry both layers.
         this.blocking = Array.isArray(map.blocking) ? map.blocking : [];
+        if(!Array.isArray(map.blocking)) {
+            // Legacy server maps predate the client "blocking" layer. Only
+            // import it from the paired client map when dimensions, revision
+            // and EVERY explicit collision tile match. Never mix layers from
+            // unrelated published versions of the world.
+            try {
+                var mirror = JSON.parse(fs.readFileSync(
+                    require('path').join(__dirname, '../../client/maps/world_client.json'),
+                    'utf8'));
+                var sameCollisions = Array.isArray(mirror.collisions) &&
+                    mirror.collisions.length === this.collisions.length &&
+                    this.collisions.every(function(tile, index) {
+                        return mirror.collisions[index] === tile;
+                    });
+                if(mirror.width === this.width && mirror.height === this.height &&
+                   (mirror.editorRevision || null) === (map.editorRevision || null) &&
+                   sameCollisions && Array.isArray(mirror.blocking)) {
+                    this.blocking = mirror.blocking;
+                }
+            } catch(error) {
+                // No matching client map: fail closed on explicit server
+                // collisions, rather than inventing map geometry.
+            }
+        }
         this.mobAreas = map.roamingAreas;
         this.spawnSafeRadius = SpawnSafety.normalizeRadius(map.spawnSafeRadius);
         this.maxNearbyMobs = MobBudget.normalizeLimit(map.maxNearbyMobs);
