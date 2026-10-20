@@ -53,7 +53,7 @@ define(function() {
             }
             return Boolean(game.started && game.ready && game.playerId !== undefined &&
                 game.map && game.pathfinder && player && !player.isDead &&
-                !game.isZoning() && !game.isZoningTile(player.nextGridX, player.nextGridY));
+                !game.isZoning());
         },
 
         installKeyboard: function() {
