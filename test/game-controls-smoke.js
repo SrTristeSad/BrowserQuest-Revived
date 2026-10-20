@@ -61,9 +61,21 @@ const game = {
     makePlayerGoTo(x,y){moves.push([x,y]);player.moving=true;}
 };
 const controls = new Controls(game);
-assert.equal(document.body.children.length,1);
+assert.equal(document.body.children.length,2);
 assert.equal(document.body.children[0].id,'bq-joystick');
 assert.equal(controls.thumb.className,'bq-joystick-thumb');
+assert.equal(document.body.children[1].id,'bq-attack-button');
+assert.equal(controls.attackButton.type,'button');
+let attackAttempts=0;
+game.attackNearestAdjacentMob=()=>{attackAttempts++;return true;};
+const attackEvent={prevented:false,stopped:false,
+ preventDefault(){this.prevented=true;},
+ stopPropagation(){this.stopped=true;}};
+controls.attackButton.events.click(attackEvent);
+assert.equal(attackAttempts,1,'separate button performs an attack');
+assert.equal(attackEvent.stopped,true,'attack button cannot trigger a canvas/body click');
+assert.equal(attackEvent.prevented,true);
+
 // Keyboard takeover interrupts a long click-to-move route once, at the next
 // safe movement boundary, rather than redirecting every animation frame.
 player.moving=true;
@@ -316,8 +328,10 @@ assert(css.includes('(pointer: coarse)'));
 assert(css.includes('body.game #foreground { touch-action: none; }'));
 assert(css.includes('pointer-events: none;'));
 assert(css.includes('#bq-joystick.is-active'));
+assert(css.includes('#bq-attack-button'));
+assert(css.includes('bottom: max(60px'), 'attack stays above the original HUD');
 assert(!css.includes('bottom: max(12px'), 'joystick is no longer anchored at a fixed corner');
 assert(main.includes('game.controls.attachTouchSurface(foreground, handleCanvasTap)'));
 assert(main.includes('game.click()'), 'short canvas taps keep real world interactions');
 
-console.log('WASD, arrows, collision, floating joystick, tap interactions and multitouch smoke passed.');
+console.log('WASD, arrows, collision, floating joystick, separate ATQ button, interactions and multitouch smoke passed.');
