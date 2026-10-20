@@ -461,9 +461,30 @@ module.exports = World = cls.Class.extend({
     isPositionOccupied: function(x, y, ignoredId) {
         var occupied = false;
         this.forEachEntity(function(entity) {
-            if(!occupied && entity.id !== ignoredId && !entity.isDead && entity.x === x && entity.y === y && (entity.type === 'player' || entity.type === 'mob' || entity.type === 'npc')) { occupied = true; }
+            if(!occupied && entity && entity.id !== ignoredId && !entity.isDead &&
+               entity.x === x && entity.y === y &&
+               (entity.type === 'player' || entity.type === 'mob' ||
+                entity.type === 'npc' || entity.kind === Types.Entities.CHEST)) {
+                occupied = true;
+            }
         });
         return occupied;
+    },
+
+    isPlayerTileBlocked: function(x, y, ignoredId) {
+        // Real players are intentionally pass-through (MMO chokepoints).
+        // NPCs, living mobs and chests block one tile, matching the client's
+        // pathingGrid, and ordinary dropped items remain walkable.
+        var blocked = false;
+        this.forEachEntity(function(entity) {
+            if(!blocked && entity && entity.id !== ignoredId && !entity.isDead &&
+               entity.x === x && entity.y === y &&
+               (entity.type === 'mob' || entity.type === 'npc' ||
+                entity.kind === Types.Entities.CHEST)) {
+                blocked = true;
+            }
+        });
+        return blocked;
     },
     
     addItem: function(item) {
@@ -849,8 +870,17 @@ module.exports = World = cls.Class.extend({
     },
     
     onMobMoveCallback: function(mob) {
+        // Update subscriptions BEFORE announcing the new tile. A mob crossing
+        // a group boundary must not keep an old client-side ghost behind.
+        var changed = this.handleEntityGroupMembership(mob),
+            self = this;
+        if(changed && mob.recentlyLeftGroups) {
+            _.each(mob.recentlyLeftGroups, function(id) {
+                self.pushToGroup(id, new Messages.Destroy(mob));
+            });
+            mob.recentlyLeftGroups = [];
+        }
         this.pushToAdjacentGroups(mob.group, new Messages.Move(mob));
-        this.handleEntityGroupMembership(mob);
     },
     
     findPositionNextTo: function(entity, target) {

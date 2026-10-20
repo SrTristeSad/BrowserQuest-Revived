@@ -1742,7 +1742,8 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
         },
 
         attackAtCursor: function() {
-            if(!this.started || !this.player || this.player.isDead) { return false; }
+            if(!this.started || !this.player || this.player.isDead ||
+               (this.controls && !this.controls.canMove())) { return false; }
             var pos = this.getMouseGridPosition();
             return this.attackMobInRange(this.getMobAt(pos.x, pos.y));
         },
@@ -1903,9 +1904,20 @@ function(InfoManager, BubbleManager, Renderer, Map, Animation, Sprite, AnimatedT
         },
 
         getMobAt: function(x, y) {
-            var entity = this.getEntityAt(x, y);
-            if(entity && (entity instanceof Mob)) {
-                return entity;
+            // More than one entity can temporarily occupy a tile during an
+            // animated move. Do not let a player/NPC hide an attackable mob
+            // because it happened to be the first object in entityGrid.
+            if(!this.map || this.map.isOutOfBounds(x, y) ||
+               !this.entityGrid || !this.entityGrid[y] ||
+               !this.entityGrid[y][x]) { return null; }
+            var cells = this.entityGrid[y][x];
+            for(var id in cells) {
+                if(Object.prototype.hasOwnProperty.call(cells, id)) {
+                    var mob = cells[id];
+                    if(mob instanceof Mob && !mob.isDead && !mob.isDying) {
+                        return mob;
+                    }
+                }
             }
             return null;
         },

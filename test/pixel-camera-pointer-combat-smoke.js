@@ -32,12 +32,12 @@ game.player={isDead:false,gridX:0,gridY:1};
 let attacks=0;
 game.getMobAt=(x,y)=>x===1&&y===1?rat:null;
 game.attackMobInRange=mob=>{assert.equal(mob,rat);attacks++;return true;};
-// Right-click projects through the fractional camera, without forcing the
+// Left-click projects through the fractional camera, without forcing the
 // legacy screen zoning or walking-by-click.
 game.isZoning=()=>true;
 game.isZoningTile=()=>true;
 assert.equal(game.attackAtCursor(),true);
-assert.equal(attacks,1,'right-click selects mob under the correct fractional tile');
+assert.equal(attacks,1,'left-click selects mob under the correct fractional tile');
 
 
 global.log={debug(){},info(){},error(){}};
@@ -87,4 +87,4 @@ player.isDead=true;
 const lastHp=ratServer.hitPoints;
 handler([Types.Messages.HIT,ratServer.id]);
 assert.equal(ratServer.hitPoints,lastHp,'dead player cannot issue new attacks');
-console.log('Pixel-follow pointer and selected-target melee: sub-tile right-click, overscroll, server HIT guards passed.');
+console.log('Pixel-follow pointer and selected-target melee: sub-tile left-click, overscroll, server HIT guards passed.');

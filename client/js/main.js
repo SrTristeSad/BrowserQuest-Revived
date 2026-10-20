@@ -299,16 +299,16 @@ define(['jquery', 'app', 'controls', '../../shared/js/daycycle'], function($, Ap
                     if(original.pointerType === 'touch' ||
                        (original.sourceCapabilities &&
                         original.sourceCapabilities.firesTouchEvents)) { return; }
-                    interactAtPointer(event);
+                    app.setMouseCoordinates(event);
+                    // Left-click attacks a mob in melee range. Otherwise it
+                    // only interacts with a nearby NPC/chest, never walks.
+                    if(!game.attackAtCursor()) { game.click(); }
                 });
             }
             foreground.addEventListener('contextmenu', function(event) {
-                if(!game.started || !game.controls || !game.controls.canMove() ||
-                   event.pointerType === 'touch') { return; }
-                event.preventDefault();
-                event.stopPropagation();
-                app.setMouseCoordinates(event);
-                game.attackAtCursor(); // target under mouse, only one tile away
+                // The browser menu must not obscure gameplay; right click
+                // deliberately does NOT trigger an attack.
+                if(game.started) { event.preventDefault(); }
             });
 
             $('body').unbind('click');
