@@ -126,20 +126,31 @@ define(function() {
                     distance = Math.sqrt(dx * dx + dy * dy),
                     rect = self.joystick.getBoundingClientRect(),
                     radius = Math.max(1, Math.min(rect.width, rect.height) * .28),
-                    ratio = distance ? Math.min(1, radius / distance) : 0;
+                    ratio = distance ? Math.min(1, radius / distance) : 0,
+                    previous = self.touchDirection,
+                    direction = null;
                 self.thumb.style.transform = 'translate(' +
                     Math.round(dx * ratio) + 'px, ' +
                     Math.round(dy * ratio) + 'px)';
-                if(distance < TOUCH_DEAD_ZONE) {
-                    self.touchDirection = null;
-                    return;
+                if(distance >= TOUCH_DEAD_ZONE) {
+                    self.touchDragged = true;
+                    if(Math.abs(dx) >= Math.abs(dy)) {
+                        direction = dx > 0 ? [1, 0] : [-1, 0];
+                    } else {
+                        direction = dy > 0 ? [0, 1] : [0, -1];
+                    }
                 }
-                self.touchDragged = true;
-                if(Math.abs(dx) >= Math.abs(dy)) {
-                    self.touchDirection = dx > 0 ? [1, 0] : [-1, 0];
-                } else {
-                    self.touchDirection = dy > 0 ? [0, 1] : [0, -1];
+                // A previously planned four-tile run must not keep going in
+                // the old direction after the player steers or recenters.
+                // Character.stop interrupts safely at the next tile boundary.
+                if(previous && (!direction ||
+                   previous[0] !== direction[0] || previous[1] !== direction[1]) &&
+                   self.autoRunActive && self.game.player &&
+                   self.game.player.isMoving()) {
+                    self.game.player.stop();
+                    self.autoRunActive = false;
                 }
+                self.touchDirection = direction;
             }
 
             function capture(event) {
