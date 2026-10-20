@@ -33,6 +33,10 @@ assert.equal(World.prototype.updateMobCombat.call(world,now+250),0,
 assert.equal(World.prototype.updateMobCombat.call(world,now+Guard.MIN_HIT_INTERVAL_MS),1,
  'same mob resumes dealing damage at legitimate interval');
 assert(player.hitPoints<firstHp);
+mob.x=11; mob.y=11;
+assert.equal(World.prototype.updateMobCombat.call(world,now+2000),0,
+ 'diagonal attacks must not deal invisible damage before the AI moves cardinally');
+mob.y=10;
 mob.x=12;
 assert.equal(World.prototype.updateMobCombat.call(world,now+3000),0,
  'distant enemy must not deal damage');
