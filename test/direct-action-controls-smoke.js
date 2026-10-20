@@ -62,10 +62,18 @@ distant.isDead=false;
 
 game.renderer={camera:{x:9,y:11},scale:2,tilesize:16};
 game.mouse={x:16,y:11};
+// Click collision: a moving/overlapping entity must not hide a mob.
+game.map={isOutOfBounds(x,y){return x<0||y<0||x>=10||y>=10;}};
+game.entityGrid=Array.from({length:10},()=>Array.from({length:10},()=>({})));
+game.entityGrid[1][1]={npc:new Npc(),enemy:back,dead:distant};
+distant.isDead=true;
+assert.equal(game.getMobAt(1,1),back,'overlap must prioritize the live mob, not an NPC');
+assert.equal(game.getMobAt(-1,1),null,'invalid cursor cells have no hitbox');
+distant.isDead=false;
 game.getMobAt=(x,y)=>x===1&&y===1?back:null;
-assert.equal(game.attackAtCursor(),true,'right click uses fractional camera projection');
+assert.equal(game.attackAtCursor(),true,'left click uses fractional camera projection');
 assert.equal(player.target,back);
-assert.deepEqual(movements,[],'right-click attack never walks toward an enemy');
+assert.deepEqual(movements,[],'left-click attack never walks toward an enemy');
 
 game.getEntityAt=()=>null;
 const before=sent.length;
@@ -91,9 +99,13 @@ assert.deepEqual(movements,[]);
 
 const main=read('client/js/main.js'),controls=read('client/js/controls.js');
 assert(main.includes("game.attackAtCursor()"));
+assert(main.includes("if(!game.attackAtCursor()) { game.click(); }"),
+ 'left button attacks first; nearby interactions are the fallback');
+assert(!main.includes("game.attackAtCursor(); // target under mouse"),
+ 'right-click must never trigger attack');
 assert(main.includes("attachTouchSurface(foreground, interactAtPointer)"));
 assert(!main.includes("hasClosedParchment && !isTouchClick"),'global body click no longer walks');
 assert(!main.includes("if(key === 65)"),'legacy A hotkey no longer swallows movement');
 assert(controls.includes("self.attack()")&&controls.includes("this.game.attackNearestAdjacentMob()"));
-assert(read('client/index.html').includes('20261020-direct-actions'));
-console.log('Direct actions: adjacent attack, mouse targeting, mobile ATQ, no click-to-move/chase, nearby NPC/chest passed.');
+assert(read('client/index.html').includes('20261020-left-combat-hitboxes'));
+console.log('Direct actions: adjacent attack, mouse targeting, mobile ATQ, left-click melee, no click-to-move/chase, nearby NPC/chest passed.');
