@@ -6,6 +6,11 @@ function acceptStep(world, player, x, y, now = Date.now()) {
     const distance = Math.abs(x-player.x)+Math.abs(y-player.y);
     if(distance === 0) return true;
     if(distance !== 1) return false;
+    // The client marks living mobs, NPCs and chests as occupied tiles.
+    // The server must reject the same footprint before consuming a
+    // movement credit, otherwise both sides disagree about collisions.
+    if(typeof world.isPlayerTileBlocked === 'function' &&
+       world.isPlayerTileBlocked(x, y, player.id)) return false;
     const elapsed = Math.max(0, now - (player.lastStepAt ?? now));
     const credit = Math.min(MAX_CREDIT_MS, (player.stepCreditMs ?? STEP_MS) + elapsed);
     if(credit < STEP_MS) return false;
