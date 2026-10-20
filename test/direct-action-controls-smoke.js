@@ -107,5 +107,5 @@ assert(main.includes("attachTouchSurface(foreground, interactAtPointer)"));
 assert(!main.includes("hasClosedParchment && !isTouchClick"),'global body click no longer walks');
 assert(!main.includes("if(key === 65)"),'legacy A hotkey no longer swallows movement');
 assert(controls.includes("self.attack()")&&controls.includes("this.game.attackNearestAdjacentMob()"));
-assert(read('client/index.html').includes('20261020-left-combat-hitboxes'));
+assert(read('client/index.html').includes('20261020-sunnyside-home'));
 console.log('Direct actions: adjacent attack, mouse targeting, mobile ATQ, left-click melee, no click-to-move/chase, nearby NPC/chest passed.');
